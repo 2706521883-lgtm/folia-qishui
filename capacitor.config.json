@@ -1,0 +1,13 @@
+{
+  "appId": "top.izuna.foliamajor",
+  "appName": "Folia",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}
