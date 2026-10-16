@@ -41,6 +41,7 @@
     "manual:analysis-idle": "node test/manual/analysis_idle_release.mts",
     "manual:visualizer-memory": "node test/manual/visualizer-memory-probe.mjs",
     "manual:lattice-cover-memory": "node test/manual/lattice-cover-memory.mjs",
+    "manual:shell-boot-check": "node test/manual/shell-boot-check-probe.mjs",
     "manual:bravais-perf": "node test/manual/bravais-perf-probe.mjs",
     "stage:client": "vite --open /stage-client.html",
     "dev:electron": "cross-env ELECTRON_DEV=true FOLIA_WINDOWTOLAYER_PATH=build/windowtolayer FOLIA_WALLPAPER_HELPER_PATH=build/folia-wallpaper-helper.exe concurrently -k \"vite\" \"wait-on tcp:3000 && electron .\"",

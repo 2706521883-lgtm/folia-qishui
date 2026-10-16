@@ -300,6 +300,137 @@
       })();
     </script>
     <div id="root"></div>
+    <!-- 手机壳启动自检（仅 Capacitor 壳内生效；桌面 file:// 与 PWA / 局域网 http 都进不到这条分支）：
+         壳里没有控制台，JavaScript 一旦起不来（WebView 内核太旧、启动期报错……），页面就永远停在
+         启动动画上，只能靠猜。这里在启动超时后把可诊断的信息（内核版本、能力探针、捕获的报错）
+         直接画在屏幕上——用户截个图就能定位。脚本必须 ES5：它要在「连 ES2020 都跑不动」的
+         环境里仍然能执行，这正是它存在的意义。启动成功后自动消失，不会打扰正常使用。 -->
+    <script>
+      (function () {
+        var isShell =
+          (location.protocol === 'https:' || location.protocol === 'capacitor:') &&
+          location.hostname === 'localhost';
+        if (!isShell) return;
+
+        var errors = [];
+        var startedAt = Date.now();
+
+        function note(text) {
+          if (errors.length < 8 && errors.indexOf(text) === -1) errors.push(text);
+        }
+
+        // 捕获阶段挂 window：脚本/资源加载错误（error 事件不冒泡）也要收进来。
+        window.addEventListener('error', function (event) {
+          var target = event.target;
+          if (target && (target.src || target.href)) {
+            note('资源加载失败: ' + String(target.src || target.href).split('/').pop());
+            return;
+          }
+          note(
+            '错误: ' + (event.message || 'unknown') +
+              (event.filename
+                ? ' @ ' + String(event.filename).split('/').pop() + ':' + event.lineno
+                : '')
+          );
+        }, true);
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          note('未处理的 Promise 拒绝: ' + ((reason && (reason.message || reason)) || 'unknown'));
+        });
+
+        try {
+          window.__foliaShellDiagnostics = errors;
+        } catch (ignored) {}
+
+        // 能力探针：应用要用到的东西逐个点名，缺哪个一目了然（✗ 就是内核不够新）。
+        function probeCapabilities() {
+          var probes = [];
+          function probe(label, fn) {
+            var ok = false;
+            try { ok = !!fn(); } catch (ignored) { ok = false; }
+            probes.push(label + (ok ? '✓' : '✗'));
+          }
+          probe('CSS.inset', function () {
+            return window.CSS && CSS.supports && CSS.supports('inset', '0px');
+          });
+          probe('Array.at', function () { return typeof [].at === 'function'; });
+          probe('Object.hasOwn', function () { return typeof Object.hasOwn === 'function'; });
+          probe('structuredClone', function () { return typeof structuredClone === 'function'; });
+          probe('crypto.randomUUID', function () {
+            return window.crypto && typeof crypto.randomUUID === 'function';
+          });
+          probe('Intl.Segmenter', function () { return typeof Intl.Segmenter === 'function'; });
+          probe('color-mix', function () {
+            return window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red, blue)');
+          });
+          return probes.join('  ');
+        }
+
+        function chromeVersion() {
+          var match = /(?:Chrome|CriOS)\/([0-9.]+)/.exec(navigator.userAgent || '');
+          return match ? match[1] : '未知（UA 里没有 Chrome/CriOS）';
+        }
+
+        // 启动完成的唯一判据：启动遮罩被撤掉（hideAppSplash 在 React 挂载后的 effect 里跑）。
+        // 不要拿 #root 判——应用自建挂载容器，那个元素不代表任何东西。
+        function booted() {
+          var splash = document.getElementById('app-splash');
+          return !splash || String(splash.className).indexOf('is-hiding') !== -1;
+        }
+
+        var panel = null;
+        var dismissed = false;
+        function renderPanel() {
+          var seconds = Math.round((Date.now() - startedAt) / 1000);
+          if (!panel) {
+            panel = document.createElement('div');
+            panel.style.cssText =
+              'position:fixed;inset:0;z-index:2147483600;overflow:auto;box-sizing:border-box;' +
+              'padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));' +
+              'background:#09090b;color:#e4e4e7;font:12px/1.6 ui-monospace,Consolas,monospace;' +
+              'white-space:pre-wrap;word-break:break-word;-webkit-user-select:text;user-select:text';
+            panel.setAttribute('role', 'alert');
+            document.body.appendChild(panel);
+            // 点一下关掉，方便用户自己继续看启动动画（关了就不许再弹，免得每 8 秒骚扰一次）。
+            panel.addEventListener('click', function () {
+              dismissed = true;
+              if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+              panel = null;
+            });
+          }
+          var lines = [
+            'Folia 启动自检（请把这一屏截图发给开发者）',
+            '',
+            '启动已 ' + seconds + ' 秒，主界面还没出来。',
+            '',
+            '内核: ' + chromeVersion(),
+            '能力: ' + probeCapabilities(),
+            'UA:   ' + (navigator.userAgent || '未知'),
+            '',
+            errors.length ? '捕获到的报错:' : '没有捕获到 JavaScript 报错（多为内核太旧或启动被卡住）。'
+          ];
+          for (var i = 0; i < errors.length; i += 1) lines.push('· ' + errors[i]);
+          lines.push('', '（点按本面板可关闭）');
+          panel.textContent = lines.join('\n');
+        }
+
+        // 15 秒还没起来就先亮面板；之后每 8 秒刷新一次计时；一旦起来了就自己撤掉。
+        window.setTimeout(function () {
+          if (booted()) return;
+          renderPanel();
+          var timer = window.setInterval(function () {
+            if (booted() || dismissed) {
+              window.clearInterval(timer);
+              if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+              panel = null;
+              return;
+            }
+            renderPanel();
+          }, 8000);
+        }, 15000);
+      })();
+    </script>
     <script type="module" src="/src/index.tsx"></script>
   </body>
 </html>

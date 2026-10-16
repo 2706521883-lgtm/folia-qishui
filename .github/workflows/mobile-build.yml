@@ -118,7 +118,7 @@ jobs:
       - name: Add iOS platform
         run: npx cap add ios
 
-      - name: Patch Info.plist for LAN access
+      - name: Patch Info.plist for LAN access and background audio
         run: |
           set -euo pipefail
           PLIST=ios/App/App/Info.plist
@@ -128,7 +128,22 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST"
           /usr/libexec/PlistBuddy -c "Delete :NSLocalNetworkUsageDescription" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 连接同一局域网内 PC 上的音乐服务（搜索与播放接口）。" "$PLIST"
+          # 后台/锁屏播放：声明音频后台能力（另一半在 AppDelegate 里的 AVAudioSession .playback，缺一不可）。
+          /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string audio" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" "$PLIST"
+
+      - name: Patch AppDelegate for background audio
+        run: node dev/mobile/patch-ios-shell.mjs
+
+      - name: Verify background-audio patch is in effect
+        run: |
+          set -euo pipefail
+          grep -q 'FoliaAudioSession.activate()' ios/App/App/AppDelegate.swift
+          grep -q 'setCategory(.playback' ios/App/App/AppDelegate.swift
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes:0" ios/App/App/Info.plist | grep -qx 'audio'
 
       - name: Generate app icon and splash
         run: >-
