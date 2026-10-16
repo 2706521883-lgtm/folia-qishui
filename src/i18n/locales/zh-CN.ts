@@ -1529,6 +1529,13 @@ export default {
     "track": "ReplayGain: 单曲模式",
     "album": "ReplayGain: 专辑模式",
   },
+  "mobileTabBar": {
+    "ariaLabel": "主导航",
+    "home": "首页",
+    "lattice": "队列拼贴",
+    "search": "搜索",
+    "settings": "设置"
+  },
   "settings": {
     "lyricMatchPriority": "歌词匹配优先级",
     "lyricMatchPriorityDesc": "在多个歌词源都存在高置信度匹配时，优先选择该歌词源的结果。"

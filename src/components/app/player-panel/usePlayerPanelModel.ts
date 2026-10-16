@@ -12,7 +12,8 @@ import { useVisualizerSettingsStore } from '../../../stores/useVisualizerSetting
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
 import { useOnlineProviderAccountStore } from '../../../stores/useOnlineProviderAccountStore';
 import { selectDisplayCoverUrl, selectDisplayLyrics, usePlaybackStore } from '../../../stores/usePlaybackStore';
-import type { LocalSong, SongResult } from '../../../types';
+import { useMediaQuery } from '../../../hooks/useMediaQuery';
+import { PlayerState, type LocalSong, type SongResult } from '../../../types';
 import type { LocalLibraryCatalogSnapshot } from '../../../hooks/useLocalLibraryCatalog';
 import type { CollectionNavigationOrigin } from '../../../stores/useCollectionNavigationStore';
 import type { GridViewCollectionDescriptor } from '../home/gridViewCollectionAdapters';
@@ -101,6 +102,12 @@ export const usePlayerPanelModel = ({
 
     const handleCopySongInfoSuccess = useMemo(() => createCopySongInfoSuccessHandler({ t }), [t]);
 
+    // 「播放中收起悬浮圆钮」只在窄屏成立：展开态胶囊几乎满宽，右下角那颗圆钮跟胶囊里的
+    // 「队列」是同一个去处，还得靠 NARROW_BOTTOM_CHROME_BASE_PX 整体抬高才不打架。
+    // 桌面上这颗是用了很久的入口，别让它跟着播放状态忽隐忽现。断点与 UnifiedPanel /
+    // usePlayerBottomBarBottomPx / WallToolsButton 一致。
+    const isWideLayout = useMediaQuery('(min-width: 640px)');
+
     return useMemo(() => buildPlayerPanelModel({
         ...deps,
         ...collectionEntries,
@@ -122,7 +129,13 @@ export const usePlayerPanelModel = ({
         isMuted,
         showOpenPanelCloseButton,
         isPanelGuideHotspotActive,
-        hideToggleButton: isPlayerChromeHidden || shouldHidePlayerRightPanelButton,
+        // 播放中把这颗悬浮圆钮收起来（仅窄屏，见上面的 isWideLayout）。面板本身还进得去：
+        // 播放条右侧那颗「队列」按钮和命令面板里的 `panel-*` 命令都会开面板，所以这里收掉的
+        // 是入口，不是面板。
+        // 面板开着时不收：那时这颗是关闭键（X），播放中把它藏了面板就关不掉了。
+        hideToggleButton: isPlayerChromeHidden
+            || shouldHidePlayerRightPanelButton
+            || (!isWideLayout && playerState === PlayerState.PLAYING && !isPanelOpen),
         activePlaybackContext,
         audioQuality,
         useCoverColorBg,
@@ -152,6 +165,7 @@ export const usePlayerPanelModel = ({
         isPanelGuideHotspotActive,
         isPlayerChromeHidden,
         shouldHidePlayerRightPanelButton,
+        isWideLayout,
         activePlaybackContext,
         audioQuality,
         useCoverColorBg,

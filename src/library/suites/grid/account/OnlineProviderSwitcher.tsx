@@ -6,6 +6,7 @@ import type { OnlineProviderId, ProviderAccountSummary } from '../../../../types
 import { canSwitchToProviderDirectly } from '../../../core/model/onlineProviderAccountView';
 import { canLogoutProvider } from '../../../core/model/accountRules';
 import { playerBottomBarLiveOffset } from '../../../../stores/motionSignals';
+import { useMobileShellBottomLiftPx } from '../../../../hooks/useMobileShellLayout';
 import {
     PLAYER_BOTTOM_BAR_BASE_OFFSET_PX,
     resolvePlayerBottomComponentBottomPx,
@@ -72,6 +73,10 @@ const OnlineProviderSwitcher: React.FC<OnlineProviderSwitcherProps> = ({
     const activeProvider = visibleProviders.find(provider => provider.providerId === activeProviderId) || visibleProviders[0];
     const surfaceClass = isDaylight ? 'bg-white text-zinc-900' : 'bg-zinc-950 text-white';
 
+    // 移动壳（<1024 且不在播放页）里 Tab 栏占住底边，贴底一族整体上抬；进/出壳都要重量一次。
+    const shellLiftPx = useMobileShellBottomLiftPx();
+    const shellLiftPxRef = useRef(0);
+
     /**
      * 默认高度保留原 CSS（`bottom-4 md:bottom-6`），只有真的产生抬升量时才写内联 bottom。
      *
@@ -81,11 +86,12 @@ const OnlineProviderSwitcher: React.FC<OnlineProviderSwitcherProps> = ({
     const syncBottomOffset = useCallback((globalOffsetPx: number) => {
         const root = rootRef.current;
         if (!root) return;
-        if (globalOffsetPx === PLAYER_BOTTOM_BAR_BASE_OFFSET_PX) {
+        const liftPx = shellLiftPxRef.current;
+        if (globalOffsetPx === PLAYER_BOTTOM_BAR_BASE_OFFSET_PX && liftPx === 0) {
             root.style.removeProperty('bottom');
             return;
         }
-        root.style.bottom = `${resolvePlayerBottomComponentBottomPx(globalOffsetPx, baseBottomPxRef.current)}px`;
+        root.style.bottom = `${resolvePlayerBottomComponentBottomPx(globalOffsetPx, baseBottomPxRef.current) + liftPx}px`;
     }, []);
 
     useMotionValueEvent(playerBottomBarLiveOffset, 'change', syncBottomOffset);
@@ -99,6 +105,11 @@ const OnlineProviderSwitcher: React.FC<OnlineProviderSwitcherProps> = ({
         baseBottomPxRef.current = Number.isFinite(measured) ? measured : 16;
         syncBottomOffset(playerBottomBarLiveOffset.get());
     }, [syncBottomOffset]);
+
+    useEffect(() => {
+        shellLiftPxRef.current = shellLiftPx;
+        measureAndSync();
+    }, [measureAndSync, shellLiftPx]);
 
     /**
      * 用 callback ref 而不是挂载时的 layout effect：providers 还没到位时下面会 return null，
@@ -148,7 +159,7 @@ const OnlineProviderSwitcher: React.FC<OnlineProviderSwitcherProps> = ({
         <div
             ref={setRootNode}
             data-testid="online-provider-switcher"
-            className="pointer-events-auto absolute bottom-4 right-4 z-[100] md:bottom-6 md:right-6"
+            className="pointer-events-auto absolute bottom-4 right-4 z-[100] md:bottom-6 md:right-6 mb-[var(--safe-bottom)] mr-[var(--safe-right)]"
         >
             <div className={`flex items-center rounded-full p-0.5 shadow-lg md:p-1.5 ${surfaceClass}`}>
                 <button

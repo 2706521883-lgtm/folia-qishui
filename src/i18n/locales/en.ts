@@ -1530,6 +1530,13 @@ export default {
     "track": "ReplayGain: Track Mode",
     "album": "ReplayGain: Album Mode",
   },
+  "mobileTabBar": {
+    "ariaLabel": "Main navigation",
+    "home": "Home",
+    "lattice": "Queue collage",
+    "search": "Search",
+    "settings": "Settings"
+  },
   "settings": {
     "lyricMatchPriority": "Lyric match priority",
     "lyricMatchPriorityDesc": "When multiple lyric sources have high-confidence matches, prefer this source first."

@@ -990,7 +990,7 @@ export const GridMap: React.FC<GridMapProps> = ({
             }}
         >
             {/* Top Floating Glass Header */}
-            <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-6 py-5 z-[70] bg-gradient-to-b from-black/10 to-transparent">
+            <div className="absolute top-0 left-0 right-0 mt-[var(--safe-top)] flex items-center justify-between px-6 py-5 z-[70] bg-gradient-to-b from-black/10 to-transparent">
                 <button
                     onClick={onBack}
                     className="w-10 h-10 rounded-full flex items-center justify-center transition-all pointer-events-auto shadow-lg hover:scale-105 active:scale-95"
@@ -1097,7 +1097,7 @@ export const GridMap: React.FC<GridMapProps> = ({
                         animate={{ opacity: 1, x: 0, scale: 1 }}
                         exit={{ opacity: 0, x: -60, scale: 0.95 }}
                         transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                        className="absolute left-6 top-24 w-80 rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel"
+                        className="absolute left-6 top-24 w-80 rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel mb-[var(--safe-bottom)] ml-[var(--safe-left)]"
                         style={{ bottom: bottomBarPanelBottomPx }}
                     >
                         {batchConfig ? (

@@ -651,6 +651,15 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
     request,
     operations: QISHUI_OPERATIONS,
     credentialPaths: credentials.paths,
+    // 服务器模式（electron/qishui-server.cjs）用它把 `song.url` 里的 loopback 代理地址改写成
+    // 客户端能直接吃的形态。端口要等第一次 song.url 触发 ensureAudioServer() 才有值，
+    // 所以这里给的是取值函数而不是快照。
+    getAudioInfo: () => ({
+      host: QISHUI_AUDIO_PROXY_HOST,
+      port: audioServerPort,
+      token: audioToken,
+      route: QISHUI_AUDIO_ROUTE,
+    }),
     // main.cjs 在主窗口 'closed' 与 before-quit 里调用：销毁隐藏签名窗口（否则
     // 'window-all-closed' 不会触发、进程退不出去）并立刻释放 loopback 端口。
     dispose,

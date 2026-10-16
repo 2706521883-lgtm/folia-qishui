@@ -174,11 +174,13 @@
     user-select: none;
 }
 
-/* 内容按「此刻渲染的那一套」的宽度排版、居中（宽度与左外边距由组件给），翻转时绕 Y 轴转。 */
+/* 内容按「此刻渲染的那一套」的宽度排版、居中（宽度与左外边距由组件给），翻转时绕 Y 轴转。
+   底边让出安全区（Home 指示条）：只缩内容区，.bravais-seam 自己仍 top/bottom:0，材质照样到屏幕边；
+   缝内容的 paddingBottom 仍是纯数字（底部基线的 MotionValue），别改成 calc。 */
 .bravais-seam-content {
     position: absolute;
     top: 0;
-    bottom: 0;
+    bottom: var(--safe-bottom);
     left: 50%;
     transform-origin: 50% 50%;
 }

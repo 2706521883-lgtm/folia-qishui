@@ -738,6 +738,11 @@ test.describe('[bravais-only] artist page wall', () => {
     ));
     /** 等墙落定：翻牌放完，再多等一拍（落定后不该再有数据更新的翻牌）。 */
     const settle = async (page: Page) => {
+        // 先等墙真的画出来：stage 还没挂载时下面那条 settling 断言是空真（0 个元素当然「没有 settling」），
+        // settle 就成了空转。缝上的按钮先于墙的 display 出现，在这段窗口里点缝里的「列表」会被丢掉且不重按
+        // （openList 里 displayRef.current 为空直接 return）——2026-10-16 实测：隔离单跑 5 次挂 3 次，
+        // 采样显示点下去时 9/10 次墙上还是 0 张磁贴；补一次点击立刻就好。
+        await expect(page.locator('.bravais-tile').first()).toBeAttached();
         await waitForBravaisWall(page);
         await page.waitForTimeout(500);
         await waitForBravaisWall(page);

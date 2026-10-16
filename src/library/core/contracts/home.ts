@@ -9,7 +9,7 @@ import type {
     StatusMessage,
     Theme,
 } from '../../../types';
-import type { ProviderCollection, ProviderUser } from '../../../types/onlineMusic';
+import type { OnlineProviderId, ProviderCollection, ProviderUser } from '../../../types/onlineMusic';
 import type { NavidromeSong } from '../../../types/navidrome';
 import type { LibraryStageToolsPort } from './ports';
 
@@ -73,7 +73,12 @@ export interface LibraryHomeData {
     onAddNavidromeSongsToQueue?: (songs: NavidromeSong[]) => void;
     navidromeFocusedAlbumIndex?: number;
     setNavidromeFocusedAlbumIndex?: (index: number) => void;
-    onSearchCommitted: (query: string, sourceTab: HomeViewTab, replace?: boolean) => void;
+    /**
+     * 离墙去搜索页（缝里的全局搜索、网格的搜索框都走这里）。第二个参数是提交时所在的页签，或者已经解析好的搜索来源
+     * （在线 provider id / 'local' / 'navidrome'）——网格与 Bravais 两个 surface 都在提交前自己解析来源、走同款两步：
+     * 先 submitSearch 执行，再带着同一个来源调这里；宿主只对页签键做兜底解析（resolveSearchSource）。
+     */
+    onSearchCommitted: (query: string, sourceTab: HomeViewTab | OnlineProviderId, replace?: boolean) => void;
     stageEnabled?: boolean;
     stageIsActive?: boolean;
     onOpenStagePlayer?: () => void;

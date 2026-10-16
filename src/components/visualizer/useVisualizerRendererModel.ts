@@ -26,6 +26,7 @@ import { useVisualizerTunings } from './useVisualizerTunings';
 import { NO_LYRIC_LINES } from '../../utils/lyrics/noLyricLines';
 import { selectLibraryPlayerBackdrop, useLibraryPlayerOcclusionStore } from '../../stores/useLibraryPlayerOcclusionStore';
 import { resolveVisualizerShowText } from '../app/presentation/playerVisualizerBackdrop';
+import { useIsDesktopLayout } from '../../hooks/useMobileShellLayout';
 
 // src/components/visualizer/useVisualizerRendererModel.ts
 //
@@ -65,6 +66,9 @@ export const useVisualizerRendererModel = ({
 }: VisualizerRendererModelDeps) => {
     const currentView = useAppViewStore(state => state.view);
     const isPanelOpen = useAppViewStore(state => state.isPanelOpen);
+    // 手机壳（<1024）上返回键必须常显：触屏没有 mousemove/hover，上游那套「动鼠标才浮现」
+    // 的交互在手机上等于没有出口。桌面档（≥1024）语义原样不变。
+    const isMobileShellLayout = !useIsDesktopLayout();
     const isPlayerChromeHidden = useAppChromeStore(state => state.isPlayerChromeHidden);
     const onPlayerPanelGuideHotspotChange = useAppChromeStore(state => state.setIsPlayerPanelGuideHotspotActive);
     const isSettingsModalOpen = useSettingsModalStore(state => state.settingsModalState.isOpen);
@@ -163,7 +167,7 @@ export const useVisualizerRendererModel = ({
         onLyricLineSeek: ['monet', 'pendolo'].includes(visualizerMode) ? onLyricLineSeek : undefined,
         onBack,
         isPanelOpen,
-        alwaysShowBackButton: alwaysShowPlayerBackButton || isPanelOpen,
+        alwaysShowBackButton: alwaysShowPlayerBackButton || isPanelOpen || isMobileShellLayout,
         onPlayerPanelGuideHotspotChange,
     };
 };

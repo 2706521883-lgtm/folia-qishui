@@ -39,7 +39,7 @@ export const LatticeFmNotice: React.FC = () => {
                     animate={{ opacity: 1, y: 96, x: '-50%' }}
                     exit={{ opacity: 0, y: 60, x: '-50%' }}
                     transition={{ type: 'spring', bounce: 0, duration: 0.45 }}
-                    className={`fixed top-0 left-1/2 z-[205] flex max-w-[min(92vw,26rem)] items-start gap-3 rounded-2xl px-5 py-3.5 shadow-xl backdrop-blur-md ${isDaylight
+                    className={`fixed top-0 left-1/2 z-[205] mt-[var(--safe-top)] flex max-w-[min(92vw,26rem)] items-start gap-3 rounded-2xl px-5 py-3.5 shadow-xl backdrop-blur-md ${isDaylight
                         ? 'border border-black/5 bg-white/80 text-zinc-800'
                         : 'border border-white/10 bg-white/10 text-white'}`}
                 >

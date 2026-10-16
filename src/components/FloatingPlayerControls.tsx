@@ -327,9 +327,13 @@ const FloatingPlayerControls: React.FC<FloatingPlayerControlsProps> = ({
                 盖掉同一节点上的 Tailwind transform，合并两层会让胶囊丢失居中、向右偏出去。
                 bottom 走共享 MotionValue（默认 32，即原来的 bottom-8），不是 transform 属性，
                 所以挂在这一层不会干扰居中。
+
+                窄屏把整条胶囊再压低 8px：安全区之上仍压着桌面留下的那 32px 底距，
+                手机上胶囊离 Home 条偏高。`margin-bottom` 与 `bottom` 相加，所以这一条要写成
+                一整个 calc —— 两条 `mb-*` 是互相覆盖而不是叠加。宽屏走原值，桌面像素不变。
             */}
             <motion.div
-                className={`absolute left-1/2 -translate-x-1/2 z-60 w-full flex justify-center pointer-events-none
+                className={`absolute left-1/2 -translate-x-1/2 z-60 w-full flex justify-center pointer-events-none mb-[var(--safe-bottom)] max-sm:mb-[calc(var(--safe-bottom)-8px)]
                     ${currentView === 'home'
                         ? 'max-w-[calc(100vw-120px)] md:max-w-[min(calc(32rem_+_var(--folium-player-bar-extra,0px)),calc(100vw-120px))]'
                         : 'max-w-[min(calc(32rem_+_var(--folium-player-bar-extra,0px)),100vw)] px-4'}`}
@@ -524,7 +528,7 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
                 )}
             </div>
 
-            {/* Row 3: Loop Button, Play Button, Lyrics Button */}
+            {/* Row 3: 两组圆按钮夹着播放键（窄屏），宽屏则是播放键 + 整排圆按钮 */}
             <button
                 onClick={(e) => {
                     e.stopPropagation();
@@ -541,28 +545,70 @@ const ExpandedView: React.FC<ExpandedViewProps> = ({
                 )}
             </button>
 
-            {/* 两个可自定义槽位。默认仍是循环模式 + 歌词时间轴，和改动前一致。 */}
+            {/* 两个可自定义槽位，外加两颗固定按钮：「队列拼贴」和「队列」。
+                窄屏的胶囊够不到侧栏的队列面板，这两颗是常驻入口。两个槽位默认仍是循环模式 +
+                歌词时间轴，和改动前一致。槽位数量仍是 2：固定按钮不打槽位的 data-ponder-slot
+                标记（见 PlayerControlSlotButton）。 */}
             <div
                 data-ponder-slots
                 className="contents sm:col-start-3 sm:row-start-1 sm:row-span-2 sm:flex sm:items-center sm:gap-1"
             >
-                <PlayerControlSlotButton
-                    actionId={slotPrimary}
-                    context={slotContext}
-                    primaryColor={primaryColor}
-                    isDaylight={isDaylight}
-                    controlsDisabled={controlsDisabled}
-                    className="col-start-1 row-start-2 justify-self-end sm:justify-self-auto"
-                />
+                {/* 窄屏这层 `contents` 让子元素直接落进胶囊的 1fr_auto_1fr 网格：左格放两个槽位、
+                    右格放两颗固定的。左右各两颗是尺寸算出来的，不是随手排的——iPhone SE 375px
+                    首页展开态那一格只有 76px，两颗圆按钮（36+4+36）正好卡满，三颗要 116px，
+                    会捅出格子和胶囊的内边距，被 `overflow-hidden` 切掉。
+                    宽屏 `sm:contents` 拆掉这两层外壳，四颗按钮回到同一行（DOM 顺序即视觉顺序，
+                    焦点顺序也对得上）。 */}
+                <div className="col-start-1 row-start-2 flex items-center justify-end gap-1 sm:contents">
+                    <PlayerControlSlotButton
+                        actionId={slotPrimary}
+                        context={slotContext}
+                        primaryColor={primaryColor}
+                        isDaylight={isDaylight}
+                        controlsDisabled={controlsDisabled}
+                    />
+                    <PlayerControlSlotButton
+                        actionId={slotSecondary}
+                        context={slotContext}
+                        primaryColor={primaryColor}
+                        isDaylight={isDaylight}
+                        controlsDisabled={controlsDisabled}
+                    />
+                </div>
 
-                <PlayerControlSlotButton
-                    actionId={slotSecondary}
-                    context={slotContext}
-                    primaryColor={primaryColor}
-                    isDaylight={isDaylight}
-                    controlsDisabled={controlsDisabled}
-                    className="col-start-3 row-start-2 justify-self-start sm:justify-self-auto"
-                />
+                <div className="col-start-3 row-start-2 flex items-center justify-start gap-1 sm:contents">
+                    {/* 固定按钮沿用这个按钮在界面里本来的叫法，不另起名字：
+                        拼贴用首页那颗「队列拼贴」，队列用队列命令自己的标题。
+                        文案不能取槽位那套（`song-wall` 是「播放队列（海报）」、`queue` 是
+                        「播放队列」）：后者与 `queue` 槽位同名，读屏和选择器都分不开。 */}
+                    {slotPrimary !== 'song-wall' && slotSecondary !== 'song-wall' && (
+                        <PlayerControlSlotButton
+                            actionId="song-wall"
+                            context={slotContext}
+                            primaryColor={primaryColor}
+                            isDaylight={isDaylight}
+                            controlsDisabled={controlsDisabled}
+                            markAsPonderSlot={false}
+                            labelKeyOverride="home.lattice"
+                        />
+                    )}
+                    {/* 队列：走 `panel-queue`（切到队列页签 + 开侧边面板），和面板顶栏那颗
+                        「播放列表」页签同一去处，不是命令面板里那条队列列表。
+                        标题仍写「队列」不改成页签的「播放列表」——那是面板页签自己的 title，
+                        两处同名会让 `getByTitle('播放列表')` 这类选择器和读屏都分不清。
+                        槽位里已经有一颗同名（`queue`）的队列按钮时不再重复摆一颗。 */}
+                    {slotPrimary !== 'queue' && slotSecondary !== 'queue' && (
+                        <PlayerControlSlotButton
+                            actionId="panel-queue"
+                            context={slotContext}
+                            primaryColor={primaryColor}
+                            isDaylight={isDaylight}
+                            controlsDisabled={controlsDisabled}
+                            markAsPonderSlot={false}
+                            labelKeyOverride="commandPalette.commands.queue.title"
+                        />
+                    )}
+                </div>
             </div>
 
             {/* Row 2: Current Time, Progress Bar, Duration */}

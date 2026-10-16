@@ -5,6 +5,9 @@
     position: absolute;
     right: 24px;
     bottom: 24px;
+    /* 安全区：让开 Home 指示条与横屏圆角（桌面 env()=0，无变化） */
+    margin-right: var(--safe-right);
+    margin-bottom: var(--safe-bottom);
     z-index: 30;
     color: var(--text-primary, #f7f4ee);
 }

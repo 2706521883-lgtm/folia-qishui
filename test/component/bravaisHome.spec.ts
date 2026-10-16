@@ -214,7 +214,7 @@ test.describe('[bravais-only] home', () => {
         expect(await page.evaluate(() => window.__homeProbe!.hiddenView())).toBe('browse');
     });
 
-    test('the seam search box submits through onSearchCommitted, the one way off the wall', async ({ page }) => {
+    test('the seam search box runs the search and submits through onSearchCommitted — the one way off the wall', async ({ page }) => {
         await page.keyboard.press('/');
         await expect(seam(page)).toHaveAttribute('data-bravais-seam', 'search');
         const input = seam(page).locator('input[name="bravais-search"]');
@@ -222,7 +222,15 @@ test.describe('[bravais-only] home', () => {
         await page.evaluate(() => window.__homeProbe!.clearLog());
         await input.fill('blue train');
         await input.press('Enter');
-        await expect.poll(async () => (await calls(page, 'searchCommitted')).map(call => [call.text, call.key])).toEqual([['blue train', 'playlist']]);
+        // 与网格 handleSearch 同款两步：搜索真的执行了（store 里已经有这次提交），在线页签的来源解析成当前 provider
+        // 而不是页签键（'playlist' 会被宿主兜底成旧的 'netease'，跟搜索页的来源 Tab 对不上）。
+        await expect.poll(() => page.evaluate(async () => {
+            const modulePath = '/src/stores/useSearchNavigationStore.ts';
+            const { useSearchNavigationStore } = await import(/* @vite-ignore */ modulePath);
+            const state = useSearchNavigationStore.getState();
+            return { query: state.searchQuery, source: state.searchSourceTab };
+        })).toEqual({ query: 'blue train', source: PROBE_PROVIDER_A });
+        await expect.poll(async () => (await calls(page, 'searchCommitted')).map(call => [call.text, call.key])).toEqual([['blue train', PROBE_PROVIDER_A]]);
         await expect(seam(page)).toHaveAttribute('data-bravais-seam', 'home');
 
         await seam(page).locator('[data-bravais-seam-action="search"]').click();

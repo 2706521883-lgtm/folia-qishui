@@ -17,7 +17,13 @@ export default defineConfig({
   // 每个 worker 都是一个完整 dev 模式应用加浏览器，默认的「CPU 核数一半」会把机器压满：
   // 20 线程机器上 10 个 worker 负载到 23，页面挂载要 16–19s，十几条用例在各种等待上超时，
   // 整轮反而要 16 分钟。5 个 worker 只剩真实失败，整轮约 14 分钟。
+  // 2026-10-16：5 个 worker 在本机跑全量仍会随机压出「页面没起来」类失败（`window.mount()` 未定义 /
+  // `#app-splash` 60s 不消失；三轮 7、15 条，每轮名单几乎不重叠）。试过降到 4：零收益（10 条全是这类）
+  // 且整轮慢 1.7 分钟，于是保持 5；这类抖动交给下面的 retries——失败重跑一次就过（启动类第二遍几乎必过），
+  // 真回归两次都挂，照旧暴露。dev server 日志里没有任何 504 / 转译错误，就是 dev 模式模块图在并发下的启动抖动。
   workers: 5,
+  // 启动类抖动的重试（真回归会两次都挂）；trace 本来就在 on-first-retry 上采集。
+  retries: 1,
   fullyParallel: false,
   reporter: 'line',
   timeout: 90_000,

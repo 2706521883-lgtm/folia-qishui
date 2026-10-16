@@ -104,7 +104,7 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
                     initial={{ opacity: 0, y: 28 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 28 }}
-                    className={`fixed inset-0 flex flex-col overflow-hidden px-3 py-4 sm:px-6 sm:py-6 ${
+                    className={`fixed inset-0 flex flex-col overflow-hidden safe-sheet-inset ${
                         hasCollection ? 'z-[5]' : 'z-50'
                     }`}
                     style={{
@@ -195,9 +195,13 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
                                 </button>
                             </div>
                         ) : results.length === 0 ? (
-                            <div className="flex h-full items-center justify-center text-sm opacity-50">
-                                {t('home.noResults')}
-                            </div>
+                            // 空查询不显示「无结果」：那句描述的是「搜过了没有」，不是「还没搜」。
+                            // 移动壳的搜索 Tab 会以空搜索页进入，这里就是首屏。
+                            searchQuery.trim() === '' ? null : (
+                                <div className="flex h-full items-center justify-center text-sm opacity-50">
+                                    {t('home.noResults')}
+                                </div>
+                            )
                         ) : (
                             <div className="flex h-full flex-col">
                                 <div className="min-h-0 flex-1">

@@ -49,9 +49,22 @@ const hasElectronBridge = (): boolean => (
   && typeof window.electron?.removeLocalCoverAsset === 'function'
 );
 
+// 原生壳（Capacitor）判定：壳里 Capacitor 桥会在页面脚本执行前注入 window.Capacitor。
+// 刻意不 import @capacitor/core，桌面/网页构建保持零新增运行时依赖。
+const isNativeShellRuntime = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (window.location.protocol === 'capacitor:') return true;
+  const bridge = (window as typeof window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  return bridge?.isNativePlatform?.() === true;
+};
+
 export const isLocalCoverWebRuntimeSupported = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (hasElectronBridge()) return false;
+  // 手机壳里没有这套封面基建：iOS 的 WKWebView 没有 Service Worker，启动链会在
+  // navigator.serviceWorker.ready 上等满 10 秒（黑屏）；Android 的 https://localhost
+  // 会被下面的直连判定放行，注册一个永远不会生效的 SW。整条链路对壳直接关掉。
+  if (isNativeShellRuntime()) return false;
   const isLocalhost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
   return (window.location.protocol === 'https:' || isLocalhost)
     && window.isSecureContext

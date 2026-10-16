@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "汽水音源服务器（electron/qishui-server.cjs）的配置示例。真实配置默认放在 %APPDATA%/Folia/qishui-server.config.json。",
+    "首次启动时服务器会自己生成一份（含随机令牌）并打印到控制台；这份示例只是给手改用的参考，不要直接把示例拷成真配置。",
+    "改完要重启服务器进程才生效。"
+  ],
+
+  "_bind": "监听地址。只绑回环；对外访问靠 Tailscale / 反向代理，本进程不做 TLS。除非你清楚在做什么，否则别改成 0.0.0.0。",
+  "bind": "127.0.0.1",
+  "port": 8787,
+
+  "_publicBaseUrl": "客户端拿到的音频地址前缀。留空 = 按请求的 Host 头拼（隧道/反代场景下写死成公网形态更省事，例如 https://pc.tailnet.ts.net）。",
+  "publicBaseUrl": "",
+
+  "_tokens": [
+    "设备令牌：Authorization: Bearer <token>；音频端点额外允许 ?t=<token>（<audio> 设不了请求头）。",
+    "一台设备一枚，泄露了删掉那一枚即可，不影响别的设备。改完重启生效。"
+  ],
+  "tokens": [
+    { "name": "default", "token": "<24 字节随机 hex>", "createdAt": "2026-10-16" }
+  ],
+
+  "_allowedOrigins": [
+    "允许跨域读取响应的来源，支持 `http://localhost:*` 端口通配。",
+    "门槛是令牌、不是 CORS，所以回环端口通配是安全的；不要写 '*'（那等于放弃这道防线）。"
+  ],
+  "allowedOrigins": ["capacitor://localhost", "http://localhost:*", "http://127.0.0.1:*"],
+
+  "_audio": [
+    "音频反代白名单：/a?u= 只允许这些 host 及其子域，防的是「替客户端下载任意 URL」的 SSRF。",
+    "匹配规则是标签边界（host 等于白名单项，或是它的子域），不做 includes —— 否则 evilqishui.com 也会命中。",
+    "所以这里必须写完整域名：写 'douyin' 匹配不到实测会出现的 douyinvod.com。",
+    "被拒时服务器日志会记下具体 host，按日志补项即可。"
+  ],
+
+  "_audioTranscode": [
+    "按需转码：客户端放不了 AAC 时（页面里的能力探针报的，见 src/services/onlineMusic/qishuiAudioCapability.ts）",
+    "会请求 /a?...&fmt=mp3，服务器就把解密后的整轨转成 MP3 落缓存再供片 —— 一次转码、整段可拖动。",
+    "只在那种客户端上发生：手机 / 桌面 Electron / 真 Chrome 都原生支持 AAC，永远走原字节直通。",
+    "需要一台**能编 MP3** 的 ffmpeg：优先用 QISHUI_SERVER_FFMPEG 指的那个，否则找 PATH 上的 ffmpeg；",
+    "启动时会用 `ffmpeg -encoders` 实探 libmp3lame（只有 FLAC/WAV 的精简版会被认出来并拒绝），",
+    "探不到就记一行日志、然后一律原样回退 AAC —— 不会有比不开更糟的情况。",
+    "cacheMaxBytes 是缓存上限，按最近播放时间淘汰（0 = 不设上限）。删掉整个目录即可清空缓存。"
+  ],
+  "audio": {
+    "transcode": true,
+    "cacheMaxBytes": 2147483648,
+    "transcodeBitrate": "192k",
+    "hostAllowlist": [
+      "qishui.com",
+      "douyinvod.com",
+      "douyin.com",
+      "douyinpic.com",
+      "douyinstatic.com",
+      "douyincdn.com",
+      "byteimg.com",
+      "bytecdntp.com",
+      "pstatp.com",
+      "snssdk.com",
+      "bytedance.com"
+    ]
+  }
+}

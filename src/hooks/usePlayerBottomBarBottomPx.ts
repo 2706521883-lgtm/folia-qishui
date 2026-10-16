@@ -4,6 +4,7 @@ import { playerBottomBarLiveOffset } from '../stores/motionSignals';
 import { usePlayerChromeSettingsStore } from '../stores/usePlayerChromeSettingsStore';
 import { useIsPlayerBottomBarHost } from '../components/floating-player/PlayerBottomBarLayoutContext';
 import { useMediaQuery } from './useMediaQuery';
+import { useMobileShellBottomLiftPx } from './useMobileShellLayout';
 import {
     PLAYER_BOTTOM_BAR_BASE_OFFSET_PX,
     resolvePlayerBottomComponentBottomPx,
@@ -16,15 +17,19 @@ import {
 /**
  * 返回可直接绑定到 motion 元素 bottom 样式的值。
  * 传入组件原来的底距后，默认设置保持原布局，用户调整只增加同一段抬升量。
+ *
+ * 移动壳（<1024 且不在播放页）里再叠加一节固定的 Tab 栏抬升量——贴底一族全部走这个出口，
+ * 所以是一处改、全体同步。壳不在场时抬升量为 0，桌面档与播放页的数值完全不变。
  */
 export const usePlayerBottomBarBottomPx = (
     componentBaseBottomPx = PLAYER_BOTTOM_BAR_BASE_OFFSET_PX,
-): MotionValue<number> => (
-    useTransform(
+): MotionValue<number> => {
+    const shellLiftPx = useMobileShellBottomLiftPx();
+    return useTransform(
         playerBottomBarLiveOffset,
-        value => resolvePlayerBottomComponentBottomPx(value, componentBaseBottomPx),
-    )
-);
+        value => resolvePlayerBottomComponentBottomPx(value, componentBaseBottomPx) + shellLiftPx,
+    );
+};
 
 /** 原来的 `bottom-28 sm:bottom-6`，即 sm 断点上下各自的底距。 */
 const SIDE_PANEL_BASE_BOTTOM_PX = { wide: 24, narrow: 112 } as const;

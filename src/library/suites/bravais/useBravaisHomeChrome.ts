@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { HomeViewTab } from '../../../types';
+import type { OnlineProviderId } from '../../../types/onlineMusic';
 import type { LibraryHomeSurfaceProps } from '../../core/contracts/suite';
 import type { LibraryHomeTabKey, LibraryHomeTabView } from '../../core/contracts/homeModel';
+import { isOnlineHomeTab } from '../../core/model/homeSources';
+import { resolveSearchSource, useSearchNavigationStore } from '../../../stores/useSearchNavigationStore';
 import type { BravaisSeamTab } from './bravaisLayer';
 import type { BravaisHomeSearch, BravaisHomeTool } from './bravaisHomeModels';
 import { cycleHomeTab } from './bravaisHomeProjection';
@@ -12,9 +14,10 @@ import { selectBravaisHasCurrentSong } from './bravaisBack';
 import { usePlaybackStore } from '../../../stores/usePlaybackStore';
 
 // src/library/suites/bravais/useBravaisHomeChrome.ts
-// 首页缝里与来源无关的那一部分（设计稿 §10.5）：五个一级页签与 F6 的循环、全局搜索框（提交走 onSearchCommitted
-// 去 SearchWorkspace，过渡期唯一的离墙路径）、app 级入口（打开队列 = 整墙切到 Lattice、回到播放页、舞台播放器、
-// 设置）与扫描进度。各来源的墙（BravaisHomeSources）在它之上补自己的二级切换、「⋯」与刷新。
+// 首页缝里与来源无关的那一部分（设计稿 §10.5）：五个一级页签与 F6 的循环、全局搜索框（与网格 handleSearch 同款两步：
+// 先 submitSearch 执行搜索，再把解析好的来源交给 onSearchCommitted 去 SearchWorkspace，过渡期唯一的离墙路径）、
+// app 级入口（打开队列 = 整墙切到 Lattice、回到播放页、舞台播放器、设置）与扫描进度。
+// 各来源的墙（BravaisHomeSources）在它之上补自己的二级切换、「⋯」与刷新。
 // 回调身份稳定（latest-ref），层描述不因它们换身份。
 
 export type BravaisHomeChrome = {
@@ -32,13 +35,14 @@ export type BravaisHomeChrome = {
 
 type ChromeProps = Pick<
     LibraryHomeSurfaceProps,
-    'onSearchCommitted' | 'onOpenLattice' | 'onBackToPlayer' | 'onOpenStagePlayer' | 'stageEnabled' | 'stageIsActive' | 'onOpenSettings'
+    'onSearchCommitted' | 'localSongs' | 'localLibraryCatalog' | 'onOpenLattice' | 'onBackToPlayer' | 'onOpenStagePlayer' | 'stageEnabled' | 'stageIsActive' | 'onOpenSettings'
 >;
 
 export const useBravaisHomeChrome = ({
     tab,
     tabs,
     selectTab,
+    providerId,
     scanPercent,
     scanning,
     props,
@@ -46,14 +50,17 @@ export const useBravaisHomeChrome = ({
     tab: LibraryHomeTabKey;
     tabs: readonly LibraryHomeTabView[];
     selectTab: (key: LibraryHomeTabKey) => boolean;
+    /** 当前在线来源（提交搜索时在线页签的来源；本地 / Navidrome 页签走 resolveSearchSource）。 */
+    providerId: OnlineProviderId;
     scanPercent: number;
     scanning: boolean;
     props: ChromeProps;
 }): BravaisHomeChrome => {
     const { t } = useTranslation();
     const searchOpen = useBravaisHomeUiStore(state => state.searchOpen);
-    const latest = useRef({ tab, tabs, selectTab, props });
-    latest.current = { tab, tabs, selectTab, props };
+    const submitSearch = useSearchNavigationStore(state => state.submitSearch);
+    const latest = useRef({ tab, tabs, selectTab, providerId, props });
+    latest.current = { tab, tabs, selectTab, providerId, props };
 
     const onSelectTab = useCallback((key: string) => { latest.current.selectTab(key as LibraryHomeTabKey); }, []);
     const cycleTab = useCallback((delta: 1 | -1) => {
@@ -75,8 +82,26 @@ export const useBravaisHomeChrome = ({
         hint: t('libraryBravaisHome.searchHint'),
         submitLabel: t('libraryBravaisHome.searchSubmit'),
         closeLabel: t('libraryBravaisHome.searchClose'),
-        onSubmit: query => latest.current.props.onSearchCommitted(query, latest.current.tab as HomeViewTab),
-    }), [t]);
+        // 与网格 handleSearch 同一套两步：先 submitSearch 真的执行（store 里立刻 mark 开页 + 加载态，结果异步填上），
+        // 再把同一个来源交给宿主导航。只做第二步的话搜索页是空手开的（没有缓存 →「未找到相关结果」），来源若是页签键
+        // 还会被 resolveSearchSource 兜底成旧的 'netease'、跟当前平台对不上（在线页签必须解析成当前 provider）。
+        onSubmit: query => {
+            const { tab: currentTab, providerId: currentProviderId, props: currentProps } = latest.current;
+            const source = isOnlineHomeTab(currentTab) ? currentProviderId : resolveSearchSource(currentTab);
+            void (async () => {
+                const didSearch = await submitSearch({
+                    query,
+                    sourceTab: source,
+                    deps: {
+                        localSongs: currentProps.localSongs,
+                        localLibraryCatalog: currentProps.localLibraryCatalog,
+                        t: (key, fallback) => t(key, fallback ?? ''),
+                    },
+                });
+                if (didSearch) currentProps.onSearchCommitted(query, source);
+            })();
+        },
+    }), [submitSearch, t]);
 
     const searchTool = useMemo<BravaisHomeTool>(() => ({
         id: 'search',

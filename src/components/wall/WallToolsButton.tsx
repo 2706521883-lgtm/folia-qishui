@@ -6,6 +6,7 @@ import { useLatticeSettingsStore } from '../../stores/useLatticeSettingsStore';
 import { openCommandPalette } from '../../stores/useAppViewStore';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { usePlayerBottomBarBottomPx } from '../../hooks/usePlayerBottomBarBottomPx';
+import { NARROW_BOTTOM_CHROME_BASE_PX } from '../../utils/playerBottomBarLayout';
 import { SlideActionButton } from '../shared/SlideActionButton';
 import './WallToolsButton.css';
 
@@ -295,7 +296,9 @@ export function WallToolsSurface({ idPrefix, label, isDaylight, entries, help, q
     const tintEnabled = useLatticeSettingsStore(state => state.latticePosterTintEnabled);
     const handleToggleLatticePosterTint = useLatticeSettingsStore(state => state.handleToggleLatticePosterTint);
     const isWideLayout = useMediaQuery('(min-width: 640px)');
-    const bottomPx = usePlayerBottomBarBottomPx(isWideLayout ? 24 : 16);
+    // 窄屏展开态胶囊几乎满宽（见 FloatingPlayerControls 的 max-w-[calc(100vw-120px)]），
+    // 靠右的这个按钮必然被压在下面（层级 z-60 > z-30）。见 NARROW_BOTTOM_CHROME_BASE_PX。
+    const bottomPx = usePlayerBottomBarBottomPx(isWideLayout ? 24 : NARROW_BOTTOM_CHROME_BASE_PX);
 
     const close = () => {
         setIsOpen(false);

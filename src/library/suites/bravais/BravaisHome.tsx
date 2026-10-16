@@ -56,6 +56,7 @@ const BravaisHome: React.FC<LibraryHomeSurfaceProps> = (props) => {
         tab,
         tabs,
         selectTab,
+        providerId: online.providerId,
         scanPercent,
         scanning: Boolean(actionState.scan?.active),
         props,

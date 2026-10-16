@@ -1,5 +1,6 @@
 import React from 'react';
 import FloatingPlayerControls from '../../FloatingPlayerControls';
+import MobileTabBar from '../../mobile/MobileTabBar';
 import SearchWorkspace from '../search/SearchWorkspace';
 import DevDebugOverlay from '../../DevDebugOverlay';
 import MemoryMonitorWindow from '../../debug/MemoryMonitorWindow';
@@ -22,6 +23,7 @@ const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
         memoryMonitor,
         floatingControls,
         nowPlayingToast,
+        mobileTabBar,
     } = model;
 
     return (
@@ -37,6 +39,8 @@ const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
                 && <FloatingPlayerControls {...floatingControls} />}
 
             {nowPlayingToast && <NowPlayingToast {...nowPlayingToast} />}
+
+            {mobileTabBar && <MobileTabBar {...mobileTabBar} />}
         </>
     );
 };

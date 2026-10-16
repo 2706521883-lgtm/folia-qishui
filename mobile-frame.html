@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Folia 移动端预览台</title>
+    <!--
+      开发用多设备预览台（dev-only：不在 Electron/Web 打包入口里，产物中不存在）。
+      打开：npm run dev 后访问 http://localhost:3000/mobile-frame.html
+      原理：每个 iframe 的 CSS 视口 = iframe 的真实像素尺寸，所以框内是该设备下的真实布局，
+      不是桌面窗口的缩放图；改一行代码，所有框一起 HMR 刷新。
+      可选参数：?d=15pro,se 只看指定设备；?u=/some/path 指定框内初始路由；?nosplash=0 不跳过开场动画；
+      ?safe=0 不注入安全区（用来看「没做适配」时被灵动岛盖住的样子）。
+      安全区：应用已带 viewport-fit=cover（index.html），安全区由它自己消费 src/index.css 里的 --safe-*。
+      所以这里不再收边，iframe 铺满整屏，改成把设备的安全区数值内联写进 iframe 的 <html>——
+      等价于真机上 iOS 给出的 env(safe-area-inset-*)，假灵动岛/状态栏/Home 条照旧画在上面。
+    -->
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body {
+        background: #09090b;
+        color: #e6e6ea;
+        font: 13px/1.5 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        align-items: center;
+        padding: 10px 16px;
+        background: rgba(9, 9, 11, 0.92);
+        border-bottom: 1px solid #232329;
+        backdrop-filter: blur(10px);
+      }
+      h1 { margin: 0; font-size: 14px; font-weight: 600; }
+      .hint { color: #85858e; }
+      .hint code {
+        color: #b9b9c1;
+        background: #17171b;
+        padding: 1px 5px;
+        border-radius: 4px;
+      }
+      .spacer { flex: 1 1 0; min-width: 0; }
+      .ctl { display: inline-flex; align-items: center; gap: 6px; color: #b9b9c1; }
+      input[type="text"] {
+        width: 200px;
+        padding: 5px 8px;
+        background: #141418;
+        color: inherit;
+        border: 1px solid #303037;
+        border-radius: 6px;
+        font: inherit;
+      }
+      button {
+        padding: 5px 12px;
+        background: #1d1d22;
+        color: inherit;
+        border: 1px solid #34343b;
+        border-radius: 6px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover { background: #26262c; }
+      .chk { display: inline-flex; align-items: center; gap: 6px; color: #b9b9c1; cursor: pointer; user-select: none; }
+      main {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 30px 30px;
+        padding: 22px 18px 72px;
+        /* 各机身高度不同：底部对齐，让所有机身「站」在同一条线上（像设备陈列），说明文字在下面 */
+        align-items: flex-end;
+      }
+      .device { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+      /* 说明文字固定两行高度（名字一行 + 参数一行，参数最多折两行），保证每台机身底边对齐不歪 */
+      .label { width: 100%; height: 56px; color: #8a8a93; font-size: 12px; line-height: 1.5; overflow: hidden; }
+      .label b { color: #dcdce2; font-weight: 600; }
+      .label .meta { color: #62626a; }
+      .status { margin-left: 6px; }
+      .status.ok { color: #6ee7a0; }
+      .status.warn { color: #e7c36e; }
+      .status.bad { color: #ef7a7a; }
+      .viewport { position: relative; }
+      /* 屏幕底色 = 应用 html/body 的背景色（#09090b）。真机上安全区那条边不是黑的，而是拿页面的
+         背景色填的（WebKit：inset area is filled with the page's background-color），这里照抄。 */
+      .screen { position: relative; overflow: hidden; background: #09090b; }
+      /* iframe 始终铺满整屏（应用自己带 viewport-fit=cover，安全区靠注入的 --safe-* 让位，和真机一致）。 */
+      .screen iframe { position: absolute; left: 0; top: 0; border: 0; display: block; background: #09090b; }
+      .device.phone .screen {
+        border-radius: 36px;
+        box-shadow: 0 0 0 9px #17171b, 0 0 0 10px #2c2c33, 0 14px 36px rgba(0, 0, 0, 0.55);
+      }
+      .device.tablet .screen {
+        border-radius: 18px;
+        box-shadow: 0 0 0 8px #17171b, 0 0 0 9px #2c2c33, 0 14px 36px rgba(0, 0, 0, 0.55);
+      }
+      .device.desktop .screen {
+        border-radius: 8px;
+        box-shadow: 0 0 0 1px #2c2c33;
+      }
+      /* 系统状态栏：跟假灵动岛配对出现，表明这条黑边是系统区域（时间 / 电量）而不是应用内容。 */
+      .statusbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 26px;
+        color: #fff;
+        font: 600 12px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .statusbar .batt {
+        position: relative;
+        width: 24px;
+        height: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.45);
+        border-radius: 3px;
+      }
+      .statusbar .batt::after {
+        content: "";
+        position: absolute;
+        right: -3px;
+        top: 3px;
+        width: 2px;
+        height: 6px;
+        border-radius: 0 1px 1px 0;
+        background: rgba(255, 255, 255, 0.45);
+      }
+      .statusbar .batt i {
+        position: absolute;
+        inset: 2px;
+        border-radius: 2px;
+        background: #fff;
+      }
+      /* 灵动岛 / Home 指示条：尺寸与位置由 render() 按设备 pt 值 × 显示缩放写在内联样式里
+         （竖屏是顶部居中，横屏是左边缘居中）。 */
+      .notch {
+        position: absolute;
+        top: 11px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 125px;
+        height: 37px;
+        border-radius: 19px;
+        background: #000;
+        /* 真机上灵动岛是纯黑挖孔，底下的应用内容是从它下面穿过去的；
+           再留一圈极淡的描边，预览里才看得到它的位置。 */
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+        z-index: 3;
+        pointer-events: none;
+      }
+      .homebar {
+        position: absolute;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 140px;
+        height: 5px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.65);
+        z-index: 3;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Folia 移动端预览台</h1>
+      <span class="hint">
+        改代码自动刷新（HMR）· 手机真机：同 Wi-Fi 开
+        <code>http://电脑IP:3000/?debug=1</code>（IP 用 <code>ipconfig</code> 查）
+      </span>
+      <span class="spacer"></span>
+      <label class="ctl">路径 <input id="path" type="text" spellcheck="false" /></label>
+      <button id="apply">打开</button>
+      <label class="chk"><input id="nosplash" type="checkbox" /> 跳过开场动画</label>
+      <button id="refresh">⟳ 全部刷新</button>
+    </header>
+    <main id="stage"></main>
+    <script>
+      (function () {
+        'use strict';
+        var params = new URLSearchParams(location.search);
+        var appPath = params.get('u') || '/';
+        var skipSplash = params.get('nosplash') !== '0';
+        var injectSafe = params.get('safe') !== '0';
+
+        // 设备清单：w/h 是该设备的 CSS 视口尺寸（不是物理像素）；safeArea 是该设备真机上的
+        // env(safe-area-inset-*) 数值（pt），会按原样注入 iframe（见 injectSafeArea）。
+        var DEVICES = [
+          { id: '15pro', name: 'iPhone 15/16 Pro', w: 393, h: 852, kind: 'phone', notch: true, homebar: true, safeArea: { top: 59, bottom: 34 }, note: '主开发参照 · 19.5:9 · 灵动岛 + Home 条' },
+          { id: 'se', name: 'iPhone SE', w: 375, h: 667, kind: 'phone', note: '最挤的极端 · 16:9 · 无安全区' },
+          { id: 'land', name: 'iPhone 横屏', w: 852, h: 393, kind: 'phone', islandLeft: true, safeArea: { left: 59, right: 59, bottom: 21 }, note: '全屏播放页形态 · 左右让开圆角/挖孔' },
+          { id: 'ipad', name: 'iPad mini', w: 744, h: 1133, kind: 'tablet', note: '中间断点 · 4:3' },
+          { id: 'desk', name: '桌面对照', w: 1280, h: 800, kind: 'desktop', note: '回归：别把桌面改坏' }
+        ];
+        var MAX_DISPLAY_W = 470;
+        var MAX_DISPLAY_H = 730;
+
+        var only = (params.get('d') || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        var list = only.length ? DEVICES.filter(function (d) { return only.indexOf(d.id) !== -1; }) : DEVICES;
+        if (!list.length) list = DEVICES;
+
+        var stage = document.getElementById('stage');
+        var pathInput = document.getElementById('path');
+        var applyBtn = document.getElementById('apply');
+        var refreshBtn = document.getElementById('refresh');
+        var nosplashBox = document.getElementById('nosplash');
+
+        function frameUrl() {
+          var u = new URL(appPath, location.origin);
+          if (skipSplash) u.searchParams.set('splash', '0');
+          return u.pathname + u.search + u.hash;
+        }
+
+        // 把预览台自己的状态也同步进地址栏，刷新页面不丢设置。
+        function syncHarnessUrl() {
+          try {
+            var h = new URL(location.href);
+            if (appPath === '/') h.searchParams.delete('u'); else h.searchParams.set('u', appPath);
+            if (skipSplash) h.searchParams.delete('nosplash'); else h.searchParams.set('nosplash', '0');
+            history.replaceState(null, '', h.toString());
+          } catch (e) { /* 同步失败无所谓 */ }
+        }
+
+        // 把设备的安全区写进 iframe 的 <html> 内联样式：内联优先于应用 src/index.css 里 :root 的
+        // env(...) 规则，等价于真机上 iOS 给出的值。变量只在绘制时解析、不参与 React 渲染，
+        // 所以什么时候注入都行（iframe 每次 load 都重来一遍，HMR 全量重载也算）。
+        function injectSafeArea(frame, d) {
+          try {
+            var root = frame.contentDocument && frame.contentDocument.documentElement;
+            if (!root) return;
+            var sa = d.safeArea || {};
+            root.style.setProperty('--safe-top', (sa.top || 0) + 'px');
+            root.style.setProperty('--safe-right', (sa.right || 0) + 'px');
+            root.style.setProperty('--safe-bottom', (sa.bottom || 0) + 'px');
+            root.style.setProperty('--safe-left', (sa.left || 0) + 'px');
+          } catch (e) { /* 文档还没就绪：下一次 load 会再来 */ }
+        }
+
+        function safeAreaLabel(sa) {
+          var parts = [];
+          if (sa.top) parts.push('上 ' + sa.top);
+          if (sa.bottom) parts.push('下 ' + sa.bottom);
+          if (sa.left) parts.push('左 ' + sa.left);
+          if (sa.right) parts.push('右 ' + sa.right);
+          return parts.length ? ' · 安全区 ' + parts.join(' / ') + (injectSafe ? '（注入）' : '（未注入）') : '';
+        }
+
+        function render() {
+          var url = frameUrl();
+          stage.textContent = '';
+          list.forEach(function (d, i) {
+            var scale = Math.min(1, MAX_DISPLAY_W / d.w, MAX_DISPLAY_H / d.h);
+            var dw = Math.round(d.w * scale);
+            var dh = Math.round(d.h * scale);
+            var sa = d.safeArea || {};
+
+            var box = document.createElement('div');
+            box.className = 'device ' + d.kind;
+
+            var label = document.createElement('div');
+            label.className = 'label';
+            label.style.maxWidth = dw + 'px';
+            label.innerHTML =
+              '<div class="name-line"><b>' + d.name + '</b> · ' + d.w + '×' + d.h + '</div>' +
+              '<div class="meta">显示 ×' + scale.toFixed(2) + safeAreaLabel(sa) +
+              ' · ' + d.note + '</div>';
+
+            var vp = document.createElement('div');
+            vp.className = 'viewport';
+            vp.style.width = dw + 'px';
+            vp.style.height = dh + 'px';
+
+            var screen = document.createElement('div');
+            screen.className = 'screen';
+            screen.style.width = dw + 'px';
+            screen.style.height = dh + 'px';
+
+            var frame = document.createElement('iframe');
+            frame.title = d.name;
+            frame.style.width = d.w + 'px';
+            frame.style.height = d.h + 'px';
+            frame.style.transform = 'scale(' + scale + ')';
+            frame.style.transformOrigin = 'top left';
+            // 铺满整屏；安全区交给应用自己用注入的 --safe-* 让位（真机同款行为）
+            if (injectSafe) frame.addEventListener('load', function () { injectSafeArea(frame, d); });
+            // 状态点 + 看护：dev 下应用启动偶发卡住（SW 队列、图标请求风暴），25s 没挂载就自动重载
+            // 一次（第二次加载走 HTTP 缓存、请求量骤降）。
+            // 重载之后**不再放弃**：以前到这里 30s 就清掉定时器、永久标「✕ 未挂载」，于是启动慢
+            // 一点的实例（比如同时有 e2e 在抢 CPU）明明挂上了，状态点还在报错——假阴性比不报还糟。
+            // 现在一直轮询，只把文案改成「仍在加载」，挂上就自己翻成「已就绪」。
+            var status = document.createElement('span');
+            status.className = 'status';
+            status.textContent = '○ 加载中…';
+            label.querySelector('.name-line').appendChild(status);
+            var startedAt = 0;
+            var reloaded = false;
+            var watch = setInterval(function () {
+              if (!frame.isConnected) { clearInterval(watch); return; }
+              if (!startedAt) return;
+              var mounted = false;
+              try {
+                var root = frame.contentDocument && frame.contentDocument.querySelector('#root');
+                mounted = !!(root && root.children.length > 0);
+              } catch (e) { /* 访问不到就当作还没挂载 */ }
+              var waited = Date.now() - startedAt;
+              if (mounted) {
+                clearInterval(watch);
+                status.textContent = '● 已就绪' + (waited > 25000 ? '（慢 ' + Math.round(waited / 1000) + 's）' : '');
+                status.className = 'status ok';
+                return;
+              }
+              if (!reloaded && waited > 25000) {
+                reloaded = true;
+                startedAt = Date.now();
+                status.textContent = '○ 卡住，自动重载…';
+                status.className = 'status warn';
+                frame.src = url;
+                return;
+              }
+              if (reloaded && waited > 45000) {
+                status.textContent = '○ 仍在加载…（重载后 ' + Math.round(waited / 1000) + 's，一直不出来就点 ⟳ 全部刷新）';
+                status.className = 'status warn';
+              }
+            }, 4000);
+            // 错峰加载：多个完整应用实例同时启动会抢 CPU，每 1.5s 起一个（原 350ms：五个实例几乎
+            // 同时开跑时最容易互相拖死，反而是「卡住」的主因）。
+            setTimeout(function () { startedAt = Date.now(); frame.src = url; }, i * 1500);
+
+            screen.appendChild(frame);
+            vp.appendChild(screen);
+            if (d.notch) {
+              // 状态栏横在灵动岛那条安全区里：铺满之后它盖在应用内容上（真机也是这么盖的）。
+              var statusbar = document.createElement('div');
+              statusbar.className = 'statusbar';
+              statusbar.style.height = Math.round((sa.top || 0) * scale) + 'px';
+              statusbar.innerHTML = '<span>9:41</span><span class="batt"><i></i></span>';
+              vp.appendChild(statusbar);
+              var notch = document.createElement('div');
+              notch.className = 'notch';
+              // 灵动岛真机尺寸 ≈ 125×37pt、距顶 11pt，按显示缩放换算
+              notch.style.width = Math.round(125 * scale) + 'px';
+              notch.style.height = Math.round(37 * scale) + 'px';
+              notch.style.top = Math.round(11 * scale) + 'px';
+              notch.style.borderRadius = Math.round(19 * scale) + 'px';
+              vp.appendChild(notch);
+            }
+            if (d.islandLeft) {
+              // 横屏：挖孔在左侧边缘、竖向居中（真机横屏时就在这一侧）
+              var island = document.createElement('div');
+              island.className = 'notch';
+              island.style.left = '0';
+              island.style.top = '50%';
+              island.style.transform = 'translateY(-50%)';
+              island.style.width = Math.round(37 * scale) + 'px';
+              island.style.height = Math.round(125 * scale) + 'px';
+              island.style.borderRadius = '0 ' + Math.round(19 * scale) + 'px ' + Math.round(19 * scale) + 'px 0';
+              vp.appendChild(island);
+            }
+            if (d.homebar) {
+              var homebar = document.createElement('div');
+              homebar.className = 'homebar';
+              homebar.style.width = Math.round(140 * scale) + 'px';
+              homebar.style.height = Math.max(3, Math.round(5 * scale)) + 'px';
+              homebar.style.bottom = Math.round(8 * scale) + 'px';
+              vp.appendChild(homebar);
+            }
+            box.appendChild(vp);
+            box.appendChild(label);
+            stage.appendChild(box);
+          });
+        }
+
+        nosplashBox.checked = skipSplash;
+        pathInput.value = appPath;
+
+        applyBtn.addEventListener('click', function () {
+          var v = pathInput.value.trim() || '/';
+          appPath = v.charAt(0) === '/' ? v : '/' + v;
+          pathInput.value = appPath;
+          syncHarnessUrl();
+          render();
+        });
+        pathInput.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') applyBtn.click();
+        });
+        nosplashBox.addEventListener('change', function () {
+          skipSplash = nosplashBox.checked;
+          syncHarnessUrl();
+          render();
+        });
+        refreshBtn.addEventListener('click', function () { render(); });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

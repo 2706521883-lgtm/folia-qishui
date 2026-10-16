@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { type ConfigEnv, type UserConfig, type ViteDevServer } from 'vite';
+import { type ConfigEnv, type HtmlTagDescriptor, type UserConfig, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import { commandPinyinPlugin } from './dev/pinyin/commandPinyinPlugin.mjs';
 import { normalizeBuildCommit, resolveBuildRepo } from './dev/build/buildIdentity.mjs';
@@ -128,6 +128,87 @@ function devLyricProxyPlugin() {
   };
 }
 
+// Dev-only helpers injected into every dev HTML page (apply: 'serve' keeps all of this out of
+// production builds):
+// 1) eruda 手机调试台：URL 带 ?debug=1 时从 /__eruda.js 加载并 eruda.init()。
+// 2) SW 启动保护：dev 下给 navigator.serviceWorker.register() 包一层超时。背景（2026-10-15 实测）：
+//    dev SW 曾与 Folia 封面 SW 抢 scope '/' 把浏览器 SW 队列堵死，而应用的启动链 `await register()`
+//    没有超时 → React 永不挂载、整页黑屏。这层保护 5s 不返回就放弃注册继续启动（只影响开发模式，
+//    代价是没有封面 SW；浏览器重启后 SW 恢复正常时这层不会触发）。
+// 3) 隐藏上游的 DEV suite 切换浮层（src/library/app/DevLibraryRendererSwitch.tsx，资料库左下角的
+//    「DEV · 集合视图 网格 / Bravais 墙面」）。它给上游开发验收用，生产构建根本不打包它，但开发时
+//    一直挂在墙上挡位置。显式启用额外 suite 时保留（VITE_LIBRARY_TUI=true，测试配置会带这个变量起
+//    服务）：那时浮层是切到 TUI 的入口，e2e 也依赖它点击。切换 suite 的正规入口在设置「资料库界面」。
+const DEV_SW_REGISTER_GUARD_MS = 5000;
+const HIDE_DEV_SUITE_SWITCH = process.env.VITE_LIBRARY_TUI !== 'true';
+
+function devErudaPlugin() {
+  let erudaSource: string | null = null;
+  return {
+    name: 'folia-dev-eruda',
+    apply: 'serve' as const,
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use('/__eruda.js', (_req, res) => {
+        let source = erudaSource;
+        if (source === null) {
+          try {
+            source = fs.readFileSync(path.resolve(__dirname, 'node_modules/eruda/eruda.js'), 'utf-8');
+          } catch {
+            res.statusCode = 404;
+            res.end('// eruda is not installed: npm i -D eruda');
+            return;
+          }
+          erudaSource = source;
+        }
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.end(source);
+      });
+    },
+    transformIndexHtml(): HtmlTagDescriptor[] {
+      const hideDevSuiteSwitchTags: HtmlTagDescriptor[] = HIDE_DEV_SUITE_SWITCH
+        ? [{
+            tag: 'style',
+            injectTo: 'head',
+            children: '[data-testid="dev-library-renderer-switch"] { display: none !important; }',
+          }]
+        : [];
+      return [
+        {
+          tag: 'script',
+          injectTo: 'head-prepend',
+          children: `(function(){
+  try {
+    var sw = navigator.serviceWorker;
+    if (!sw || !sw.register) return;
+    var orig = sw.register.bind(sw);
+    var T = ${DEV_SW_REGISTER_GUARD_MS};
+    sw.register = function () {
+      var real = orig.apply(null, arguments);
+      var guard = new Promise(function (_, reject) {
+        setTimeout(function () {
+          reject(new Error('folia-dev: serviceWorker.register() 超过 ' + T + 'ms 没有结果（浏览器 SW 队列疑似卡死），跳过并继续启动（仅开发模式的保护）。'));
+        }, T);
+      });
+      return Promise.race([real, guard]);
+    };
+  } catch (e) {}
+})();`,
+        },
+        ...hideDevSuiteSwitchTags,
+        {
+          tag: 'script',
+          injectTo: 'body',
+          children:
+            "(function(){if(!new URLSearchParams(location.search).has('debug'))return;" +
+            "var s=document.createElement('script');s.src='/__eruda.js';" +
+            "s.onload=function(){try{window.eruda&&window.eruda.init();}catch(e){}};" +
+            '(document.head||document.documentElement).appendChild(s);})();',
+        },
+      ];
+    },
+  };
+}
+
 export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig> {
   let commitHash = '';
   if (process.env.VERCEL_GIT_COMMIT_SHA) {
@@ -186,8 +267,13 @@ export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig
   const appReleaseChannel = process.env.APP_RELEASE_CHANNEL?.trim().toLowerCase() || 'realeco';
   const dockerStackVersion = process.env.DOCKER_STACK_VERSION?.trim() || '';
 
+  // 移动端壳（Capacitor）构建：npm run build:mobile 置位。只影响两处产出——相对 base
+  // （壳里页面从 https://localhost / capacitor://localhost 根加载，相对路径最稳）与关掉
+  // PWA 插件（壳内没有 service worker 基建，插件还会往 HTML 注入注册脚本）。
+  const isCapacitorBuild = process.env.FOLIA_BUILD_TARGET === 'capacitor';
+
   return {
-    base: process.env.ELECTRON === 'true' ? './' : '/',
+    base: process.env.ELECTRON === 'true' || isCapacitorBuild ? './' : '/',
     worker: {
       format: 'es'
     },
@@ -237,13 +323,20 @@ export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig
     },
     plugins: [
       devLyricProxyPlugin(),
+      devErudaPlugin(),
       commandPinyinPlugin(),
       react(),
-      VitePWA({
+      // 移动端壳构建不装 PWA 插件（见上方 isCapacitorBuild 注释）。
+      ...(isCapacitorBuild ? [] : [VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
         devOptions: {
-          enabled: true
+          // 开发模式下不注册 PWA 的 dev-service-worker（2026-10-15 实测后关闭）。原因：dev SW 与
+          // Folia 自己的封面 SW（public/folia-cover-sw.js，应用启动时按 scope '/' 注册）会互相顶替，
+          // 每个页面加载都是一次控制器替换；多 frame 预览台同时刷新时把浏览器的 SW 注册队列堵死，
+          // 而应用启动链里的 `await navigator.serviceWorker.register(...)` 没有超时，React 就永远不
+          // 挂载（黑屏）。关掉后 dev 下只剩封面 SW 一个稳定注册；生产构建不走这里，行为不变。
+          enabled: false
         },
         workbox: {
           maximumFileSizeToCacheInBytes: 5000000,
@@ -268,7 +361,7 @@ export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig
             }
           ]
         }
-      })
+      })])
     ],
     define: {
       '__COMMIT_HASH__': JSON.stringify(commitHash + commitSuffix),

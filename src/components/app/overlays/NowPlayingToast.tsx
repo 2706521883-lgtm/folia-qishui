@@ -138,7 +138,7 @@ const NowPlayingToast: React.FC<NowPlayingToastProps> = ({
                     // 底边跟右下角面板开关按钮和中间的进度条胶囊落在同一条基线上，
                     // 由共享 MotionValue 直接驱动 bottom（默认 32，即原来的 bottom-8）。
                     style={{ bottom: bottomBarBottomPx }}
-                    className="pointer-events-none fixed left-6 z-40"
+                    className="pointer-events-none fixed left-6 z-40 mb-[var(--safe-bottom)] ml-[var(--safe-left)]"
                 >
                     {/* 描边排在卡片前面：卡片自己是 relative，绘制顺序上压在描边上头，所以
                         描边内侧那一半被卡片背景盖住，露在外面的是外侧 + 辉光。

@@ -103,7 +103,7 @@ export function SidePanelList<T>({
                     exit={{ opacity: 0, x: 60, scale: 0.95 }}
                     transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                     data-testid="side-panel-list"
-                    className="absolute right-6 top-24 w-80 max-w-[calc(100vw-3rem)] rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel"
+                    className="absolute right-6 top-24 w-80 max-w-[calc(100vw-3rem)] rounded-3xl z-[80] flex flex-col p-6 shadow-2xl border backdrop-blur-2xl pointer-events-auto theme-glass-panel mb-[var(--safe-bottom)] mr-[var(--safe-right)]"
                     style={{
                         bottom: bottomBarBottomPx,
                         boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)',

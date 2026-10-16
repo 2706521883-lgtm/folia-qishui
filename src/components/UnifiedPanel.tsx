@@ -20,6 +20,8 @@ import type { ThemeSourceModel } from '../hooks/themeControllerState';
 import { getPlaybackSourceRef, getPlaybackSongSource, hasMixedPlaybackSources } from '../utils/appPlaybackGuards';
 import { resolveLikeAvailability } from '../utils/playerLikeAvailability';
 import { usePlayerBottomBarBottomPx } from '../hooks/usePlayerBottomBarBottomPx';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+import { NARROW_BOTTOM_CHROME_BASE_PX, PLAYER_BOTTOM_BAR_BASE_OFFSET_PX } from '../utils/playerBottomBarLayout';
 import { getSizedCoverUrl } from '../utils/coverUrl';
 import { openAddToPlaylist, useAddToPlaylistStore } from '../stores/useAddToPlaylistStore';
 import { usePlayerPanelTabShortcut } from '../hooks/usePlayerPanelTabShortcut';
@@ -248,7 +250,13 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     const isLocal = currentSong && !isNavidrome && (((currentSong as any).isLocal === true) || Boolean((currentSong as any).localRef?.songId));
     const playbackSourceRef = currentSong ? getPlaybackSourceRef(currentSong) : null;
     const isOnline = playbackSourceRef?.kind === 'online';
-    const bottomBarBottomPx = usePlayerBottomBarBottomPx();
+    // 窄屏（<640px）展开态胶囊高达 132 且几乎满宽，右下角这个 48px 的开关按原底距会整个
+    // 落在胶囊底下（同 z 层、胶囊画在后面且 overflow-hidden），看着就是「按钮没了」。
+    // 面板本体跟着开关一起抬，才仍然开在开关上方。见 NARROW_BOTTOM_CHROME_BASE_PX。
+    const isWideLayout = useMediaQuery('(min-width: 640px)');
+    const bottomBarBottomPx = usePlayerBottomBarBottomPx(
+        isWideLayout ? PLAYER_BOTTOM_BAR_BASE_OFFSET_PX : NARROW_BOTTOM_CHROME_BASE_PX,
+    );
     const panelMaxHeight = useTransform(
         bottomBarBottomPx,
         bottom => `calc(100dvh - ${bottom + 64}px)`,
@@ -317,9 +325,14 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     const isGuideLineVisible = canSlideOpenCommandPalette && (showGuideLine || isPanelGuideHotspotActive);
     const toggleButtonMotionClass = (isOpen || isGuideLineVisible || isDragging)
         ? 'translate-x-0 opacity-100'
-        : supportsHover
+        : (supportsHover && isWideLayout)
             ? 'translate-x-1/2 opacity-60 group-hover:translate-x-0 group-hover:opacity-100 md:translate-x-0 md:opacity-100 md:hover:scale-105'
-            : 'translate-x-1/2 opacity-60';
+            // 「探出半个」是给鼠标的发现动效，靠 group-hover 滑回来。窄视口上它回不来：
+            // 触屏根本没有 hover；即使有（桌面上把窗口收窄、或预览台这种窄 iframe），
+            // `md:translate-x-0` 在 768px 以下也不生效。48px 的按钮探出 24px，只有
+            // 16px 的 `pr-4` 兜着，于是长期有 8px 被屏幕右边缘切掉——看着就是「按钮没了」。
+            // 窄视口直接摆正并去掉压暗。
+            : 'translate-x-0 opacity-100';
     const setCommandDestinationFeedback = (progress: number) => {
         const iconContainer = trackEndIconRef.current;
         if (!iconContainer) {
@@ -619,7 +632,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     return (
         <motion.div
             style={{ bottom: bottomBarBottomPx }}
-            className="absolute right-0 z-[60] flex flex-col items-end gap-4 pointer-events-none"
+            className="absolute right-0 z-[60] flex flex-col items-end gap-4 pointer-events-none mb-[var(--safe-bottom)] mr-[var(--safe-right)]"
             onClick={(e) => e.stopPropagation()}
         >
             <div className="pr-4 md:pr-8">
@@ -969,7 +982,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                         transition={{ duration: 0.24, ease: 'easeOut' }}
                         data-testid="panel-toggle"
                         style={{ bottom: bottomBarBottomPx }}
-                        className="pointer-events-auto fixed right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end"
+                        className="pointer-events-auto fixed right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end mb-[var(--safe-bottom)] mr-[var(--safe-right)]"
                         onMouseEnter={handleToggleButtonMouseEnter}
                         onMouseLeave={handleToggleButtonMouseLeave}
                         onPointerDown={handleToggleHotspotPointerDown}

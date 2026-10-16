@@ -8,7 +8,10 @@ import { noteLoopButtonPress } from '../../services/ponder/loopShuffleHint';
 //
 // 仓库里没有中心化的播放动作注册表，最接近的是 command palette 的 playbackCommands；
 // 这里只登记「已有图标 + 已有 handler」的播放相关动作，图标沿用那些命令自己声明的那一个。
-// 会打开界面的动作不去碰侧边面板 tab，而是复用命令面板的 surface（音量滑块、队列列表等）。
+// 会打开界面的动作多半不去碰侧边面板 tab，而是复用命令面板的 surface（音量滑块、队列列表等）。
+// 只有一个例外：`panel-queue`——播放条右侧那颗固定的「队列」按钮要的就是侧边面板的队列页签，
+// 它和 `queue`（命令面板里的队列列表）是两处界面，别把两者合成一个。面板只长在播放页，
+// 所以离开播放页时这颗按钮退回 `queue`（见它的 case），不是把两处合成一个。
 // id 和默认值本身是跨层合同，放在 src/types/playerControlSlots.ts。
 
 export type { PlayerControlSlotActionId };
@@ -82,7 +85,7 @@ const resolveLoopLabelKey = (loopMode: PlayerControlSlotContext['loopMode']): st
 
 /**
  * 把一个槽位 id 和当前播放上下文解析成可直接渲染的按钮描述。
- * 打开界面的四个动作统一转成 openCommandById，复用命令面板已经做好的 surface。
+ * 打开界面的动作统一转成 invokeCommandById，复用命令面板已经做好的 surface。
  */
 export const resolvePlayerControlSlot = (
     id: PlayerControlSlotActionId,
@@ -156,6 +159,26 @@ export const resolvePlayerControlSlot = (
                 onActivate: () => context.invokeCommandById('queue'),
                 labelKey: 'options.playerControlSlotAction_queue',
             };
+        /**
+         * 播放条上那颗固定的「队列」按钮用这个，不是可指派的槽位。
+         * `panel-queue` 命令 = 切到队列页签 + 开侧边面板，和面板顶部那颗「播放列表」
+         * 页签落在同一个地方；`queue` 则弹命令面板里的队列列表，两者不是一件事。
+         * 可用性跟着命令走：`panel-queue` 的作用域是播放页，首页/墙面/搜索页上它不可用。
+         * 但这颗按钮是常驻的（不像槽位那样是用户自己配的），在那儿压暗就等于摆了个死键，
+         * 于是退回 `queue`——命令面板里的队列列表哪个页面都能开，两处说的都是队列。
+         * 两个都不可用（Personal FM 把 `queue` 一起藏了）才压暗。
+         */
+        case 'panel-queue': {
+            const canOpenPanel = context.canInvokeCommandById('panel-queue');
+            return {
+                icon: ListMusic,
+                filled: false,
+                active: false,
+                disabled: !canOpenPanel && !context.canInvokeCommandById('queue'),
+                onActivate: () => context.invokeCommandById(canOpenPanel ? 'panel-queue' : 'queue'),
+                labelKey: canOpenPanel ? 'panel.playlist' : 'commandPalette.commands.queue.title',
+            };
+        }
         case 'song-wall':
             return {
                 icon: PanelsTopLeft,

@@ -51,7 +51,7 @@ export const GridListSearchButton: React.FC<GridListSearchButtonProps> = ({
             transition={{ duration: 0.24, ease: 'easeOut' }}
             data-testid="grid-list-search-button"
             style={{ bottom: bottomBarBottomPx }}
-            className="pointer-events-auto fixed right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end"
+            className="pointer-events-auto fixed right-0 z-[60] pr-4 md:pr-8 group w-20 flex justify-end mb-[var(--safe-bottom)] mr-[var(--safe-right)]"
         >
             <SlideActionButton
                 icon={List}

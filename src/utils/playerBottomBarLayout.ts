@@ -11,8 +11,23 @@ export const PLAYER_BOTTOM_BAR_BASE_OFFSET_PX = 32;
  */
 export const PLAYER_BOTTOM_BAR_SUBTITLE_CLEARANCE_PX = 80;
 
-/** 展开态胶囊的高度预留（标题行 + 48px 播放按钮行 + 进度行 + p-3），用于算上限。 */
-const EXPANDED_CAPSULE_HEIGHT_PX = 132;
+/** 展开态胶囊的高度预留（标题行 + 48px 播放按钮行 + 进度行 + p-3），用于算上限。
+ *  导出是给贴右下角的浮层按钮用：窄屏展开时胶囊近满宽，它们按这个高度把自己抬到胶囊之上。 */
+export const EXPANDED_CAPSULE_HEIGHT_PX = 132;
+
+/**
+ * 窄屏上贴右下角的浮层按钮（面板开关、墙面工具）该用的底距。
+ *
+ * 窄屏（<640px）展开态的胶囊会顶到 `calc(100vw - 120px)` 甚至满宽，右下角按钮原来的
+ * 16/32 底距一定落在胶囊底边那一带，而胶囊在同一个 z 层里画在后面又带 `overflow-hidden`，
+ * 于是按钮被压在胶囊底下、只剩圆角外的一角——看起来就是「按钮没了」。
+ *
+ * 胶囊的宽度是进度条的本钱，再收只会把进度条挤得更短，所以按钮改为垂直错开：
+ * 底边抬到胶囊顶边之上，再留一条间隙。胶囊高度取 132（实测 129，留 3px 余量）。
+ *
+ * 宽屏不用抬：胶囊只有 32rem，右下角一直是空的，保持各组件原值即桌面像素不变。
+ */
+export const NARROW_BOTTOM_CHROME_BASE_PX = PLAYER_BOTTOM_BAR_BASE_OFFSET_PX + EXPANDED_CAPSULE_HEIGHT_PX + 12;
 
 /**
  * 偏移量上限：胶囊顶边不越过半屏。

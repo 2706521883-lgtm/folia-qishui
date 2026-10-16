@@ -1523,6 +1523,13 @@ export default {
     "track": "ReplayGain: Mode Trek",
     "album": "ReplayGain: Mode Album"
   },
+  "mobileTabBar": {
+    "ariaLabel": "Navigasi utama",
+    "home": "Beranda",
+    "lattice": "Kolase antrean",
+    "search": "Cari",
+    "settings": "Pengaturan"
+  },
   "settings": {
     "lyricMatchPriority": "Prioritas pencocokan lirik",
     "lyricMatchPriorityDesc": "Saat beberapa sumber lirik memiliki kecocokan berkualitas tinggi, utamakan sumber ini terlebih dahulu."

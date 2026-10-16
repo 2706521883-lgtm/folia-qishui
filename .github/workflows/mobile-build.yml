@@ -1,0 +1,193 @@
+name: Mobile Shell Builds
+
+# 手机壳（Capacitor）测试包：Android debug APK + iOS 未签名 IPA（用户用全能签自签后安装）。
+# 平台目录（android/ ios/）不进仓库，由本工作流在构建时生成；三个在线音源后端地址来自
+# 仓库里的 .env.mobile（局域网 http，所以 Android 清单要放开 cleartext、WebView 放开 mixed content）。
+# 产物发布到固定预发布 tag「mobile-test」，Windows 侧经 gh-proxy 免鉴权下载。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [mobile-shell]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mobile-shell-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android APK (debug)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Build web assets (capacitor mode)
+        run: npm run build:mobile
+
+      - name: Sanity-check mobile build output
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          if grep -q 'registerSW\|serviceWorker' dist/index.html; then
+            echo 'PWA service worker leaked into the capacitor build' >&2
+            exit 1
+          fi
+          grep -q '\./assets/' dist/index.html
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Allow cleartext traffic on LAN
+        run: |
+          set -euo pipefail
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if grep -q 'android:usesCleartextTraffic=' "$MANIFEST"; then
+            sed -i 's/android:usesCleartextTraffic="[^"]*"/android:usesCleartextTraffic="true"/' "$MANIFEST"
+          else
+            sed -i 's/<application/<application\n        android:usesCleartextTraffic="true"/' "$MANIFEST"
+          fi
+          grep -q 'android:usesCleartextTraffic="true"' "$MANIFEST"
+
+      - name: Generate launcher icons and splash
+        run: >-
+          npx @capacitor/assets generate --android --assetPath mobile-assets
+          --iconBackgroundColor '#09090b' --iconBackgroundColorDark '#09090b'
+          --splashBackgroundColor '#09090b' --splashBackgroundColorDark '#09090b'
+
+      - name: Sync Android project
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        run: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  ios:
+    name: iOS unsigned IPA
+    runs-on: macos-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      - name: Build web assets (capacitor mode)
+        run: npm run build:mobile
+
+      - name: Add iOS platform
+        run: npx cap add ios
+
+      - name: Patch Info.plist for LAN access
+        run: |
+          set -euo pipefail
+          PLIST=ios/App/App/Info.plist
+          # 幂等：先删再建，重复运行不会翻车。
+          /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Delete :NSLocalNetworkUsageDescription" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 连接同一局域网内 PC 上的音乐服务（搜索与播放接口）。" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity" "$PLIST"
+
+      - name: Generate app icon and splash
+        run: >-
+          npx @capacitor/assets generate --ios --assetPath mobile-assets
+          --iconBackgroundColor '#09090b' --iconBackgroundColorDark '#09090b'
+          --splashBackgroundColor '#09090b' --splashBackgroundColorDark '#09090b'
+
+      - name: Sync iOS project
+        run: npx cap sync ios
+
+      - name: Build unsigned app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          mkdir -p Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry Folia-ios-unsigned.ipa Payload
+          ls -l Folia-ios-unsigned.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-ipa
+          path: Folia-ios-unsigned.ipa
+          if-no-files-found: error
+
+  publish:
+    name: Publish test release
+    needs: [android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v6
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          merge-multiple: true
+
+      - name: Rename artifacts with labels
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p "require('./package.json').version")"
+          mv app-debug.apk "Folia-${VERSION}-android-debug.apk"
+          mv Folia-ios-unsigned.ipa "Folia-${VERSION}-ios-unsigned.ipa"
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release delete mobile-test --yes --cleanup-tag || true
+          gh release create mobile-test \
+            --prerelease \
+            --title "Mobile test build (${GITHUB_SHA::7})" \
+            --notes "手机壳测试包：Android debug APK + iOS 未签名 IPA（用全能签自签后安装）。由 mobile-build.yml 自动发布。" \
+            Folia-*-android-debug.apk Folia-*-ios-unsigned.ipa

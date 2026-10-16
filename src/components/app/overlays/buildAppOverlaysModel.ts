@@ -1,10 +1,12 @@
 import type React from 'react';
 import type { MotionValue } from 'framer-motion';
 import type FloatingPlayerControls from '../../FloatingPlayerControls';
+import type MobileTabBar from '../../mobile/MobileTabBar';
 import type SearchWorkspace from '../search/SearchWorkspace';
 import type DevDebugOverlay from '../../DevDebugOverlay';
 import type MemoryMonitorWindow from '../../debug/MemoryMonitorWindow';
 import type NowPlayingToast from './NowPlayingToast';
+import type { SearchReturnView, SearchSource } from '../../../stores/useSearchNavigationStore';
 import { PlayerState } from '../../../types';
 import type { SongResult, UnifiedSong, LyricData } from '../../../types';
 import { resolvePlaybackNeighbors } from '../../../utils/playbackNeighbors';
@@ -23,6 +25,7 @@ type FloatingControlsProps = React.ComponentProps<typeof FloatingPlayerControls>
 type DebugOverlayProps = React.ComponentProps<typeof DevDebugOverlay>;
 type MemoryMonitorProps = React.ComponentProps<typeof MemoryMonitorWindow>;
 type NowPlayingToastProps = React.ComponentProps<typeof NowPlayingToast>;
+type MobileTabBarProps = React.ComponentProps<typeof MobileTabBar>;
 
 export type AppOverlaysModel = {
     searchOverlay?: SearchOverlayProps | null;
@@ -30,6 +33,7 @@ export type AppOverlaysModel = {
     memoryMonitor?: MemoryMonitorProps | null;
     floatingControls?: FloatingControlsProps | null;
     nowPlayingToast?: NowPlayingToastProps | null;
+    mobileTabBar?: MobileTabBarProps | null;
 };
 
 // What the model needs that this file can read for itself: store state, the per-frame motion
@@ -100,6 +104,10 @@ export type AppOverlaysDeps = {
     toggleLoop: FloatingControlsProps['onToggleLoop'];
     navigateToPlayer: () => void;
     navigateFromPlayerCapsule: () => void;
+    /** 移动壳底部 Tab 栏的三个出口：全是 useAppNavigation 的既有动作，不新造路由。 */
+    navigateDirectHome: () => void;
+    navigateToLattice: () => void;
+    navigateToSearch: (params: { query: string; sourceTab: SearchSource; returnView: SearchReturnView }) => void;
     shouldHidePlayerProgressBar: boolean;
     onSeekMainAudio: (time: number) => void;
     onStagePlayerSeek: () => Promise<unknown>;
@@ -159,6 +167,9 @@ export const buildAppOverlaysModel = ({
     toggleLoop,
     navigateToPlayer,
     navigateFromPlayerCapsule,
+    navigateDirectHome,
+    navigateToLattice,
+    navigateToSearch,
     isPlayerChromeHidden,
     shouldHidePlayerProgressBar,
     onSeekMainAudio,
@@ -319,4 +330,11 @@ export const buildAppOverlaysModel = ({
             })(),
         }
         : null,
+    // 移动壳（<1024）的底部 Tab 栏。在场判定（宽度 + 页面 + 窗口形态）在组件内部，这里只把
+    // App 的导航动作递进去——Overlays 的约定不变：模型进，叶子出。
+    mobileTabBar: {
+        onHome: navigateDirectHome,
+        onLattice: navigateToLattice,
+        onSearch: navigateToSearch,
+    },
 });

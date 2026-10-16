@@ -27,6 +27,9 @@ body {
   color: #e4e4e7;
   font-family: 'Inter', sans-serif;
   overflow: hidden;
+  /* iOS 上点按元素时不再闪一块灰色高亮：高亮在不透明的深色 UI 上永远不对。
+     桌面浏览器不识别这个属性，零影响。 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* 播放页空闲时隐藏鼠标指针。挂点在播放页的视觉层容器上，弹窗和浮动控件都在它外面，
@@ -44,6 +47,30 @@ body {
   --scrollbar-track: #18181b;
   --scrollbar-thumb: #3f3f46;
   --scrollbar-thumb-hover: #52525b;
+
+  /* 安全区（灵动岛 / Home 指示条 / 横屏圆角）：桌面浏览器与 Electron 上四个 env() 恒为 0，
+     所以下面所有消费点在这些环境里都是零效果。刻意保持「单纯的 env()」，不在这里包 calc()：
+     getComputedStyle 读到的才始终是一个纯 px 数值（有测试会 parseFloat 量定位属性）。
+     消费方式两条规则：贴边的绝对/固定定位元素加 margin（如 mb-[var(--safe-bottom)]），
+     在流里的容器加 padding（如 pt-[var(--safe-top)]）。 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* 整屏浮层（搜索页等）的安全区内边距：内容让开灵动岛 / Home 指示条 / 横屏圆角，背景材质仍铺满整屏。
+   基准内边距 = 组件原来的 px-3 py-4 / sm:px-6 sm:py-6（用 calc 相加，桌面 env()=0 时与改前逐像素一致）。 */
+.safe-sheet-inset {
+  padding: calc(var(--safe-top) + 0.75rem) calc(var(--safe-right) + 0.75rem)
+    calc(var(--safe-bottom) + 1rem) calc(var(--safe-left) + 0.75rem);
+}
+
+@media (min-width: 640px) {
+  .safe-sheet-inset {
+    padding: calc(var(--safe-top) + 1.5rem) calc(var(--safe-right) + 1.5rem)
+      calc(var(--safe-bottom) + 1.5rem) calc(var(--safe-left) + 1.5rem);
+  }
 }
 
 /* Custom scrollbar */

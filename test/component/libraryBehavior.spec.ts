@@ -156,6 +156,9 @@ const playFocused = async (page: Page, renderer: Renderer) => {
 
 /** bravais：打开缝里当前这一层的列表面板（已经开着就不动；换层时上一层的面板可能还在翻走，不算）。 */
 const openBravaisList = async (page: Page) => {
+    // 先等墙真的画出来，否则两头都错：layer 属性可能还没写（选择器拼出 "null"），点缝里的按钮也会被丢掉且不重按
+    // （openList 里 displayRef.current 为空直接 return）——2026-10-16 实测：同一机制让「压 5 worker 时 4 次里丢 3 次」。
+    await expect(page.locator('.bravais-tile').first()).toBeAttached();
     const layerKey = await page.locator('[data-library-stage="bravais"]').getAttribute('data-bravais-layer');
     const panel = page.locator(`[data-bravais-list="${layerKey}"]`);
     if (await panel.count() === 0) await page.locator('[data-bravais-seam-action="list"]').click();
@@ -166,6 +169,17 @@ const openBravaisList = async (page: Page) => {
 const waitForBravaisWall = (page: Page) => (
     expect(page.locator('[data-library-stage="bravais"][data-bravais-settling]')).toHaveCount(0)
 );
+
+/**
+ * bravais：按方向键之前等墙真的画出来。`waitForScope` 等的是数据（surface 的条目数），磁贴是墙挂载后量过
+ * 尺寸才长出来的，两者之间隔着一段；机器一忙这段时间能到几百毫秒，按键打过去时墙上还是 0 张磁贴，会被丢掉
+ * 且不会重按（15s 后断言超时——2026-10-16 实测：压 5 个 worker 时 4 次里丢 3 次，等 400ms 再按则 4 次全好）。
+ */
+const waitForBravaisWallReady = async (page: Page, renderer: Renderer) => {
+    if (renderer !== 'bravais') return;
+    await expect(page.locator('.bravais-tile').first()).toBeAttached();
+    await waitForBravaisWall(page);
+};
 
 /** bravais：经列表面板定位一个条目（相机飞到离缝最近的一份并展开聚焦卡），返回那张聚焦卡所在的磁贴。 */
 const focusBravaisEntry = async (page: Page, itemKey: string, occurrence = 0) => {
@@ -1060,6 +1074,7 @@ test.describe(`[${renderer}] nested opens from collection entries`, () => {
     );
     /** 把焦点挪离第一项再播放它：返回这一项的条目键（同时把焦点写进了会话）。 */
     const focusAwayFromFirst = async (page: Page) => {
+        await waitForBravaisWallReady(page, renderer);
         await pressOnGrid(page, renderer === 'tui' ? 'ArrowDown' : 'ArrowRight');
         await page.waitForTimeout(400);
         await clearLog(page);
@@ -1232,6 +1247,7 @@ test.describe(`[${renderer}] done and leave`, () => {
             await waitForScope(page, expectedPlayableIndexes(fixture['online-public'].rawIndexes, query).length);
             await page.waitForTimeout(400);
         }
+        await waitForBravaisWallReady(page, renderer);
         await pressOnGrid(page, renderer === 'tui' ? 'ArrowDown' : 'ArrowRight');
         await page.waitForTimeout(400);
         await clearLog(page);
@@ -2201,6 +2217,9 @@ test.describe('[bravais-only] N1 fold', () => {
         await waitForBravaisWall(page);
         const playlist = (await layerKey(page))!;
 
+        // 墙没画出来就 push：stage 没有布局可记，离开歌单的布局记忆就永远不写（单次读/轮询都只会看到 null）。
+        // 与「按方向键前先等磁贴」同族，见 waitForBravaisWallReady。
+        await waitForBravaisWallReady(page, 'bravais');
         expect(await push(page, 'online-owned')).toBe(true);
         await expect.poll(() => stack(page)).toEqual(['Public Playlist', fixture['online-owned'].name]);
         await waitForScope(page, expectedPlayableIndexes(fixture['online-owned'].rawIndexes).length);
@@ -2208,7 +2227,8 @@ test.describe('[bravais-only] N1 fold', () => {
         await waitForBravaisWall(page);
         const owned = (await layerKey(page))!;
         // push 离开歌单时记下了它的布局；歌单之上的这一层还没离开过。
-        expect(await layoutMemory(page, playlist)).not.toBeNull();
+        // 单次读在压满机器时可能撞上 stage 还没写完这次记录（2026-10-16 全量实测：读成 null），改成轮询。
+        await expect.poll(() => layoutMemory(page, playlist)).not.toBeNull();
         expect(await layoutMemory(page, owned)).toBeNull();
         // 在这一层上「打开」时 stage 会先记起点（这里模拟那一步）：折叠成返回时它要被取走丢掉。
         await page.evaluate(async key => {
@@ -2365,6 +2385,12 @@ test.describe('[bravais-only] B11 navigation and transitions', () => {
     test('a stack that repeats a collection: crumbs fold, expand and jump by position; the repeated layer flips back once', async ({ mount, page }) => {
         await mountProbe(mount, page, 'bravais');
         await openFixture(page, 'online-public');
+        // 读这一层的 key、以及后面第一次 push 之前，先等墙真的画出来（磁贴挂上 + 翻牌停）：
+        // 机器一忙时 openFixture 的等待可能早于 `data-bravais-layer` 写入，捕到 null 之后
+        // 2397 的轮询就变成在等 null（2026-10-16 压 5 worker 实测过一次）。与 N1 那处
+        // push 前的守卫同族，见 waitForBravaisWallReady。
+        await waitForBravaisWallReady(page, 'bravais');
+        await expect.poll(() => layerKey(page)).not.toBeNull();
         const publicKey = (await layerKey(page))!;
         await expect.poll(() => crumbKinds(page)).toEqual(['root0:Library', `current:${PUBLIC}`]);
 

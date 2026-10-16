@@ -8,6 +8,9 @@
     position: absolute;
     top: 20px;
     left: 24px;
+    /* 安全区：让开灵动岛与横屏圆角（桌面 env()=0，无变化） */
+    margin-top: var(--safe-top);
+    margin-left: var(--safe-left);
     z-index: 5;
     display: grid;
     width: 40px;
