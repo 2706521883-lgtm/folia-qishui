@@ -117,6 +117,8 @@
 - `dev/probes/trackTitleNavigator.probe.tsx`
 - `dev/probes/visualizerMemory.probe.tsx`
 - `dev/probes/wallpaperEntryConfirm.probe.tsx`
+- `dev/probes/weBackgroundRemount.probe.tsx`
+- `dev/probes/weSessionUnmountStop.probe.tsx`
 
 ### `src/components/ponder/ponderRegistry.ts`
 
@@ -182,6 +184,7 @@
 - `src/components/visualizer/backgrounds/nomand/entry.tsx`
 - `src/components/visualizer/backgrounds/sora/entry.tsx`
 - `src/components/visualizer/backgrounds/url/entry.tsx`
+- `src/components/visualizer/backgrounds/we/entry.tsx`
 
 ### `src/components/visualizer/registry.tsx`
 
@@ -242,5 +245,6 @@
 - `src/stores/usePlaybackStore.ts` → `src/components/app/playback/createCoverUrlResolver.ts`
 - `src/stores/useSettingsModalStore.ts` → `src/components/command-palette/pinnedCommandPreferences.ts`
 - `src/stores/visualizerSettingsPersistence.ts` → `src/components/visualizer/diorama/dioramaMoteField.ts`
+- `src/utils/qrLoginDiagnosticReport.ts` → `src/components/shared/foliaRepository.ts`
 - `src/utils/themeColorMath.ts` → `src/components/visualizer/colorMix.ts`
 
