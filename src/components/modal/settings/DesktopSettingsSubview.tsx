@@ -82,8 +82,6 @@ export type DesktopSettingsModel = {
     onCheckForUpdates: () => Promise<void> | void;
     onDownloadUpdate: () => Promise<void> | void;
     onInstallUpdate: () => Promise<void> | void;
-    onOpenBaiduDownload: () => Promise<void> | void;
-    onOpenChinaDownload: () => Promise<void> | void;
     onUpdateChannelChange: (channel: 'realeco' | 'limo' | 'cielo') => Promise<void> | void;
     onSaveElectronSettings: () => Promise<void> | void;
     onToggleAutoUpdate: () => Promise<void> | void;
@@ -144,8 +142,6 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
         onCheckForUpdates,
         onDownloadUpdate,
         onInstallUpdate,
-        onOpenBaiduDownload,
-        onOpenChinaDownload,
         onUpdateChannelChange,
         onSaveElectronSettings,
         onToggleAutoUpdate,
@@ -498,28 +494,6 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
                             <span className="px-1.5 text-[11px] opacity-50" style={{ color: 'var(--text-secondary)' }}>
                                 {t('options.downloadSources')}
                             </span>
-                            {electronSettings.UPDATE_CHANNEL === 'realeco' && updateStatus.platform !== 'linux' && (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={onOpenChinaDownload}
-                                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-70 transition-colors hover:opacity-100 ${linkButtonHoverClass}`}
-                                        style={{ color: 'var(--text-primary)' }}
-                                    >
-                                        <ExternalLink size={12} />
-                                        {t('options.quarkDrive')}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={onOpenBaiduDownload}
-                                        className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium opacity-70 transition-colors hover:opacity-100 ${linkButtonHoverClass}`}
-                                        style={{ color: 'var(--text-primary)' }}
-                                    >
-                                        <ExternalLink size={12} />
-                                        {t('options.baiduDrive')}
-                                    </button>
-                                </>
-                            )}
                             <button
                                 type="button"
                                 onClick={() => window.electron?.openUpdateReleasePage(updateStatus.availableVersion)}
@@ -544,11 +518,6 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
                             )}
                         </div>
 
-                        {updateStatus.platform !== 'linux' && (
-                            <div className="text-xs opacity-50 pt-1 text-left" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.chinaDownloadHint')}
-                            </div>
-                        )}
                     </div>
                 )}
             </SettingsAnchor>

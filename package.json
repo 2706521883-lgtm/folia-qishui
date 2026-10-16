@@ -4,11 +4,10 @@
   "desktopName": "folia-major.desktop",
   "description": "Lyrics Reimagine",
   "author": {
-    "name": "chthollyphile",
-    "email": "chthollyphile@users.noreply.github.com"
+    "name": "2706521883-lgtm"
   },
   "private": true,
-  "version": "0.7.17",
+  "version": "0.3.1",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "electron/main.cjs",
@@ -79,8 +78,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "chthollyphile",
-        "repo": "folia-major"
+        "owner": "2706521883-lgtm",
+        "repo": "folia-qishui"
       }
     ],
     "files": [

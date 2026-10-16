@@ -12,9 +12,11 @@ on:
           - rolling
           - branch-release
           - artifacts
-  push:
-    branches:
-      - '**'
+  # 二创版改动：这里原本是「push 到任意分支就构建并发布 Cielo 预发布版」。本仓库不用这条
+  # 流水线，改成只能手动触发——否则每次推送都会往本仓库 Releases 里灌一批上游版本号的产物。
+  # push:
+  #   branches:
+  #     - '**'
 
 permissions:
   contents: write

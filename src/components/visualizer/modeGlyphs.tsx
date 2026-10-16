@@ -178,6 +178,14 @@ const BACKGROUND_MODE_GLYPHS: Record<string, React.ReactNode> = {
             <path d="M5.5 16.5h.01M18 15.5h.01M7 7h.01" strokeWidth="2.2" opacity="0.5" />
         </>
     ),
+    // 壁纸引擎：被采集的窗口画面（外框 + 采集角标）
+    we: (
+        <>
+            <rect x="3.5" y="5" width="13" height="10" rx="1.8" />
+            <path d="M3.5 12.5l3.6-3 3 2.4 2.4-2 3.5 2.9" opacity="0.55" />
+            <path d="M19 11.5v6.5h-6" opacity="0.55" />
+        </>
+    ),
 };
 
 type ModeGlyphProps = {

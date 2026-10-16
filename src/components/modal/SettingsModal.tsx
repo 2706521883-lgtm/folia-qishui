@@ -32,6 +32,7 @@ import SettingsHelpActions from './SettingsHelpActions';
 import { openPonderNavigation } from '../../services/ponder/pagePonderTarget';
 import ReleaseNotesDialog from './ReleaseNotesDialog';
 import { JoinCommunityButton } from '../shared/JoinCommunityButton';
+import { FOLIA_REPOSITORY_URL } from '../shared/foliaRepository';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import meowImageUrl from '../../../build/miao.png';
 import type { LyricData } from '../../types';
@@ -130,8 +131,6 @@ interface SettingsModalProps {
     customTheme?: DualTheme | null;
 }
 
-const QUARK_DOWNLOAD_URL = 'https://pan.quark.cn/s/6e4c6fa3bc6f';
-const BAIDU_DOWNLOAD_URL = 'https://pan.baidu.com/s/1f0x3g-8PMcNCO-TJ5z1rPw?pwd=flia';
 const DEFAULT_UPDATE_CHANNEL: 'realeco' | 'limo' | 'cielo' | 'internal' = __APP_RELEASE_CHANNEL__ === 'limo'
     ? 'limo'
     : __APP_RELEASE_CHANNEL__ === 'cielo'
@@ -343,6 +342,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleResetLatentBackgroundTuning: onResetLatentBackgroundTuning,
         handleSetSoraBackgroundTuning: onSoraBackgroundTuningChange,
         handleResetSoraBackgroundTuning: onResetSoraBackgroundTuning,
+        handleSetWeBackgroundTuning: onWeBackgroundTuningChange,
+        handleResetWeBackgroundTuning: onResetWeBackgroundTuning,
         handleSetMonetTuning: onMonetTuningChange,
         handleResetMonetTuning: onResetMonetTuning,
         handleSetPendoloTuning: onPendoloTuningChange,
@@ -385,6 +386,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         nomandBackgroundTuning,
         latentBackgroundTuning,
         soraBackgroundTuning,
+        weBackgroundTuning,
         monetTuning,
         pendoloTuning,
         sonnetTuning,
@@ -515,7 +517,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             : savedAiApiKey.trim()
                 ? 'configured'
                 : 'missing';
-    const showQuarkDownload = electronSettings.UPDATE_CHANNEL === 'realeco';
 
     useEffect(() => {
         if (aiApiKeyStatus === 'missing' && themeGenerationSource === 'ai') {
@@ -742,9 +743,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
         window.open(url, '_blank', 'noopener,noreferrer');
     };
-
-    const handleOpenChinaDownload = () => handleOpenDownloadUrl(QUARK_DOWNLOAD_URL);
-    const handleOpenBaiduDownload = () => handleOpenDownloadUrl(BAIDU_DOWNLOAD_URL);
 
     // Navidrome Settings State
     // One truth: this used to be a second copy kept in step with App.tsx's by hand.
@@ -1501,7 +1499,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                             >
                                                 {t('help.madeBy')}
                                             </button>{' '}
-                                            <a href="https://github.com/chthollyphile/folia-major" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors underline decoration-white/30 hover:decoration-white">chthollyphile/folia-major</a>
+                                            <a href={FOLIA_REPOSITORY_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors underline decoration-white/30 hover:decoration-white">2706521883-lgtm/folia-qishui</a>
                                         </p>
                                     </div>
                                     <div className="flex flex-col items-center gap-2 mt-6 mb-2 text-xs font-mono text-center">
@@ -1562,28 +1560,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     <span className="px-1.5 opacity-45" style={{ color: 'var(--text-secondary)' }}>
                                                         {t('options.downloadSources')}
                                                     </span>
-                                                    {showQuarkDownload && updateStatus.platform !== 'linux' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={handleOpenChinaDownload}
-                                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 opacity-65 transition-colors hover:bg-white/10 hover:opacity-100"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            <ExternalLink size={11} />
-                                                            {t('options.quarkDrive')}
-                                                        </button>
-                                                    )}
-                                                    {showQuarkDownload && updateStatus.platform !== 'linux' && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleOpenDownloadUrl(BAIDU_DOWNLOAD_URL)}
-                                                            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 opacity-65 transition-colors hover:bg-white/10 hover:opacity-100"
-                                                            style={{ color: 'var(--text-secondary)' }}
-                                                        >
-                                                            <ExternalLink size={11} />
-                                                            {t('options.baiduDrive')}
-                                                        </button>
-                                                    )}
                                                     <button
                                                         type="button"
                                                         onClick={() => window.electron?.openUpdateReleasePage(updateStatus.availableVersion)}
@@ -1621,9 +1597,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                             ? t('options.linuxManualUpdateNotice')
                                                             : t('options.manualUpdateNotice')}
                                                     </div>
-                                                )}
-                                                {showQuarkDownload && updateStatus.platform !== 'linux' && (
-                                                    <div>{t('options.chinaDownloadHint')}</div>
                                                 )}
                                             </div>
                                         )}
@@ -1856,8 +1829,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     onCheckForUpdates: handleCheckForUpdates,
                                                     onDownloadUpdate: handleDownloadUpdate,
                                                     onInstallUpdate: handleInstallUpdate,
-                                                    onOpenBaiduDownload: handleOpenBaiduDownload,
-                                                    onOpenChinaDownload: handleOpenChinaDownload,
                                                     onUpdateChannelChange: handleUpdateChannelChange,
                                                     onSaveElectronSettings: saveElectronSettings,
                                                     onToggleAutoUpdate: handleToggleAutoUpdate,
@@ -1976,6 +1947,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             nomand: { tuning: nomandBackgroundTuning },
                             latent: { tuning: latentBackgroundTuning },
                             sora: { tuning: soraBackgroundTuning },
+                            we: { tuning: weBackgroundTuning },
                             url: {
                                 items: urlBackgroundList,
                                 selectedId: urlBackgroundSelectedId,
@@ -2009,6 +1981,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             sora: {
                                 onTuningChange: onSoraBackgroundTuningChange,
                                 onResetTuning: onResetSoraBackgroundTuning,
+                            },
+                            we: {
+                                onTuningChange: onWeBackgroundTuningChange,
+                                onResetTuning: onResetWeBackgroundTuning,
                             },
                             url: {
                                 onAdd: onAddUrlBackgroundItem,
@@ -2148,6 +2124,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             nomand: { tuning: nomandBackgroundTuning },
                             latent: { tuning: latentBackgroundTuning },
                             sora: { tuning: soraBackgroundTuning },
+                            we: { tuning: weBackgroundTuning },
                             url: {
                                 items: urlBackgroundList,
                                 selectedId: urlBackgroundSelectedId,

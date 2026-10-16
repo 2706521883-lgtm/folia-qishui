@@ -159,6 +159,7 @@ exports[`store contract > keeps every localStorage key the stores read or write 
   "voice_input_pause_enabled",
   "wallpaper_mac_autohide_dock",
   "wallpaper_mode",
+  "we_background_tuning",
   "web_obs_theme_mode",
 ]
 `;

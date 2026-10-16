@@ -231,6 +231,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
         nomandBackgroundTuning: state.nomandBackgroundTuning,
         latentBackgroundTuning: state.latentBackgroundTuning,
         soraBackgroundTuning: state.soraBackgroundTuning,
+        weBackgroundTuning: state.weBackgroundTuning,
         monetTuning: state.monetTuning,
         pendoloTuning: state.pendoloTuning,
         sonnetTuning: state.sonnetTuning,
@@ -257,6 +258,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
         handleSetNomandBackgroundTuning: state.handleSetNomandBackgroundTuning,
         handleSetLatentBackgroundTuning: state.handleSetLatentBackgroundTuning,
         handleSetSoraBackgroundTuning: state.handleSetSoraBackgroundTuning,
+        handleSetWeBackgroundTuning: state.handleSetWeBackgroundTuning,
         handleSetMonetTuning: state.handleSetMonetTuning,
         handleSetPendoloTuning: state.handleSetPendoloTuning,
         handleSetSonnetTuning: state.handleSetSonnetTuning,
@@ -541,6 +543,9 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
             }
             if (has('soraBackgroundTuning') && config.soraBackgroundTuning) {
                 storeVisualizer.handleSetSoraBackgroundTuning(config.soraBackgroundTuning);
+            }
+            if (has('weBackgroundTuning') && config.weBackgroundTuning) {
+                storeVisualizer.handleSetWeBackgroundTuning(config.weBackgroundTuning);
             }
             if (has('foliumParams') && config.foliumParams) {
                 importFoliumParams(config.foliumParams);

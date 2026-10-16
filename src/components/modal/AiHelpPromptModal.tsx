@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookOpen, Check, Copy, ExternalLink } from 'lucide-react';
+import { BookOpen, Check, Copy, ExternalLink, FolderGit2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Theme } from '../../types';
-import { discordIconUrl, openDiscordInvite } from '../shared/discordCommunity';
+import { FOLIA_REPOSITORY_URL, openFoliaRepository } from '../shared/foliaRepository';
 
 // src/components/modal/AiHelpPromptModal.tsx
 
 const FOLIA_GUIDE_URL = 'https://folia-site.cielaniska.top/guide/llm-routing';
 const FOLIA_DOCS_URL = 'https://folia-site.cielaniska.top/guide/';
-const FOLIA_REPOSITORY_URL = 'https://github.com/chthollyphile/folia-major';
 
 type AiHelpPromptModalProps = {
     isOpen: boolean;
@@ -122,18 +121,20 @@ export const AiHelpPromptModal: React.FC<AiHelpPromptModalProps> = ({
                             {/* 文档之后、问 AI 之前：卡住的人先有个能找到人的地方。 */}
                             <button
                                 type="button"
-                                onClick={openDiscordInvite}
+                                onClick={openFoliaRepository}
                                 className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left transition hover:-translate-y-0.5 ${panelBg}`}
                             >
-                                <img src={discordIconUrl} alt="" aria-hidden className="h-10 w-10 shrink-0 rounded-xl" />
+                                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${isDaylight ? 'bg-white' : 'bg-white/10'}`}>
+                                    <FolderGit2 size={19} style={{ color: theme?.accentColor ?? '#60a5fa' }} />
+                                </span>
                                 <span className="min-w-0 flex-1">
-                                    <span className="block text-sm font-semibold">{t('aiHelp.discordTitle', 'Ask in the Discord community')}</span>
+                                    <span className="block text-sm font-semibold">{t('aiHelp.repoTitle', 'Ask on GitHub')}</span>
                                     <span className={`mt-1 block text-xs leading-5 ${textSecondary}`}>
-                                        {t('aiHelp.discordDescription', 'Get help from other users and the developers, and hear about new releases first.')}
+                                        {t('aiHelp.repoDescription', 'Open an issue in the project repository, or check whether someone hit the same problem.')}
                                     </span>
                                 </span>
                                 <span className={`inline-flex shrink-0 items-center gap-1 text-xs font-medium ${textSecondary}`}>
-                                    {t('aiHelp.openDiscord', 'Join')}
+                                    {t('aiHelp.openRepo', 'Open repository')}
                                     <ExternalLink size={14} />
                                 </span>
                             </button>

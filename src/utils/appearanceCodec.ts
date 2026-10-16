@@ -3,6 +3,7 @@ import {
     DEFAULT_DIORAMA_TUNING,
     DEFAULT_LATENT_BACKGROUND_TUNING,
     DEFAULT_SORA_BACKGROUND_TUNING,
+    DEFAULT_WE_BACKGROUND_TUNING,
     DEFAULT_MONET_BACKGROUND_TUNING,
     DEFAULT_MONET_TUNING,
     DEFAULT_NOMAND_BACKGROUND_TUNING,
@@ -330,6 +331,31 @@ const decompressSoraBackground = (o: any): any => ({
     blank: o.bl !== undefined ? o.bl : DEFAULT_SORA_BACKGROUND_TUNING.blank,
 });
 
+// The selected wallpaper id is machine-specific (it hashes a local install path), so an exported
+// theme carries the tuning and the wallpaper *name* only: importing it anywhere else keeps the
+// look, and the user re-picks the wallpaper in the settings card.
+const compressWeBackground = (t: any): any => ({
+    it: t.itemTitle,
+    as: t.autoStart,
+    ma: t.muteAudio,
+    op: t.opacity,
+    sc: t.scale,
+    ox: t.offsetX,
+    oy: t.offsetY,
+    fr: t.frameRate,
+});
+const decompressWeBackground = (o: any): any => ({
+    itemId: '',
+    itemTitle: typeof o.it === 'string' ? o.it : DEFAULT_WE_BACKGROUND_TUNING.itemTitle,
+    autoStart: o.as !== undefined ? o.as : DEFAULT_WE_BACKGROUND_TUNING.autoStart,
+    muteAudio: o.ma !== undefined ? o.ma : DEFAULT_WE_BACKGROUND_TUNING.muteAudio,
+    opacity: o.op !== undefined ? o.op : DEFAULT_WE_BACKGROUND_TUNING.opacity,
+    scale: o.sc !== undefined ? o.sc : DEFAULT_WE_BACKGROUND_TUNING.scale,
+    offsetX: o.ox !== undefined ? o.ox : DEFAULT_WE_BACKGROUND_TUNING.offsetX,
+    offsetY: o.oy !== undefined ? o.oy : DEFAULT_WE_BACKGROUND_TUNING.offsetY,
+    frameRate: o.fr !== undefined ? o.fr : DEFAULT_WE_BACKGROUND_TUNING.frameRate,
+});
+
 const compressMonet = (t: any): any => ({
     kce: t.keywordColoringEnabled,
     msd: t.showDescription,
@@ -543,6 +569,7 @@ export const compressConfig = (config: any): string => {
     if (config.nomandBackgroundTuning) minified.nbt = compressNomandBackground(config.nomandBackgroundTuning);
     if (config.latentBackgroundTuning) minified.lbt = compressLatentBackground(config.latentBackgroundTuning);
     if (config.soraBackgroundTuning) minified.sbt = compressSoraBackground(config.soraBackgroundTuning);
+    if (config.weBackgroundTuning) minified.wbt = compressWeBackground(config.weBackgroundTuning);
     if (config.monetTuning) minified.mt = compressMonet(config.monetTuning);
     if (config.pendoloTuning) minified.pdt = compressPendolo(config.pendoloTuning);
     if (config.sonnetTuning) minified.snt = compressSonnet(config.sonnetTuning);
@@ -681,6 +708,7 @@ export const decompressConfig = (str: string): any => {
         if (parsed.nbt) decompressed.nomandBackgroundTuning = decompressNomandBackground(parsed.nbt);
         if (parsed.lbt) decompressed.latentBackgroundTuning = decompressLatentBackground(parsed.lbt);
         if (parsed.sbt) decompressed.soraBackgroundTuning = decompressSoraBackground(parsed.sbt);
+        if (parsed.wbt) decompressed.weBackgroundTuning = decompressWeBackground(parsed.wbt);
         if (parsed.mt) decompressed.monetTuning = decompressMonet(parsed.mt);
         if (parsed.pdt) decompressed.pendoloTuning = decompressPendolo(parsed.pdt);
         if (parsed.snt) decompressed.sonnetTuning = decompressSonnet(parsed.snt);
@@ -714,7 +742,7 @@ export const decompressConfig = (str: string): any => {
             'subtitleFontInheritsLyrics', 'subtitleFontScale', 'subtitleFontStyle', 'subtitleFontWeight', 'subtitleFontFamily',
             'subtitleFontFallbackFamilies', 'visualizerTunings', 'classicTuning',
             'cadenzaTuning', 'partitaTuning', 'fumeTuning', 'claddaghTuning', 'cappellaTuning',
-            'tiltTuning', 'dioramaTuning', 'monetBackgroundTuning', 'nomandBackgroundTuning', 'latentBackgroundTuning', 'soraBackgroundTuning', 'monetTuning',
+            'tiltTuning', 'dioramaTuning', 'monetBackgroundTuning', 'nomandBackgroundTuning', 'latentBackgroundTuning', 'soraBackgroundTuning', 'weBackgroundTuning', 'monetTuning',
             'pendoloTuning', 'sonnetTuning', 'temperaTuning', 'lumiereTuning', 'foliumParams',
             'urlBackgroundList', 'urlBackgroundSelectedId',
             'songThemeAutoSwitchEnabled', 'songThemeAutoGenerateEnabled', 'themeGenerationSource', 'followSystemTheme',

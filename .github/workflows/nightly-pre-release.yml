@@ -1,8 +1,10 @@
 name: Publish Limo Nightly
 
 on:
-  schedule:
-    - cron: '0 2 * * *'
+  # 二创版改动：这里原本是每天 02:00 (UTC) 自动构建并发布 limo 预发布版。本仓库不需要
+  # 定时发布，改成只能手动触发，避免每天自动往 Releases 里灌上游版本号的产物。
+  # schedule:
+  #   - cron: '0 2 * * *'
   workflow_dispatch:
 
 permissions:

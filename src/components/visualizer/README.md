@@ -61,6 +61,7 @@ App / ThemePark / VisPlayground / OBS source
 - `nomand`：`NomandBackgroundLayer.tsx`、设置卡
 - `sora`：`SoraBackground.tsx`
 - `url`：`UrlBackgroundLayer.tsx`、设置卡
+- `we`：`we/WeBackground.tsx`（采集层）、`we/WeBackgroundLayer.tsx`、`we/WeWallpaperPicker.tsx`、设置卡与快速开关；仅 Electron/Windows，原理与踩坑见 [`docs/wallpaper-engine-background.md`](../../../docs/wallpaper-engine-background.md)
 
 共享背景 props 与默认值在 `backgrounds/definition.ts`；实际渲染在 `backgrounds/VisualizerBackgroundRenderer.tsx`。新增背景不要在每个 visualizer 中内联。
 

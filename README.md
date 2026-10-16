@@ -1,10 +1,10 @@
 <div align="center">
 
-# Folia 二创版 · 加入汽水音乐音源
+# Folia 二创版 · 汽水音乐音源 + 壁纸引擎背景
 
-**folia-qishui** —— 在 [Folia](https://github.com/chthollyphile/folia-major) 的基础上二次创作，新增「汽水音乐」在线音源。
+**folia-qishui** —— 在 [Folia](https://github.com/chthollyphile/folia-major) 的基础上二次创作，新增「汽水音乐」在线音源与「壁纸引擎」背景。
 
-[上游项目](https://github.com/chthollyphile/folia-major) ｜ [许可证 AGPL-3.0](./LICENSE) ｜ [上游原始 README](./README.original.md)
+[上游项目](https://github.com/chthollyphile/folia-major) ｜ [本仓库 Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) ｜ [许可证 AGPL-3.0](./LICENSE) ｜ [上游原始 README](./README.original.md)
 
 </div>
 
@@ -14,15 +14,16 @@
 
 这是 Folia 的一个**二创分支**。Folia 是一个以全屏沉浸式歌词播放为核心的在线音乐播放器，支持网易云、酷狗、Navidrome 和本地音乐库，提供 Electron 桌面端（Windows / macOS / Linux）与 Node.js Web 端。
 
-本仓库 = **上游 v0.7.17 的完整源码** + 下面这三处改动：
+本仓库 = **上游 v0.7.17 的完整源码** + 下面这几处改动：
 
 | # | 改动 | 说明 |
 |---|------|------|
 | 1 | **汽水音乐音源** | 新增「汽水音乐（SodaMusic）」在线音源：搜索、歌单、播放、歌词、扫码登录 |
-| 2 | **QQ 歌词接口加固** | QQ 歌词接口返回 `code 2001`（被风控/限流）时的重试与降级，不再直接给空结果 |
-| 3 | **酷狗依赖 vendor 化** | 把 `KuGouMusicApi` 改为仓库内 `vendor/` 依赖，新增 `qrcode` 依赖与原生模块的 `asarUnpack` 打包配置 |
+| 2 | **壁纸引擎背景** | 新增「壁纸引擎」背景类型：扫描本机 Wallpaper Engine 场景并采集为 Folia 的背景层（见 [`docs/wallpaper-engine-background.md`](./docs/wallpaper-engine-background.md)） |
+| 3 | **QQ 歌词接口加固** | QQ 歌词接口返回 `code 2001`（被风控/限流）时的重试与降级，不再直接给空结果 |
+| 4 | **酷狗依赖 vendor 化** | 把 `KuGouMusicApi` 改为仓库内 `vendor/` 依赖，新增 `qrcode` 依赖与原生模块的 `asarUnpack` 打包配置 |
 
-除这三处以外，其余代码与上游保持一致。
+本二创版自 **0.3.1** 起使用自己的版本号（与上游 0.7.x 无对应关系，比它小是正常的）。除上述改动以外，其余代码与上游保持一致。
 
 ## 二、与原作者、与开源协议
 
@@ -62,19 +63,26 @@
 | 音质档位 | ✅ | standard / exhigh / lossless / hires / atmos 五档，按官方 `qualitymap` 逐曲判定 VIP |
 | QQ 歌词 2001 | ✅ | 被限流时自动重试，仍失败则优雅降级为空结果 |
 
-## 五、安装（普通用户）
+## 五、安装与更新（普通用户）
 
 **方式 A：安装包（Windows）**
 
-1. 到本仓库的 **Releases** 页面下载 `Folia_Setup.exe`。
-2. 双击运行，向导里选「仅为我安装」，安装目录保持默认（`E:\Folia` 或程序建议的目录）即可。
+1. 到本仓库的 [Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) 页面下载最新安装包 `Folia-Setup-<版本>.exe`（例如 `Folia-Setup-0.3.1.exe`）。
+2. 双击运行，向导里选「仅为我安装」，安装目录按需要选择即可。
 3. 装完会自动启动。首次打开时在音源列表里选「汽水音乐」，点登录，用汽水 App 扫码。
 
-> ⚠️ **重要**：Folia 官方版的自动更新会把 `resources\app` 目录替换回它自己的 `app.asar`，**汽水音源会随之消失**。这不是 bug —— 更新后重新安装本安装包即可恢复。
+> ℹ️ **关于版本号与自动更新**：本二创版从 **0.3.1** 开始独立编号，比上游的 0.7.x 小，这是正常的。因此**第一次从官方版换到本版（或从本版换回官方版）需要手动装一次安装包**；装好之后，检查更新只查本仓库的 Releases，更新下来的是本版安装包，**不会把 `resources\app` 换回官方版**，汽水音源与壁纸引擎背景都不会丢。
+>
+> 版本检查与下载需要能访问 GitHub，网络不稳时请在系统里挂好代理。
 
 **方式 B：绿色版**
 
-解压官方发布页的 `Folia-<版本>-x64.zip`（或本仓库 Release 中的绿色包），直接运行 `Folia.exe`。
+解压本仓库 Release 里附带的绿色包（若该版本提供）或自行按第六节从源码构建，直接运行 `Folia.exe`。
+
+**遇到问题 / 联系作者**
+
+- GitHub：[2706521883-lgtm/folia-qishui](https://github.com/2706521883-lgtm/folia-qishui) —— 提 Issue、看 Releases、看源码都在这里（原先的 Discord 社区入口已移除）。
+- QQ：**3103472989** —— 作者本人的 QQ，只有这一个，**没有 QQ 群**；加好友请简要说明来意。
 
 ## 六、从源码构建（开发者）
 
@@ -120,7 +128,7 @@ Windows：`%APPDATA%\Folia`；macOS：`~/Library/Application Support/Folia`。�
 
 - **播放无声 / 报解码错误**：确认 `resources/app/electron/qishui/qishui-auth-v6/bdms.node` 与同目录的 `metasecml.dll` 存在；打包时这两个文件必须 `asarUnpack`，否则原生模块加载失败。
 - **搜索报 `code 2001`**：汽水侧风控限流。本仓库已加重试与降级（重试一次后仍失败则返回空结果，不再抛错）。
-- **官方更新后音源消失**：见第五节注意事项，重新安装/重新构建即可。
+- **版本号变成 0.3.x，比原来的 0.7.x 小**：本二创版自 0.3.1 起独立编号，属正常现象；首次切换需要手动装一次安装包（见第五节）。
 - **`npm ci` 报 `EUSAGE: ... in sync`**：锁文件与 package.json 漂移，用 `npm install`。
 
 ## 八、改动速查
@@ -157,6 +165,17 @@ src/utils/qrLoginDiagnosticReport.ts       扫码诊断（可选）
 **QQ 歌词加固**
 
 `src/utils/lyrics/providers/qqLyricProvider.ts`
+
+**背景类型：壁纸引擎**（把本机 Wallpaper Engine 场景采集成背景层，见 [`docs/wallpaper-engine-background.md`](./docs/wallpaper-engine-background.md)）
+
+```
+electron/wallpaperEngineLibrary.cjs        Steam 库扫描 + 预览协议 folia-we://
+electron/wallpaperEngineRuntime.cjs        引擎定位/验签 + openWallpaper + applyProperties 静音
+electron/wallpaperEngineWindow.cjs         播放窗口 park 帮助脚本（PowerShell）
+src/services/wallpaperEngineCapture.ts     desktopCapturer → MediaStream
+src/stores/useWallpaperEngineStore.ts      会话状态 + 主进程状态推送订阅
+src/components/visualizer/backgrounds/we/  背景类型 'we'（entry / 图层 / 设置卡 / 快速开关）
+```
 
 ## 九、免责声明
 

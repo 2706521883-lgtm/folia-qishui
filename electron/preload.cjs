@@ -87,6 +87,16 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('wallpaper-entry-requested', listener);
         return () => ipcRenderer.removeListener('wallpaper-entry-requested', listener);
     },
+    scanWallpaperEngineLibrary: (force) => ipcRenderer.invoke('wallpaper-engine-scan', force === true),
+    startWallpaperEngine: (payload) => ipcRenderer.invoke('wallpaper-engine-start', payload),
+    stopWallpaperEngine: () => ipcRenderer.invoke('wallpaper-engine-stop'),
+    getWallpaperEngineStatus: () => ipcRenderer.invoke('wallpaper-engine-status'),
+    getWallpaperEngineCaptureSource: () => ipcRenderer.invoke('wallpaper-engine-get-capture-source'),
+    onWallpaperEngineChanged: (callback) => {
+        const listener = (_event, status) => callback(status);
+        ipcRenderer.on('wallpaper-engine-changed', listener);
+        return () => ipcRenderer.removeListener('wallpaper-engine-changed', listener);
+    },
     onWallpaperInputMonitorRequested: (callback) => {
         const listener = () => callback();
         ipcRenderer.on('wallpaper-input-monitor-requested', listener);

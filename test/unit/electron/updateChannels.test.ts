@@ -56,7 +56,7 @@ describe('release update channels', () => {
     });
 
     it('opens rolling prereleases instead of manufacturing a semver tag', () => {
-        const releasesUrl = 'https://github.com/chthollyphile/folia-major/releases';
+        const releasesUrl = 'https://github.com/2706521883-lgtm/folia-qishui/releases';
 
         expect(getReleaseUrl('limo', '0.7.0-beta.123', releasesUrl)).toBe(`${releasesUrl}/tag/limo`);
         expect(getReleaseUrl('cielo', '0.7.0-alpha.123', releasesUrl)).toBe(`${releasesUrl}/tag/cielo`);
@@ -64,17 +64,17 @@ describe('release update channels', () => {
     });
 
     it('reads rolling prerelease metadata directly instead of using the GitHub release feed', () => {
-        const github = { owner: 'chthollyphile', repo: 'folia-major' };
+        const github = { owner: '2706521883-lgtm', repo: 'folia-qishui' };
 
         expect(getUpdateProviderConfig(resolveReleaseChannel('0.7.0-beta.123', 'limo'), github)).toEqual({
             provider: 'generic',
-            url: 'https://github.com/chthollyphile/folia-major/releases/download/limo/',
+            url: 'https://github.com/2706521883-lgtm/folia-qishui/releases/download/limo/',
             channel: 'beta',
             useMultipleRangeRequest: false,
         });
         expect(getUpdateProviderConfig(resolveReleaseChannel('0.7.0-alpha.123', 'cielo'), github)).toEqual({
             provider: 'generic',
-            url: 'https://github.com/chthollyphile/folia-major/releases/download/cielo/',
+            url: 'https://github.com/2706521883-lgtm/folia-qishui/releases/download/cielo/',
             channel: 'alpha',
             useMultipleRangeRequest: false,
         });
@@ -83,25 +83,25 @@ describe('release update channels', () => {
     it('restores the GitHub provider after switching back to Realeco', () => {
         expect(getUpdateProviderConfig(
             resolveReleaseChannel('0.7.0', 'realeco'),
-            { owner: 'chthollyphile', repo: 'folia-major' },
+            { owner: '2706521883-lgtm', repo: 'folia-qishui' },
         )).toEqual({
             provider: 'github',
-            owner: 'chthollyphile',
-            repo: 'folia-major',
+            owner: '2706521883-lgtm',
+            repo: 'folia-qishui',
             channel: 'latest',
         });
     });
 
     it('builds discovery endpoints for stable and rolling channels', () => {
-        const github = { owner: 'chthollyphile', repo: 'folia-major' };
+        const github = { owner: '2706521883-lgtm', repo: 'folia-qishui' };
 
         expect(getUpdateDiscoveryConfig(resolveReleaseChannel('0.7.3', 'realeco'), github)).toEqual({
             format: 'yaml',
-            url: 'https://github.com/chthollyphile/folia-major/releases/latest/download/latest.yml',
+            url: 'https://github.com/2706521883-lgtm/folia-qishui/releases/latest/download/latest.yml',
         });
         expect(getUpdateDiscoveryConfig(resolveReleaseChannel('0.7.4-beta.1', 'limo'), github)).toEqual({
             format: 'yaml',
-            url: 'https://github.com/chthollyphile/folia-major/releases/download/limo/beta.yml',
+            url: 'https://github.com/2706521883-lgtm/folia-qishui/releases/download/limo/beta.yml',
         });
     });
 

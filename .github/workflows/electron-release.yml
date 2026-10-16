@@ -1,10 +1,13 @@
 name: Publish Realeco
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - realeco-release
+  # 二创版改动：这里原本是「main 上的 realeco-release 版本文件一改，就自动构建并发布正式版」。
+  # 本仓库的安装包是本地手动构建、手动上传到 Releases 的（见 README 第五节），所以改成只能
+  # 手动触发，免得推一次版本号就自动发布一份 CI 构建的产物、覆盖掉手里的安装包。
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - realeco-release
   workflow_dispatch:
     inputs:
       publish_aur_only:

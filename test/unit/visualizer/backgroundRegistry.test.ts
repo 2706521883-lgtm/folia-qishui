@@ -19,6 +19,7 @@ describe('visualizer background registry', () => {
             'latent',
             'url',
             'sora',
+            'we',
         ]);
     });
 

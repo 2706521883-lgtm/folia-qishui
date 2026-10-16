@@ -912,7 +912,7 @@ export type LatentBackgroundDisplayMode = 'dithering' | 'mesh' | 'both';
 export type LatentBackgroundColorSource = 'cover-theme' | 'cover-only';
 export type MonetAudioStyle = 'bar' | 'line';
 export type MonetPortraitSource = 'cover' | 'custom';
-export type BuiltinVisualizerBackgroundMode = 'common' | 'monet' | 'nomand' | 'latent' | 'url' | 'sora';
+export type BuiltinVisualizerBackgroundMode = 'common' | 'monet' | 'nomand' | 'latent' | 'url' | 'sora' | 'we';
 export type VisualizerBackgroundMode = BuiltinVisualizerBackgroundMode | (string & {});
 
 export interface UrlBackgroundItem {
@@ -988,6 +988,26 @@ export interface SoraBackgroundTuning {
   blank: boolean;
 }
 
+export interface WeBackgroundTuning {
+  /** workshop item id of the selected Wallpaper Engine scene; empty means nothing is selected yet. */
+  itemId: string;
+  /** Cached title so the player console can name the wallpaper without a library scan. */
+  itemTitle: string;
+  /** Opens the playback window and captures it as soon as the mode is shown. */
+  autoStart: boolean;
+  /** Camera and dialogue audio of the scene are suppressed through applyProperties. */
+  muteAudio: boolean;
+  /** Opacity of the captured layer over the visualizer background. */
+  opacity: number;
+  /** Zoom on the captured frame, 1 = fit. */
+  scale: number;
+  /** Horizontal/vertical pan in percent of the layer size, -50..50. */
+  offsetX: number;
+  offsetY: number;
+  /** Capture frame rate requested from the desktop capture stream, 15..60. */
+  frameRate: number;
+}
+
 export interface MonetTuning {
   keywordColoringEnabled: boolean;
   showDescription: boolean;
@@ -1061,6 +1081,18 @@ export const DEFAULT_LATENT_BACKGROUND_TUNING: LatentBackgroundTuning = {
 
 export const DEFAULT_SORA_BACKGROUND_TUNING: SoraBackgroundTuning = {
   blank: false,
+};
+
+export const DEFAULT_WE_BACKGROUND_TUNING: WeBackgroundTuning = {
+  itemId: '',
+  itemTitle: '',
+  autoStart: true,
+  muteAudio: true,
+  opacity: 1,
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  frameRate: 30,
 };
 
 export const DEFAULT_MONET_TUNING: MonetTuning = {

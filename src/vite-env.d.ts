@@ -293,6 +293,56 @@ declare global {
     name: string;
   }
 
+  interface ElectronWallpaperEngineItem {
+    id: string;
+    title: string;
+    type: string;
+    sourceKind: 'workshop' | 'myprojects';
+    workshopId: string;
+    enginePlayable: boolean;
+    hasPreview: boolean;
+    audioPropertyCount: number;
+  }
+
+  interface ElectronWallpaperEngineLibrary {
+    ok: boolean;
+    error?: string;
+    steamRoots?: string[];
+    total: number;
+    items: ElectronWallpaperEngineItem[];
+  }
+
+  interface ElectronWallpaperEngineStatus {
+    phase: 'idle' | 'starting' | 'running' | 'stopping' | 'error';
+    engineReady: boolean;
+    executable: string;
+    locationTitle: string;
+    itemId: string;
+    title: string;
+    width: number;
+    height: number;
+    parkX: number;
+    parkY: number;
+    muted: boolean;
+    audioPropertyCount: number;
+    mutedPropertyCount: number;
+    startedAt: number;
+    error: string;
+  }
+
+  interface ElectronWallpaperEngineRuntimeStatus {
+    supported: boolean;
+    status: ElectronWallpaperEngineStatus;
+  }
+
+  interface ElectronWallpaperEngineStartResult {
+    ok: boolean;
+    error?: string;
+    locationTitle?: string;
+    width?: number;
+    height?: number;
+  }
+
   interface ElectronSaveDialogResult {
     canceled: boolean;
     filePath: string | null;
@@ -973,6 +1023,18 @@ declare global {
       ) => Promise<ElectronSaveDialogResult>;
       reportDevicePixelRatio: (ratio: number) => Promise<void>;
       getMainWindowCaptureSource: () => Promise<ElectronWindowCaptureSource | null>;
+      // Wallpaper Engine background mode: library index + parked playback window the renderer captures.
+      scanWallpaperEngineLibrary: (force?: boolean) => Promise<ElectronWallpaperEngineLibrary>;
+      startWallpaperEngine: (payload: {
+        itemId: string;
+        muteAudio?: boolean;
+      }) => Promise<ElectronWallpaperEngineStartResult>;
+      stopWallpaperEngine: () => Promise<{ ok: boolean }>;
+      getWallpaperEngineStatus: () => Promise<ElectronWallpaperEngineRuntimeStatus>;
+      getWallpaperEngineCaptureSource: () => Promise<ElectronWindowCaptureSource | null>;
+      onWallpaperEngineChanged: (
+        callback: (status: ElectronWallpaperEngineStatus) => void,
+      ) => () => void;
       // Returns `false` when the resize could not be prepared, otherwise the resolved DPR.
       prepareVideoExportWindow: (size: { width: number; height: number }) => Promise<false | { success: boolean; dpr: number }>;
       restoreVideoExportWindow: () => Promise<boolean>;

@@ -1,0 +1,555 @@
+// electron/wallpaperEngineRuntime.cjs
+// Wallpaper Engine side-car runtime: locates and verifies wallpaper64.exe, guarantees the
+// `-control` channel is answering, opens one scene project into a parked playback window, and
+// keeps the scene's audio properties muted through a retry schedule.
+//
+// The engine control protocol, the Authenticode signer gate, the control-channel-ready-then-send
+// rule, the no-arg engine bootstrap and the mute retry schedules are ported from Mineradio
+// (GPL-3.0-only) desktop/wallpaper-engine-runtime.js, revision
+// d43de565acabfdc1a9c9820a27e81a98ccbebcef.
+// This file is distributed with Folia under AGPL-3.0.
+//
+// Nothing here patches or rewrites the user's wallpaper projects: the audio suppression rides on
+// `-control applyProperties` only, so every file on disk stays byte-identical.
+
+const { resolveSteamLibraryRoots } = require('./wallpaperEngineLibrary.cjs');
+const { encodePowerShellCommand } = require('./wallpaperEngineWindow.cjs');
+
+const WALLPAPER_ENGINE_EXECUTABLES = ['wallpaper64.exe', 'wallpaper32.exe'];
+const WALLPAPER_ENGINE_INSTALL_SUBPATH = ['steamapps', 'common', 'wallpaper_engine'];
+const ENGINE_SIGNER_PATTERN = /\bSkutta Software\b/i;
+const ENGINE_READY_CACHE_MS = 2500;
+const ENGINE_READY_SUCCESS_COUNT = 2;
+const ENGINE_PROCESS_STABLE_MS = 720;
+const CONTROL_PROBE_ARGS = ['-control', 'getWallpaper', '-monitor', '0'];
+const CONTROL_TIMEOUT_MS = 8000;
+const OPEN_TIMEOUT_MS = 15000;
+const ENGINE_BOOT_TIMEOUT_MS = 25000;
+const CONTROL_POLL_INTERVAL_MS = 400;
+const MAX_MUTE_PROPERTIES = 256;
+const MIN_PLAYBACK_SIZE = 480;
+const MAX_PLAYBACK_SIZE = 3840;
+const SAFE_PROPERTY_KEY = /^[a-z0-9_.-]{1,128}$/i;
+const BLOCKED_PROPERTY_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+// Audio keeps re-asserting long after the window opens: a scene may restore its own volume from
+// its saved user settings at any point during startup.
+const INITIAL_MUTE_RETRY_DELAYS_MS = [0, 120, 320, 700, 1300, 2200];
+const MUTE_REASSERT_DELAYS_MS = [80, 220, 650, 1500, 3200, 6500, 10000];
+const MUTE_SCHEDULE_MS = [
+  ...INITIAL_MUTE_RETRY_DELAYS_MS,
+  ...MUTE_REASSERT_DELAYS_MS.map(
+    (delay) => delay + INITIAL_MUTE_RETRY_DELAYS_MS[INITIAL_MUTE_RETRY_DELAYS_MS.length - 1],
+  ),
+];
+
+const SIGNATURE_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+try {
+  $signature = Get-AuthenticodeSignature -FilePath $env:FOLIA_WE_EXE
+  Write-Output (@{
+    ok = ($signature.Status -eq 'Valid')
+    status = [string]$signature.Status
+    subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+  } | ConvertTo-Json -Compress -Depth 3)
+} catch {
+  Write-Output (@{ ok = $false; status = 'error'; message = $_.Exception.Message } | ConvertTo-Json -Compress -Depth 3)
+}
+`;
+
+// A playback window is addressed by its title only, so the title must be unique per session and
+// impossible to collide with a user-named window.
+const buildLocationTitle = (seed) => {
+  const token = String(seed || '').replace(/[^a-z0-9]/gi, '').slice(0, 12).toLowerCase() || 'session';
+  const nonce = Math.random().toString(16).slice(2, 8);
+  return 'Folia Wallpaper ' + token + nonce;
+};
+
+const clampPlaybackSize = (value, fallback) => {
+  const size = Math.round(Number(value));
+  if (!Number.isFinite(size) || size <= 0) return fallback;
+  return Math.min(MAX_PLAYBACK_SIZE, Math.max(MIN_PLAYBACK_SIZE, size));
+};
+
+const buildOpenWallpaperArgs = ({ file, locationTitle, width, height, x, y }) => [
+  '-control', 'openWallpaper',
+  '-file', String(file),
+  '-playInWindow', String(locationTitle),
+  '-width', String(Math.round(width)),
+  '-height', String(Math.round(height)),
+  '-x', String(Math.round(x)),
+  '-y', String(Math.round(y)),
+  '-borderless',
+];
+
+// Only plain scalar values under safe property keys survive; anything else is dropped rather than
+// handed to the engine, which would reject the whole RAW payload.
+const sanitizeMuteProperties = (properties) => {
+  const safe = {};
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return safe;
+  for (const [rawKey, rawValue] of Object.entries(properties)) {
+    if (Object.keys(safe).length >= MAX_MUTE_PROPERTIES) break;
+    const key = String(rawKey || '').trim();
+    if (!SAFE_PROPERTY_KEY.test(key) || BLOCKED_PROPERTY_KEYS.has(key.toLowerCase())) continue;
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+      safe[key] = rawValue;
+    } else if (typeof rawValue === 'boolean') {
+      safe[key] = rawValue;
+    } else if (typeof rawValue === 'string' && rawValue.length <= 256) {
+      safe[key] = rawValue;
+    }
+  }
+  return safe;
+};
+
+const buildApplyPropertiesArgs = ({ locationTitle, properties }) => {
+  const payload = 'RAW~(' + JSON.stringify(sanitizeMuteProperties(properties)) + ')~END';
+  return ['-control', 'applyProperties', '-properties', payload, '-location', String(locationTitle)];
+};
+
+const RAW_PAYLOAD_ARG = /^RAW~\(.*\)~END$/s;
+
+// Windows command-line escaping for the verbatim path: only arguments that contain a space or a
+// quote are wrapped, and backslashes in front of the closing quote are doubled.
+const quoteWindowsArgument = (value) => {
+  const text = String(value == null ? '' : value);
+  if (text && !/[\s"]/.test(text)) return text;
+  return '"' + text.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
+};
+
+const windowsDirectoryOf = (file) => {
+  const text = String(file || '');
+  const index = Math.max(text.lastIndexOf('\\'), text.lastIndexOf('/'));
+  return index > 0 ? text.slice(0, index) : '';
+};
+
+// The engine reads the RAW~({...})~END payload straight from the raw command line, so the payload's
+// own quotes must survive: Node's default Windows escaping rewrites them as \" and the engine then
+// answers with exit code 4 instead of applying anything. Returns null for argument sets that do not
+// carry a payload — those go through the ordinary execFile encoding.
+const buildVerbatimControlInvocation = (executable, args) => {
+  const payloadIndex = args.findIndex((value) => RAW_PAYLOAD_ARG.test(String(value)));
+  if (payloadIndex < 0) return null;
+  const file = String(executable);
+  return {
+    file,
+    args: args.map((value, index) => (index === payloadIndex ? String(value) : quoteWindowsArgument(value))),
+    // The reference implementation runs the control command from the install directory; the
+    // directory is split off by hand so this stays host-independent.
+    cwd: windowsDirectoryOf(file),
+  };
+};
+
+// `reg`-discovered library roots → candidate wallpaper64.exe paths on disk (existence only; the
+// signer check happens once, on the first candidate that exists).
+const findExecutableCandidates = async ({ fsp, path, execFile }) => {
+  const { libraryRoots } = await resolveSteamLibraryRoots({ fsp, path, execFile });
+  const candidates = [];
+  for (const root of libraryRoots) {
+    for (const executable of WALLPAPER_ENGINE_EXECUTABLES) {
+      candidates.push(path.join(root, ...WALLPAPER_ENGINE_INSTALL_SUBPATH, executable));
+    }
+  }
+  const existing = [];
+  for (const candidate of candidates) {
+    try {
+      const stats = await fsp.stat(candidate);
+      if (stats.isFile()) existing.push(candidate);
+    } catch {
+      // Not installed in this library.
+    }
+  }
+  return existing;
+};
+
+function createWallpaperEngineRuntime(options = {}) {
+  const {
+    fs,
+    path,
+    execFile,
+    spawn,
+    log = () => {},
+    logWarn = () => {},
+    windowHelper = null,
+    getVirtualDesktopBounds = () => null,
+    emitStatus = () => {},
+    timers = { setTimeout, clearTimeout },
+    delay = (ms) => new Promise((resolve) => { timers.setTimeout(resolve, ms); }),
+  } = options;
+  const fsp = fs.promises;
+
+  let executablePath = '';
+  let executableVerified = false;
+  let readyAt = 0;
+  let readyPromise = null;
+  let muteTimers = [];
+  let muteChain = Promise.resolve();
+  let currentItem = null;
+  // Physical-pixel corner learned from the window helper; null until the first successful park.
+  let parkTarget = null;
+  let disposed = false;
+
+  const status = {
+    phase: 'idle',
+    engineReady: false,
+    executable: '',
+    locationTitle: '',
+    itemId: '',
+    title: '',
+    width: 0,
+    height: 0,
+    parkX: 0,
+    parkY: 0,
+    muted: false,
+    audioPropertyCount: 0,
+    mutedPropertyCount: 0,
+    startedAt: 0,
+    error: '',
+  };
+
+  const publishStatus = (patch = {}) => {
+    Object.assign(status, patch);
+    emitStatus({ ...status });
+  };
+
+  const runExecFile = (file, args, timeoutMs, extra = null) => new Promise((resolve) => {
+    execFile(file, args, {
+      timeout: timeoutMs,
+      windowsHide: true,
+      maxBuffer: 1024 * 1024 * 4,
+      ...(extra || {}),
+    }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error && typeof error.code === 'number' ? error.code : (error ? -1 : 0),
+        stdout: String(stdout || ''),
+        stderr: String(stderr || ''),
+      });
+    });
+  });
+
+  // Runs one `-control` command against the engine. Never throws: callers branch on `ok`.
+  const spawnControl = async (args, timeoutMs = CONTROL_TIMEOUT_MS) => {
+    if (!executablePath) return { ok: false, code: -1, stdout: '', stderr: 'no-executable' };
+    const verbatim = buildVerbatimControlInvocation(executablePath, args);
+    const result = verbatim
+      ? await runExecFile(verbatim.file, verbatim.args, timeoutMs, {
+        cwd: verbatim.cwd,
+        windowsVerbatimArguments: true,
+        shell: false,
+      })
+      : await runExecFile(executablePath, args, timeoutMs);
+    if (!result.ok) {
+      logWarn('[wallpaper-engine] control command failed', args[1] || args.join(' '), result.code);
+    }
+    return result;
+  };
+
+  // `-control getWallpaper -monitor 0` answers exactly when the engine's control channel is up.
+  const probeControlChannel = async () => {
+    if (!executablePath) return false;
+    const result = await runExecFile(executablePath, CONTROL_PROBE_ARGS, CONTROL_TIMEOUT_MS);
+    return result.ok;
+  };
+
+  // Confirms the binary really is Wallpaper Engine before we ever execute it: the install path
+  // comes from the registry, which an unprivileged process could point somewhere else.
+  const verifyExecutableSignature = async (candidate) => {
+    const script = await new Promise((resolve) => {
+      execFile('powershell.exe', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-EncodedCommand', encodePowerShellCommand(SIGNATURE_SCRIPT),
+      ], {
+        timeout: 20000,
+        windowsHide: true,
+        env: { ...process.env, FOLIA_WE_EXE: candidate },
+      }, (error, stdout) => resolve(String(stdout || '')));
+    });
+    const lines = script.split(/\r?\n/);
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      const line = lines[index].trim();
+      if (!line.startsWith('{') || !line.endsWith('}')) continue;
+      try {
+        const parsed = JSON.parse(line);
+        return {
+          ok: Boolean(parsed.ok) && ENGINE_SIGNER_PATTERN.test(String(parsed.subject || '')),
+          status: String(parsed.status || ''),
+          subject: String(parsed.subject || ''),
+        };
+      } catch {
+        // Keep scanning.
+      }
+    }
+    return { ok: false, status: 'unparsed', subject: '' };
+  };
+
+  const resolveExecutable = async ({ force = false } = {}) => {
+    if (executableVerified && executablePath && !force) return executablePath;
+    const candidates = await findExecutableCandidates({ fsp, path, execFile });
+    for (const candidate of candidates) {
+      const verification = await verifyExecutableSignature(candidate);
+      if (verification.ok) {
+        executablePath = candidate;
+        executableVerified = true;
+        publishStatus({ executable: candidate });
+        return candidate;
+      }
+      logWarn('[wallpaper-engine] refusing unverified executable', candidate, verification.status, verification.subject);
+    }
+    executablePath = '';
+    executableVerified = false;
+    logWarn('[wallpaper-engine] no verified Wallpaper Engine executable found', candidates.length);
+    return '';
+  };
+
+  const launchEngine = async () => {
+    if (!executableVerified || !executablePath) return false;
+    try {
+      const child = spawn(executablePath, [], { windowsHide: true, stdio: 'ignore', detached: false });
+      child.on('error', (error) => logWarn('[wallpaper-engine] engine launch failed', error && error.message));
+      child.unref();
+    } catch (error) {
+      logWarn('[wallpaper-engine] engine spawn threw', error && error.message);
+      return false;
+    }
+    await delay(ENGINE_PROCESS_STABLE_MS);
+    return true;
+  };
+
+  // Polls until the control channel answers consecutively, so a half-started engine cannot swallow
+  // the following openWallpaper.
+  const waitForControlChannel = async (timeoutMs) => {
+    const deadline = Date.now() + timeoutMs;
+    let consecutive = 0;
+    for (;;) {
+      if (disposed) return false;
+      if (await probeControlChannel()) {
+        consecutive += 1;
+        if (consecutive >= ENGINE_READY_SUCCESS_COUNT) return true;
+      } else {
+        consecutive = 0;
+      }
+      if (Date.now() >= deadline) return false;
+      await delay(CONTROL_POLL_INTERVAL_MS);
+    }
+  };
+
+  const ensureControlReady = async ({ force = false } = {}) => {
+    if (!executablePath) {
+      const resolved = await resolveExecutable();
+      if (!resolved) {
+        publishStatus({ engineReady: false, error: 'engine-not-found' });
+        return false;
+      }
+    }
+    if (!force && Date.now() - readyAt < ENGINE_READY_CACHE_MS) return true;
+    if (readyPromise) return readyPromise;
+    readyPromise = (async () => {
+      if (await waitForControlChannel(1500)) {
+        readyAt = Date.now();
+        publishStatus({ engineReady: true });
+        return true;
+      }
+      log('[wallpaper-engine] control channel silent, bootstrapping engine');
+      await launchEngine();
+      const ready = await waitForControlChannel(ENGINE_BOOT_TIMEOUT_MS);
+      readyAt = ready ? Date.now() : 0;
+      publishStatus({ engineReady: ready, error: ready ? '' : 'engine-not-ready' });
+      return ready;
+    })();
+    try {
+      return await readyPromise;
+    } finally {
+      readyPromise = null;
+    }
+  };
+
+  const clearMuteTimers = () => {
+    for (const timer of muteTimers) timers.clearTimeout(timer);
+    muteTimers = [];
+  };
+
+  const applyMuteOnce = async () => {
+    if (disposed || !status.locationTitle || !status.itemId) return false;
+    const item = currentItem;
+    if (!item) return false;
+    const properties = sanitizeMuteProperties(item.muteProperties);
+    if (!Object.keys(properties).length) return false;
+    const result = await spawnControl(
+      buildApplyPropertiesArgs({ locationTitle: status.locationTitle, properties }),
+      CONTROL_TIMEOUT_MS,
+    );
+    if (result.ok) {
+      if (!status.muted) {
+        publishStatus({
+          muted: true,
+          mutedPropertyCount: Object.keys(properties).length,
+          audioPropertyCount: Number(item.audioPropertyCount) || 0,
+        });
+      }
+      return true;
+    }
+    return false;
+  };
+
+  // Serialises the re-assert attempts: parallel control invocations can arrive out of order and
+  // an early attempt would then win over a later one.
+  const queueMute = () => {
+    muteChain = muteChain.then(() => applyMuteOnce()).catch(() => false);
+    return muteChain;
+  };
+
+  const scheduleMute = () => {
+    clearMuteTimers();
+    for (const delayMs of MUTE_SCHEDULE_MS) {
+      muteTimers.push(timers.setTimeout(() => { queueMute(); }, delayMs));
+    }
+  };
+
+  const resolvePlaybackGeometry = () => {
+    const bounds = getVirtualDesktopBounds() || { x: 0, y: 0, width: 1920, height: 1080 };
+    const width = clampPlaybackSize(bounds.width, 1920);
+    const height = clampPlaybackSize(bounds.height, 1080);
+    // Parked at the virtual desktop's bottom-right corner: only a 1px sliver stays on screen, which
+    // keeps the window capturable without it ever being visible or minimised. The first window uses
+    // this DIP approximation; every later one reuses the corner the helper read from the OS.
+    return {
+      width,
+      height,
+      parkX: parkTarget ? parkTarget.x : Math.round(bounds.x + bounds.width - 1),
+      parkY: parkTarget ? parkTarget.y : Math.round(bounds.y + bounds.height - 1),
+    };
+  };
+
+  const stop = async ({ reason = 'stop' } = {}) => {
+    clearMuteTimers();
+    const locationTitle = status.locationTitle;
+    currentItem = null;
+    if (!locationTitle) {
+      publishStatus({ phase: 'idle', locationTitle: '', itemId: '', title: '', muted: false });
+      return { ok: true };
+    }
+    publishStatus({ phase: 'stopping' });
+    const result = await spawnControl(['-control', 'closeWallpaper', '-location', locationTitle], CONTROL_TIMEOUT_MS);
+    publishStatus({
+      phase: 'idle',
+      locationTitle: '',
+      itemId: '',
+      title: '',
+      muted: false,
+      mutedPropertyCount: 0,
+      audioPropertyCount: 0,
+      startedAt: 0,
+      error: result.ok ? '' : 'close-failed',
+    });
+    log('[wallpaper-engine] playback stopped', reason, result.ok ? 'ok' : 'close-failed');
+    return { ok: result.ok };
+  };
+
+  const start = async ({ item, muteAudio = true } = {}) => {
+    if (disposed) return { ok: false, error: 'disposed' };
+    if (!item || !item.enginePlayable || !item.projectFile) {
+      publishStatus({ phase: 'error', error: 'item-not-playable' });
+      return { ok: false, error: 'item-not-playable' };
+    }
+    if (status.phase === 'starting') return { ok: false, error: 'busy' };
+    if (status.locationTitle) await stop({ reason: 'restart' });
+    publishStatus({ phase: 'starting', error: '', muted: false });
+    currentItem = item;
+    try {
+      if (!(await ensureControlReady())) {
+        currentItem = null;
+        publishStatus({ phase: 'error', error: status.error || 'engine-not-ready' });
+        return { ok: false, error: status.error || 'engine-not-ready' };
+      }
+      const geometry = resolvePlaybackGeometry();
+      const locationTitle = buildLocationTitle(item.id);
+      publishStatus({ locationTitle, itemId: item.id, title: item.title, width: geometry.width, height: geometry.height, parkX: geometry.parkX, parkY: geometry.parkY });
+      let opened = await spawnControl(buildOpenWallpaperArgs({
+        file: item.projectFile,
+        locationTitle,
+        width: geometry.width,
+        height: geometry.height,
+        x: geometry.parkX,
+        y: geometry.parkY,
+      }), OPEN_TIMEOUT_MS);
+      if (!opened.ok) {
+        // The probe can be optimistic (the engine answers even while it is still tearing down);
+        // one forced bootstrap + retry covers that instead of surfacing a dead playback window.
+        logWarn('[wallpaper-engine] openWallpaper failed, forcing engine bootstrap and retrying');
+        await ensureControlReady({ force: true });
+        opened = await spawnControl(buildOpenWallpaperArgs({
+          file: item.projectFile,
+          locationTitle,
+          width: geometry.width,
+          height: geometry.height,
+          x: geometry.parkX,
+          y: geometry.parkY,
+        }), OPEN_TIMEOUT_MS);
+      }
+      if (!opened.ok) {
+        currentItem = null;
+        publishStatus({ phase: 'error', locationTitle: '', itemId: '', title: '', error: 'open-failed' });
+        return { ok: false, error: 'open-failed' };
+      }
+      publishStatus({ phase: 'running', startedAt: Date.now() });
+      if (windowHelper) {
+        const parked = await windowHelper.parkWindow({ title: locationTitle });
+        if (parked && parked.ok && parked.target) {
+          // The helper reports the OS's own virtual-screen corner; reuse it so the next window is
+          // opened at the right place instead of relying on the DIP approximation.
+          parkTarget = { x: Number(parked.target.x), y: Number(parked.target.y) };
+          publishStatus({ parkX: parkTarget.x, parkY: parkTarget.y });
+        }
+        log('[wallpaper-engine] park check', JSON.stringify(parked));
+      }
+      if (muteAudio) scheduleMute();
+      return { ok: true, locationTitle, width: geometry.width, height: geometry.height };
+    } catch (error) {
+      currentItem = null;
+      publishStatus({ phase: 'error', error: 'start-failed' });
+      logWarn('[wallpaper-engine] start threw', error && error.message);
+      return { ok: false, error: 'start-failed' };
+    }
+  };
+
+  const dispose = async () => {
+    disposed = true;
+    clearMuteTimers();
+    if (status.locationTitle) {
+      await spawnControl(['-control', 'closeWallpaper', '-location', status.locationTitle], CONTROL_TIMEOUT_MS);
+    }
+    publishStatus({ phase: 'idle', locationTitle: '', itemId: '', title: '', muted: false });
+  };
+
+  return {
+    dispose,
+    ensureControlReady,
+    getStatus: () => ({ ...status }),
+    resolveExecutable,
+    start,
+    stop,
+  };
+}
+
+module.exports = {
+  CONTROL_PROBE_ARGS,
+  ENGINE_BOOT_TIMEOUT_MS,
+  ENGINE_READY_CACHE_MS,
+  ENGINE_READY_SUCCESS_COUNT,
+  ENGINE_SIGNER_PATTERN,
+  INITIAL_MUTE_RETRY_DELAYS_MS,
+  MUTE_REASSERT_DELAYS_MS,
+  MUTE_SCHEDULE_MS,
+  SIGNATURE_SCRIPT,
+  WALLPAPER_ENGINE_EXECUTABLES,
+  buildApplyPropertiesArgs,
+  buildLocationTitle,
+  buildOpenWallpaperArgs,
+  buildVerbatimControlInvocation,
+  clampPlaybackSize,
+  createWallpaperEngineRuntime,
+  findExecutableCandidates,
+  quoteWindowsArgument,
+  sanitizeMuteProperties,
+};

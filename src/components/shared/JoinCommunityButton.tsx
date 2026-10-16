@@ -1,13 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronDown, Copy, ExternalLink, Users } from 'lucide-react';
+import { Check, ChevronDown, Copy, ExternalLink, FolderGit2, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { discordIconUrl, openDiscordInvite } from './discordCommunity';
-import { QQ_COMMUNITY_GROUP_NUMBER } from './qqCommunity';
+import { openFoliaRepository } from './foliaRepository';
+import { QQ_CONTACT_NUMBER } from './qqCommunity';
 import { copyTextToClipboard } from '../../utils/clipboard';
 
 // src/components/shared/JoinCommunityButton.tsx
-// 帮助页的「加入社区」：一颗胶囊，点开向上弹出两个去处——Discord（打开邀请链接）与 QQ 自助交流群（复制群号）。
+// 帮助页的「加入社区」：一颗胶囊，点开向上弹出两个去处——GitHub 仓库（打开）与作者 QQ（复制号码）。
 
 const COPIED_FEEDBACK_MS = 1800;
 
@@ -43,31 +43,30 @@ export const JoinCommunityButton: React.FC = () => {
         return () => window.clearTimeout(timer);
     }, [qqCopied]);
 
-    const joinDiscord = () => {
+    const openGithub = () => {
         setIsOpen(false);
-        openDiscordInvite();
+        openFoliaRepository();
     };
 
-    // QQ 群没有能直接打开的入群链接：复制群号，菜单留着让这一项显示「群号已复制」。
-    const copyQqGroup = async () => {
+    // QQ 没有能直接打开的链接：复制号码，菜单留着让这一项显示「QQ 号已复制」。
+    const copyQqNumber = async () => {
         try {
-            await copyTextToClipboard(QQ_COMMUNITY_GROUP_NUMBER);
+            await copyTextToClipboard(QQ_CONTACT_NUMBER);
             setQqCopied(true);
         } catch (error) {
-            console.error('Failed to copy the QQ group number:', error);
+            console.error('Failed to copy the QQ number:', error);
             setQqCopied(false);
         }
     };
 
     return (
         <div ref={containerRef} className="relative">
-            {/* 一排单色胶囊里唯一带颜色的那颗，靠色彩而不是体积被看见。 */}
             <button
                 type="button"
                 onClick={() => setIsOpen(current => !current)}
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
-                className="px-6 py-2 bg-[#5865F2]/15 hover:bg-[#5865F2]/25 ring-1 ring-inset ring-[#5865F2]/30 transition-colors rounded-full text-sm font-medium flex items-center gap-2"
+                className="px-6 py-2 bg-white/10 hover:bg-white/20 transition-colors rounded-full text-sm font-medium flex items-center gap-2"
                 style={{ color: 'var(--text-primary)' }}
             >
                 <Users size={16} aria-hidden />
@@ -89,20 +88,20 @@ export const JoinCommunityButton: React.FC = () => {
                         style={{ color: 'var(--text-primary)' }}
                     >
                         <CommunityMenuItem
-                            icon={<img src={discordIconUrl} alt="" aria-hidden className="h-[18px] w-[18px] rounded-[5px]" />}
-                            label={t('help.communityDiscord')}
-                            hint={t('help.communityDiscordHint')}
+                            icon={<FolderGit2 size={18} aria-hidden />}
+                            label={t('help.communityGithub')}
+                            hint={t('help.communityGithubHint')}
                             trailing={<ExternalLink size={14} aria-hidden className="opacity-50" />}
-                            onClick={joinDiscord}
+                            onClick={openGithub}
                         />
                         <CommunityMenuItem
                             icon={qqCopied ? <Check size={18} aria-hidden className="text-emerald-500" /> : <Users size={18} aria-hidden />}
                             label={t('help.communityQq')}
                             hint={qqCopied
-                                ? t('help.qqGroupNumberCopied')
-                                : t('help.communityQqHint', { number: QQ_COMMUNITY_GROUP_NUMBER })}
+                                ? t('help.qqNumberCopied')
+                                : t('help.communityQqHint', { number: QQ_CONTACT_NUMBER })}
                             trailing={qqCopied ? null : <Copy size={14} aria-hidden className="opacity-50" />}
-                            onClick={() => void copyQqGroup()}
+                            onClick={() => void copyQqNumber()}
                         />
                     </motion.div>
                 )}

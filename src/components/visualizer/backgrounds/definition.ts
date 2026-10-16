@@ -10,6 +10,7 @@ import type {
     Theme,
     UrlBackgroundItem,
     VisualizerBackgroundMode,
+    WeBackgroundTuning,
 } from '../../../types';
 
 // src/components/visualizer/backgrounds/definition.ts
@@ -40,6 +41,9 @@ export interface VisualizerBackgroundConfig {
     url?: {
         items?: UrlBackgroundItem[];
         selectedId?: string | null;
+    };
+    we?: {
+        tuning?: WeBackgroundTuning;
     };
 }
 
@@ -77,6 +81,10 @@ export interface VisualizerBackgroundActions {
         onUpdate?: (id: string, patch: Partial<Omit<UrlBackgroundItem, 'id'>>) => void;
         onDelete?: (id: string) => void;
         onSelect?: (id: string | null) => void;
+    };
+    we?: {
+        onTuningChange?: (patch: Partial<WeBackgroundTuning>) => void;
+        onResetTuning?: () => void;
     };
 }
 

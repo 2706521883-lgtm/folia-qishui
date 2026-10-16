@@ -2,11 +2,11 @@ import { expect, test, type Page } from '@playwright/test';
 import { APP_VERSION, GUIDE_VERSION_STORAGE_KEY, waitForAppMounted } from '../helpers/appState';
 
 // test/ui/helpCommunity.spec.ts
-// 帮助页的「加入社区」：一颗胶囊，点开在 Discord 与 QQ 自助交流群之间选。Discord 打开邀请链接；
-// QQ 复制群号并在这一项上显示「已复制」（剪贴板 API 被拒时退回 execCommand）；Escape 只关菜单不关设置。
+// 帮助页的「加入社区」：一颗胶囊，点开在 GitHub 仓库与作者 QQ 之间选。GitHub 打开仓库链接；
+// QQ 复制号码并在这一项上显示「已复制」（剪贴板 API 被拒时退回 execCommand）；Escape 只关菜单不关设置。
 
-const QQ_GROUP_NUMBER = '372521584';
-const DISCORD_INVITE_URL = 'https://discord.com/invite/dMDBTHxeKd';
+const QQ_CONTACT_NUMBER = '3103472989';
+const REPOSITORY_URL = 'https://github.com/2706521883-lgtm/folia-qishui';
 
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
@@ -42,26 +42,25 @@ const openHelp = async (page: Page, { denyClipboardApi = false } = {}) => {
 
 const capsule = (page: Page) => page.getByRole('button', { name: 'Join the community', exact: true });
 const menu = (page: Page) => page.getByRole('menu', { name: 'Join the community' });
-const qqItem = (page: Page) => menu(page).getByRole('menuitem', { name: /QQ self-help group/ });
-const discordItem = (page: Page) => menu(page).getByRole('menuitem', { name: /Discord server/ });
+const qqItem = (page: Page) => menu(page).getByRole('menuitem', { name: /Author's QQ/ });
+const githubItem = (page: Page) => menu(page).getByRole('menuitem', { name: /GitHub repository/ });
 const readClipboard = (page: Page) => page.evaluate(() => navigator.clipboard.readText());
 const openedUrls = (page: Page) => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
 
-test('one community capsule replaces the separate Discord and QQ buttons', async ({ page }) => {
+test('one community capsule gathers the repository and QQ entries', async ({ page }) => {
     await openHelp(page);
 
     await expect(capsule(page)).toBeVisible();
     await expect(capsule(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByRole('button', { name: /Join our Discord/ })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /QQ self-help group/ })).toHaveCount(0);
+    await expect(menu(page)).toHaveCount(0);
 
     await capsule(page).click();
     await expect(capsule(page)).toHaveAttribute('aria-expanded', 'true');
-    await expect(discordItem(page)).toBeVisible();
-    await expect(qqItem(page)).toContainText(QQ_GROUP_NUMBER);
+    await expect(githubItem(page)).toBeVisible();
+    await expect(qqItem(page)).toContainText(QQ_CONTACT_NUMBER);
 });
 
-test('the QQ option copies the group number and says so', async ({ page }) => {
+test('the QQ option copies the contact number and says so', async ({ page }) => {
     await openHelp(page);
     await page.evaluate(() => navigator.clipboard.writeText(''));
 
@@ -69,20 +68,20 @@ test('the QQ option copies the group number and says so', async ({ page }) => {
     await qqItem(page).click();
 
     // 菜单留着，这一项换成「已复制」。
-    await expect(qqItem(page)).toContainText('Group number copied');
-    expect(await readClipboard(page)).toBe(QQ_GROUP_NUMBER);
-    // 约 1.8s 后变回群号。
-    await expect(qqItem(page)).toContainText(QQ_GROUP_NUMBER, { timeout: 4000 });
+    await expect(qqItem(page)).toContainText('QQ number copied');
+    expect(await readClipboard(page)).toBe(QQ_CONTACT_NUMBER);
+    // 约 1.8s 后变回号码。
+    await expect(qqItem(page)).toContainText(QQ_CONTACT_NUMBER, { timeout: 4000 });
 });
 
-test('the Discord option opens the invite and closes the menu', async ({ page }) => {
+test('the GitHub option opens the repository and closes the menu', async ({ page }) => {
     await openHelp(page);
 
     await capsule(page).click();
-    await discordItem(page).click();
+    await githubItem(page).click();
 
     await expect(menu(page)).toHaveCount(0);
-    expect(await openedUrls(page)).toEqual([DISCORD_INVITE_URL]);
+    expect(await openedUrls(page)).toEqual([REPOSITORY_URL]);
 });
 
 test('Escape closes only the menu, and a click elsewhere closes it too', async ({ page }) => {
@@ -109,6 +108,6 @@ test('copying falls back to execCommand when the clipboard API is refused', asyn
     await capsule(page).click();
     await qqItem(page).click();
 
-    await expect(qqItem(page)).toContainText('Group number copied');
-    expect(await readClipboard(page)).toBe(QQ_GROUP_NUMBER);
+    await expect(qqItem(page)).toContainText('QQ number copied');
+    expect(await readClipboard(page)).toBe(QQ_CONTACT_NUMBER);
 });

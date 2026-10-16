@@ -187,5 +187,18 @@ export const visualizerCommands: CommandPaletteCommand[] = [
             context.visualizer.setVisualizerBackgroundMode('sora');
             return true;
         },
+    },
+    {
+        id: 'background-we',
+        group: 'visualizer',
+        title: 'Background: Wallpaper Engine',
+        description: 'Switch background to a local Wallpaper Engine scene',
+        keywords: ['wallpaper engine', 'wallpaper', 'scene wallpaper', 'workshop', 'steam', '壁纸引擎', '壁纸', '场景壁纸', '创意工坊', '背景切换到 壁纸引擎', '背景切换到壁纸引擎'],
+        // Windows-only: the runtime drives wallpaper64.exe and captures a desktop window.
+        platform: ['electron', 'win'],
+        execute: (_input, context) => {
+            context.visualizer.setVisualizerBackgroundMode('we');
+            return true;
+        },
     }
 ];

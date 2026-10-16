@@ -19,8 +19,7 @@ type NewFeaturesRelease = {
 
 // Defines the current release's cards; their localized text lives under i18nKey in every locale.
 export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
-    i18nKey: 'releaseNotes.v0_7_17',
-    majorUpdate: { codename: 'Spica' },
+    i18nKey: 'releaseNotes.v0_3_1',
     features: [
         { id: 'bravais', icon: BrickWall, daylightIconClassName: 'text-violet-600', darkIconClassName: 'text-violet-400' },
         { id: 'chooseLibrary', icon: Signpost, daylightIconClassName: 'text-sky-600', darkIconClassName: 'text-sky-400' },

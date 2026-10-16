@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, session, screen, dialog, shell, nativeImage
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { spawn } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const Store = require('electron-store').default || require('electron-store');
 const crypto = require('crypto');
 const { createStageApi } = require('./stageApi.cjs');
@@ -22,6 +22,12 @@ const windowsWallpaperModule = require('./windowsWallpaperController.cjs');
 const { createWindowsWallpaperTargetResolver } = require('./windowsWallpaperTarget.cjs');
 const { createWindowsWallpaperMouseInjector } = require('./windowsWallpaperMouse.cjs');
 const macWallpaperModule = require('./macWallpaperController.cjs');
+const {
+  WALLPAPER_ENGINE_PROTOCOL_SCHEME,
+  createWallpaperEngineLibrary,
+} = require('./wallpaperEngineLibrary.cjs');
+const { createWallpaperEngineRuntime } = require('./wallpaperEngineRuntime.cjs');
+const { createWallpaperEngineWindowHelper } = require('./wallpaperEngineWindow.cjs');
 const { createKugouApiBridge } = require('./kugouApiBridge.cjs');
 const { createBodianApiBridge } = require('./bodianApiBridge.cjs');
 const { createBodianMediaPolicy } = require('./bodian/mediaCors.cjs');
@@ -55,6 +61,7 @@ const {
   runAiConnectionTest,
   runAiJsonCompletion,
 } = require('./aiTextClient.cjs');
+const { createAiCredentialStore, isAiCredentialKey, isReservedAiCredentialKey } = require('./aiCredentialStore.cjs');
 const {
   SEGMENTATION_GEMINI_GENERATION_CONFIG,
   SEGMENTATION_JSON_SCHEMA,
@@ -90,6 +97,16 @@ protocol.registerSchemesAsPrivileged([
   },
   {
     scheme: TRANSCODE_PROTOCOL_SCHEME,
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
+  {
+    scheme: WALLPAPER_ENGINE_PROTOCOL_SCHEME,
     privileges: {
       standard: true,
       secure: true,
@@ -204,6 +221,9 @@ const bodianApiBridge = createBodianApiBridge({ store, safeStorage,
   },
 });
 const qqAuthSessionRepository = createQqAuthSessionRepository({ store, safeStorage });
+// AI API keys are sealed with safeStorage instead of sitting in config.json as plaintext, and never
+// leave the main process: the renderer only sees AI_API_KEYS_CONFIGURED (#586).
+const aiCredentials = createAiCredentialStore({ store, safeStorage });
 // 汽水音乐桥只能在 app.whenReady() 之后构造：签名运行时要在 ready 后才能建隐藏窗，
 // 凭据目录也要等 userData 路径确定。在此之前保持 null，IPC 处理器会回 unavailable。
 let qishuiApiBridge = null;
@@ -474,6 +494,62 @@ function rebuildWindowsWallpaperSession() {
     createWindow();
   }
   windowsWallpaper.attach();
+}
+
+// --- Wallpaper Engine background mode (renderer background layer) ---
+// The library indexes the local Steam workshop (431960) + myprojects content; the runtime opens one
+// scene project inside a parked playback window that the renderer captures through desktopCapturer.
+// Neither half replaces the user's desktop wallpaper nor writes to the workshop directory.
+const wallpaperEngineLibrary = createWallpaperEngineLibrary({
+  fs,
+  path,
+  execFile,
+  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+});
+
+const wallpaperEngineWindow = createWallpaperEngineWindowHelper({
+  spawn,
+  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+});
+
+const wallpaperEngineRuntime = createWallpaperEngineRuntime({
+  fs,
+  path,
+  execFile,
+  spawn,
+  windowHelper: wallpaperEngineWindow,
+  log: (...args) => console.log('[WallpaperEngine]', ...args),
+  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+  getVirtualDesktopBounds: () => {
+    const displays = screen.getAllDisplays();
+    if (!displays.length) return null;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const display of displays) {
+      const { x, y, width, height } = display.bounds;
+      // DIP → physical: the first-open approximation only, corrected by the window helper.
+      const scale = display.scaleFactor || 1;
+      minX = Math.min(minX, Math.round(x * scale));
+      minY = Math.min(minY, Math.round(y * scale));
+      maxX = Math.max(maxX, Math.round((x + width) * scale));
+      maxY = Math.max(maxY, Math.round((y + height) * scale));
+    }
+    return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  },
+  emitStatus: (nextStatus) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('wallpaper-engine-changed', nextStatus);
+    }
+  },
+});
+
+// Renderer crash or a window rebuild must not leave an orphaned playback window behind.
+function teardownWallpaperEngineSession() {
+  wallpaperEngineRuntime.dispose().catch((error) => {
+    console.warn('[WallpaperEngine] Failed to dispose the runtime', error);
+  });
 }
 
 // Runtime change (save-settings IPC): relaunch the whole process so the new mode takes effect.
@@ -1852,10 +1928,12 @@ const MOD_SYSTEM_ENABLED_SETTING_KEY = 'MOD_SYSTEM_ENABLED';
 const DEFAULT_STAGE_API_PORT = 32107;
 const DEFAULT_OBS_BROWSER_SOURCE_PORT = 32108;
 const DEFAULT_LYRIC_API_PORT = 32109;
-const FOLIA_RELEASES_URL = 'https://github.com/chthollyphile/folia-major/releases';
+// 本二创版的发布/更新源。这里是 owner/repo 的唯一真源：安装包里 app-update.yml 由
+// package.json 的 build.publish 生成，改一处必须同时改另一处，否则自动更新会走回上游。
+const FOLIA_RELEASES_URL = 'https://github.com/2706521883-lgtm/folia-qishui/releases';
 const FOLIA_GITHUB_REPOSITORY = {
-  owner: 'chthollyphile',
-  repo: 'folia-major',
+  owner: '2706521883-lgtm',
+  repo: 'folia-qishui',
 };
 const WINDOWS_APP_USER_MODEL_ID = 'top.izuna.foliamajor';
 const REMOTE_CONTROL_WINDOW_TITLE = 'Folia Remote';
@@ -1955,7 +2033,7 @@ function readStoredBoolean(settingKey, fallback = false) {
 
 function getPublicSettings() {
   return {
-    ...store.store,
+    ...aiCredentials.toPublicSettings(store.store),
     [MINIMIZE_TO_TRAY_SETTING_KEY]: readStoredBoolean(MINIMIZE_TO_TRAY_SETTING_KEY, false),
     [CLOSE_TO_TRAY_SETTING_KEY]: readStoredBoolean(CLOSE_TO_TRAY_SETTING_KEY, false),
     [HIDE_TASKBAR_ICON_SETTING_KEY]: readStoredBoolean(HIDE_TASKBAR_ICON_SETTING_KEY, false),
@@ -4464,6 +4542,13 @@ function startMainWindowClickThroughUnlockHoverMonitor() {
   if (mainWindowClickThroughUnlockHoverTimer) {
     return;
   }
+  // Wayland exposes neither window position nor a global cursor: getBounds() sits at (0,0) and
+  // getCursorScreenPoint() stays (0,0), so this poll would read "outside" every tick and fight the
+  // renderer's mousemove hit test (the unlock button blinks every interval and can't be clicked).
+  // The renderer keeps receiving mouse-move while ignoring there, so it drives the hotspot alone.
+  if (process.platform === 'linux' && onWayland) {
+    return;
+  }
 
   syncMainWindowClickThroughUnlockHoverFromCursor();
   mainWindowClickThroughUnlockHoverTimer = setInterval(
@@ -4798,6 +4883,23 @@ async function getMainWindowCaptureSource() {
     sources.find(item => item.name === title && item.name !== REMOTE_CONTROL_WINDOW_TITLE) ||
     sources.find(item => item.name.toLowerCase().includes('folia') && item.name !== REMOTE_CONTROL_WINDOW_TITLE) ||
     null;
+
+  return source ? { id: source.id, name: source.name } : null;
+}
+
+// The Wallpaper Engine playback window is addressed by its unique session title only; the parked
+// position keeps it out of sight, so this must never fall back to "any wallpaper64 window".
+async function getWallpaperEngineCaptureSource() {
+  const locationTitle = wallpaperEngineRuntime.getStatus().locationTitle;
+  if (!locationTitle) {
+    return null;
+  }
+
+  const sources = await desktopCapturer.getSources({
+    types: ['window'],
+    thumbnailSize: { width: 0, height: 0 },
+  });
+  const source = sources.find(item => item.name === locationTitle) || null;
 
   return source ? { id: source.id, name: source.name } : null;
 }
@@ -5172,9 +5274,17 @@ app.whenReady().then(async () => {
     }
   }
 
+  // Seal AI API keys that older versions left in config.json as plaintext.
+  try {
+    aiCredentials.migrate();
+  } catch (error) {
+    console.warn('[AiCredentials] Migrating plaintext API keys failed', error);
+  }
+
   setupFileSystemAccessPermissionHandlers();
   setupCorsBypassHandlers();
   localCoverAssetStore.registerProtocolHandler(protocol, electronNet);
+  wallpaperEngineLibrary.registerProtocolHandler(protocol, electronNet);
   // Transcode fallback is an optional degradation path; a failure preparing it must never keep
   // the rest of this handler, createWindow() included, from running.
   try {
@@ -5420,6 +5530,9 @@ app.on('before-quit', () => {
   // parented leaves its last frame stuck on the desktop. killHelper() is the fallback for
   // anything that races the graceful path (the helper also self-detaches on stdin EOF).
   windowsWallpaper.detach();
+  // Closes the parked Wallpaper Engine playback window. Not awaited: the execFile child outlives
+  // this process, so the close still reaches the engine.
+  teardownWallpaperEngineSession();
   // macOS wallpaper: stop the event tap and restore the Dock. Tap/level state dies with the
   // process, but the Dock is SYSTEM state — the async restore chain could be cut short by the
   // process exiting mid-way, so restore synchronously (execFileSync + killall Dock).
@@ -5490,7 +5603,19 @@ ipcMain.handle('set-app-locale', (event, localeKey) => {
 });
 
 ipcMain.handle('save-settings', (event, key, value) => {
-  if (key === 'DISCORD_RICH_PRESENCE_APPLICATION_ID') {
+  // electron-store's set() also accepts an object of key/value pairs, which would bypass the
+  // per-key guards below.
+  if (typeof key !== 'string') {
+    return getPublicSettings();
+  }
+  if (key === 'DISCORD_RICH_PRESENCE_APPLICATION_ID' || isReservedAiCredentialKey(key)) {
+    return getPublicSettings();
+  }
+  if (isAiCredentialKey(key)) {
+    // Only a string is a key; '' is the explicit clear. Anything else must not wipe a saved key.
+    if (typeof value === 'string') {
+      aiCredentials.set(key, value);
+    }
     return getPublicSettings();
   }
 
@@ -6501,6 +6626,79 @@ ipcMain.handle('video-export-get-main-window-source', async (event) => {
   return getMainWindowCaptureSource();
 });
 
+ipcMain.handle('wallpaper-engine-scan', async (event, force) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to read the Wallpaper Engine library.');
+  }
+  if (process.platform !== 'win32') {
+    return { ok: false, error: 'unsupported-platform', total: 0, items: [] };
+  }
+  try {
+    const result = await wallpaperEngineLibrary.ensureFresh(Boolean(force));
+    return {
+      ok: true,
+      steamRoots: result.steamRoots,
+      total: result.total,
+      // The renderer only ever needs the catalogue fields, never the on-disk paths.
+      items: result.items.map(item => ({
+        id: item.id,
+        title: item.title,
+        type: item.type,
+        sourceKind: item.sourceKind,
+        workshopId: item.workshopId,
+        enginePlayable: item.enginePlayable,
+        hasPreview: Boolean(item.previewFile),
+        audioPropertyCount: item.audioPropertyCount,
+      })),
+    };
+  } catch (error) {
+    console.warn('[WallpaperEngine] Library scan failed', error);
+    return { ok: false, error: 'scan-failed', total: 0, items: [] };
+  }
+});
+
+ipcMain.handle('wallpaper-engine-start', async (event, payload) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to start a Wallpaper Engine session.');
+  }
+  if (process.platform !== 'win32') {
+    return { ok: false, error: 'unsupported-platform' };
+  }
+  const itemId = payload && typeof payload.itemId === 'string' ? payload.itemId : '';
+  const item = wallpaperEngineLibrary.getItem(itemId);
+  if (!item) {
+    return { ok: false, error: 'unknown-item' };
+  }
+  return wallpaperEngineRuntime.start({
+    item,
+    muteAudio: !payload || payload.muteAudio !== false,
+  });
+});
+
+ipcMain.handle('wallpaper-engine-stop', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to stop a Wallpaper Engine session.');
+  }
+  return wallpaperEngineRuntime.stop({ reason: 'renderer' });
+});
+
+ipcMain.handle('wallpaper-engine-status', (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to read the Wallpaper Engine status.');
+  }
+  return {
+    supported: process.platform === 'win32',
+    status: wallpaperEngineRuntime.getStatus(),
+  };
+});
+
+ipcMain.handle('wallpaper-engine-get-capture-source', async (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to read the Wallpaper Engine capture source.');
+  }
+  return getWallpaperEngineCaptureSource();
+});
+
 ipcMain.handle('video-export-prepare-window', (event, size) => {
   if (!isTrustedMainWindowContents(event.sender)) {
     throw new Error('Untrusted renderer attempted to resize the main window for export.');
@@ -6613,7 +6811,7 @@ ipcMain.handle('generate-theme', async (event, lyricsText, options = {}) => {
       const sourcePrompt = buildThemeSourcePrompt(snippet, isPureMusic, songTitle);
       const apiUrl = normalizeOpenAIChatCompletionsUrl(store.get('OPENAI_API_URL'));
       const content = await runAiJsonCompletion({
-        store,
+        store: aiCredentials.settingsView,
         systemPrompt,
         sourcePrompt,
         schema: THEME_JSON_SCHEMA,
@@ -6634,7 +6832,7 @@ ipcMain.handle('generate-theme', async (event, lyricsText, options = {}) => {
       dualTheme.dark.provider = 'OpenAI Compatible (Local)';
 
     } else {
-      const apiKey = store.get('GEMINI_API_KEY');
+      const apiKey = aiCredentials.get('GEMINI_API_KEY');
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY is not configured in settings");
       }
@@ -6674,7 +6872,17 @@ ipcMain.handle('ai-test-connection', async (event, payload) => {
       ? payload.useSystemProxy
       : (store.get('USE_SYSTEM_PROXY_FOR_AI') || false);
     const customFetch = (url, options) => fetchWithOptionalSystemProxy(url, options, useSystemProxy);
-    return await runAiConnectionTest(payload, { customFetch });
+    // An empty key field means "use the saved key": the renderer never receives it to send back.
+    let testPayload = payload;
+    if (payload && typeof payload === 'object'
+      && (payload.apiKey === undefined || payload.apiKey === null || typeof payload.apiKey === 'string')) {
+      const resolved = aiCredentials.resolveTestApiKey(payload.provider, payload.apiKey, payload.apiUrl);
+      if (resolved.error) {
+        return { ok: false, durationMs: 0, errorKind: 'config', error: resolved.error };
+      }
+      testPayload = { ...payload, apiKey: resolved.apiKey };
+    }
+    return await runAiConnectionTest(testPayload, { customFetch });
   } catch (e) {
     console.error('[ai-test] failed:', e instanceof Error ? e.message : String(e));
     return { ok: false, durationMs: 0, errorKind: 'network', error: 'Connection test failed unexpectedly.' };
@@ -6700,7 +6908,7 @@ ipcMain.handle('segment-lyrics', async (event, lines) => {
       + ` via ${store.get('AI_PROVIDER') || 'gemini'}${useSystemProxy ? ' (system proxy)' : ''}`);
 
     rawResponse = await runAiJsonCompletion({
-      store,
+      store: aiCredentials.settingsView,
       systemPrompt: buildSegmentationSystemPrompt(),
       sourcePrompt: buildSegmentationSourcePrompt(sourceLines),
       schema: SEGMENTATION_JSON_SCHEMA,

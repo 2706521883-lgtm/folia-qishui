@@ -1,4 +1,5 @@
 import type { LoginSelfCheckError, LoginSelfCheckHost, LoginSelfCheckResult, OnlineProviderId, QrLoginFailureKind } from '../types/onlineMusic';
+import { FOLIA_REPOSITORY_URL } from '../components/shared/foliaRepository';
 
 // src/utils/qrLoginDiagnosticReport.ts
 // 扫码登录诊断报告的格式。报告是给用户原样贴进 issue 的，所以用固定的英文字段、包在代码块里，
@@ -129,7 +130,7 @@ export const formatQrLoginDiagnosticReport = ({
     '```',
 ].join('\n');
 
-const FOLIA_NEW_ISSUE_URL = 'https://github.com/chthollyphile/folia-major/issues/new';
+const FOLIA_NEW_ISSUE_URL = `${FOLIA_REPOSITORY_URL}/issues/new`;
 // GitHub 对过长的 new-issue 链接会直接报错；超过这个长度就不把报告塞进链接，改让用户粘贴剪贴板里的内容。
 const MAX_ISSUE_URL_LENGTH = 7000;
 

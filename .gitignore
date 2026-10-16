@@ -103,6 +103,9 @@ _folio716/
 _folio717/
 release-notes.local.md
 
+# 壁纸引擎背景联调时单独输出的一份前端产物（vite --outDir dist-electron-we），不入库。
+dist-electron-we/
+
 # 移动端壳（Capacitor）：android/ 与 ios/ 平台目录由 CI 构建时生成，不入库。
 # 本机若执行 cap add 生成，也会被这里挡住；将来要入库原生工程时先删这两行。
 /android/

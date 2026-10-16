@@ -34,7 +34,7 @@ if (numbers.length === 0 || numbers.some(n => !Number.isInteger(n))) {
 }
 
 const token = process.env.GITHUB_TOKEN || execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim();
-const repo = process.env.GITHUB_REPOSITORY || 'chthollyphile/folia-major';
+const repo = process.env.GITHUB_REPOSITORY || '2706521883-lgtm/folia-qishui';
 const gh = createGitHub({ token, repo, readOnly: true });
 const config = loadConfig();
 const prompts = loadPrompts(config);
