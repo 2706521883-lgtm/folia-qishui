@@ -142,8 +142,16 @@ jobs:
       - name: Build unsigned app
         run: |
           set -euo pipefail
-          xcodebuild \
-            -workspace ios/App/App.xcworkspace \
+          # Capacitor 8 的 iOS 模板默认走 SPM（无 App.xcworkspace，用 App.xcodeproj）；
+          # 若将来切换 CocoaPods（会生成 workspace），这里也能自适应。
+          if [ -d ios/App/App.xcworkspace ]; then
+            PROJ_ARG="-workspace ios/App/App.xcworkspace"
+          else
+            PROJ_ARG="-project ios/App/App.xcodeproj"
+          fi
+          echo "xcodebuild project arg: $PROJ_ARG"
+          xcodebuild -list $PROJ_ARG
+          xcodebuild $PROJ_ARG \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
