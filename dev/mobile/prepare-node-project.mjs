@@ -33,17 +33,22 @@ const copyToDist = args.includes('--dist');
 
 const SKIP_NAMES = new Set(['node_modules', '.git', '.github', 'test', 'tests', '__tests__', '.DS_Store']);
 
-function copyTree(from, to) {
+function copyTree(from, to, options = {}) {
+  const copyNodeModules = options.copyNodeModules === true;
   fs.mkdirSync(to, { recursive: true });
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
-    if (SKIP_NAMES.has(entry.name)) continue;
+    // 源码树里的 node_modules 一律不带（依赖由 npm install 现场装）；只有 build → dist 这一步要带上，
+    // 否则同步进 App 的 dist/nodejs-project 缺依赖，启动即崩。
+    if (SKIP_NAMES.has(entry.name)) {
+      if (!(entry.name === 'node_modules' && copyNodeModules)) continue;
+    }
     const source = path.join(from, entry.name);
     const target = path.join(to, entry.name);
-    if (entry.isDirectory()) copyTree(source, target);
+    if (entry.isDirectory()) copyTree(source, target, options);
     else if (entry.isSymbolicLink()) {
       const real = fs.realpathSync(source);
       const stat = fs.statSync(real);
-      if (stat.isDirectory()) copyTree(real, target);
+      if (stat.isDirectory()) copyTree(real, target, options);
       else fs.copyFileSync(real, target);
     } else if (entry.isFile()) {
       fs.copyFileSync(source, target);
@@ -126,6 +131,6 @@ console.log('[prepare-node] assembled ' + outDir + ' buildId=' + buildId);
 if (copyToDist) {
   const distDir = path.join(root, 'dist', 'nodejs-project');
   rimraf(distDir);
-  copyTree(outDir, distDir);
+  copyTree(outDir, distDir, { copyNodeModules: true });
   console.log('[prepare-node] copied to ' + distDir);
 }

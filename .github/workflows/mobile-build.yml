@@ -122,12 +122,24 @@ jobs:
       - name: Verify embedded backend bundle
         run: |
           set -euo pipefail
-          test -f dist/nodejs-project/main.js
-          test -f dist/nodejs-project/qishui/qishui-api.js
-          test -d dist/nodejs-project/node_modules/@yakult-green-tea/qq-music-api
-          test -d dist/nodejs-project/node_modules/kugoumusicapi
+          # 逐项检查并打印缺的那一项（裸 test 在 set -e 下失败时一行输出都没有，之前就吃过这个亏）。
+          for required in \
+            dist/nodejs-project/main.js \
+            dist/nodejs-project/qishui-inapp.cjs \
+            dist/nodejs-project/qishui/qishui-api.js \
+            dist/nodejs-project/build.json \
+            dist/nodejs-project/node_modules/@yakult-green-tea/qq-music-api \
+            dist/nodejs-project/node_modules/kugoumusicapi; do
+            if [ ! -e "$required" ]; then
+              echo "missing $required" >&2
+              echo "dist/nodejs-project top level:" >&2
+              find dist/nodejs-project -maxdepth 1 -print >&2
+              exit 1
+            fi
+          done
           # 无 cookie / 无签名地跑一遍搜索、取流、歌词。runner 在境外，汽水可能拒绝访问，
           # 所以 CI 允许真机端点检查降级为警告；工程装配与 status 仍然严格校验。
+          node -v
           FOLIA_SMOKE_ALLOW_LIVE_FAILURE=1 node dev/mobile/qishui-inapp-smoke.cjs dist/nodejs-project
 
       - name: Add iOS platform
