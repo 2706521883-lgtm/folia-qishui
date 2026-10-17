@@ -112,3 +112,6 @@ dist-electron-we/
 /ios/
 # QQ 音乐设备态（本地登录探针产物，绝不入库）。
 .auth-state/
+# 内置 Node 后端：dev/mobile/prepare-node-project.mjs 生成的装配产物，CI 现场构建，不入库。
+/build/nodejs-project/
+/build/node-runtime-state/

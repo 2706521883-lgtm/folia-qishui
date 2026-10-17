@@ -20,6 +20,8 @@
     "build": "npm run build:vercel-api && vite build",
     "build:vercel-api": "tsc -p api-ts/tsconfig.json",
     "build:mobile": "cross-env FOLIA_BUILD_TARGET=capacitor vite build --mode mobile",
+    "build:mobile:ios": "cross-env FOLIA_BUILD_TARGET=capacitor vite build --mode ios",
+    "prepare:node": "node dev/mobile/prepare-node-project.mjs --install --dist",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "codemap": "node dev/mcp/ts-code-map/codemap.mjs",

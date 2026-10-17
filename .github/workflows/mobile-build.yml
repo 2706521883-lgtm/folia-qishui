@@ -1,8 +1,9 @@
 name: Mobile Shell Builds
 
 # 手机壳（Capacitor）测试包：Android debug APK + iOS 未签名 IPA（用户用全能签自签后安装）。
-# 平台目录（android/ ios/）不进仓库，由本工作流在构建时生成；三个在线音源后端地址来自
-# 仓库里的 .env.mobile（局域网 http，所以 Android 清单要放开 cleartext、WebView 放开 mixed content）。
+# 平台目录（android/ ios/）不进仓库，由本工作流在构建时生成。
+#   iOS   内置后端：nodejs-mobile 在 App 内跑酷狗 3211 / QQ 3212 / 汽水 3302（.env.ios，127.0.0.1）。
+#   Android 仍是局域网方案：后端地址来自 .env.mobile（所以清单放开 cleartext、WebView 放开 mixed content）。
 # 产物发布到固定预发布 tag「mobile-test」，Windows 侧经 gh-proxy 免鉴权下载。
 
 on:
@@ -112,22 +113,55 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
-      - name: Build web assets (capacitor mode)
-        run: npm run build:mobile
+      - name: Build web assets (capacitor mode, iOS embedded backend)
+        run: npm run build:mobile:ios
+
+      - name: Assemble embedded Node backend
+        run: node dev/mobile/prepare-node-project.mjs --install --dist
+
+      - name: Verify embedded backend bundle
+        run: |
+          set -euo pipefail
+          test -f dist/nodejs-project/main.js
+          test -f dist/nodejs-project/qishui/qishui-api.js
+          test -d dist/nodejs-project/node_modules/@yakult-green-tea/qq-music-api
+          test -d dist/nodejs-project/node_modules/kugoumusicapi
+          # 无 cookie / 无签名地跑一遍搜索、取流、歌词。runner 在境外，汽水可能拒绝访问，
+          # 所以 CI 允许真机端点检查降级为警告；工程装配与 status 仍然严格校验。
+          FOLIA_SMOKE_ALLOW_LIVE_FAILURE=1 node dev/mobile/qishui-inapp-smoke.cjs dist/nodejs-project
 
       - name: Add iOS platform
         run: npx cap add ios
 
-      - name: Patch Info.plist for LAN access and background audio
+      - name: Download nodejs-mobile iOS framework
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/nodejs-mobile-ios.zip" \
+            "https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-ios.zip"
+          unzip -q "$RUNNER_TEMP/nodejs-mobile-ios.zip" -d "$RUNNER_TEMP/nodejs-mobile"
+          FRAMEWORK="$(find "$RUNNER_TEMP/nodejs-mobile" -maxdepth 5 -type d -name NodeMobile.framework | head -n 1)"
+          test -n "$FRAMEWORK"
+          test -f "$FRAMEWORK/NodeMobile"
+          rm -rf ios/App/App/NodeMobile.framework
+          cp -R "$FRAMEWORK" ios/App/App/NodeMobile.framework
+          lipo -info ios/App/App/NodeMobile.framework/NodeMobile
+          du -sh ios/App/App/NodeMobile.framework
+          # 编译要 <NodeMobile/NodeMobile.h>：把框架结构打出来，缺头文件时一眼可见。
+          find ios/App/App/NodeMobile.framework -maxdepth 2 -print
+
+      - name: Patch Info.plist for local HTTP and background audio
         run: |
           set -euo pipefail
           PLIST=ios/App/App/Info.plist
           # 幂等：先删再建，重复运行不会翻车。
+          # 内置后端是 http://127.0.0.1；WKWebView 里跨源 http 需要 ATS 放行。
+          # NSAllowsArbitraryLoads 与第三方内置服务端 IPA 的做法一致（本包只做自签分发）。
           /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" "$PLIST"
           /usr/libexec/PlistBuddy -c "Delete :NSLocalNetworkUsageDescription" "$PLIST" || true
-          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 连接同一局域网内 PC 上的音乐服务（搜索与播放接口）。" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSLocalNetworkUsageDescription string 内置音乐服务在设备本机运行（127.0.0.1）；同时用于连接局域网内的 Navidrome。" "$PLIST"
           # 后台/锁屏播放：声明音频后台能力（另一半在 AppDelegate 里的 AVAudioSession .playback，缺一不可）。
           /usr/libexec/PlistBuddy -c "Delete :UIBackgroundModes" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST"
@@ -137,6 +171,19 @@ jobs:
 
       - name: Patch AppDelegate for background audio
         run: node dev/mobile/patch-ios-shell.mjs
+
+      - name: Patch Xcode project for embedded Node
+        run: node dev/mobile/patch-ios-node.mjs
+
+      - name: Verify embedded Node patch is in effect
+        run: |
+          set -euo pipefail
+          grep -q 'FoliaNodeStart()' ios/App/App/AppDelegate.swift
+          grep -q 'FoliaNode.m in Sources' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'NodeMobile.framework in Embed Frameworks' ios/App/App.xcodeproj/project.pbxproj
+          grep -q 'SWIFT_OBJC_BRIDGING_HEADER' ios/App/App.xcodeproj/project.pbxproj
+          test -f ios/App/App/NodeMobile.framework/NodeMobile
+          test -f ios/App/App/FoliaNode.m
 
       - name: Verify background-audio patch is in effect
         run: |

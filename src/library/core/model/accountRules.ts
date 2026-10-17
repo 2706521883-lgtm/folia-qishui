@@ -44,13 +44,22 @@ export const resolveProviderSelectLabel = (provider: ProviderAccountSummary): Li
 
 // ─── 当前平台 ───────────────────────────────────────────────────────────
 
-/** 存的当前平台不在 provider 列表里（例如 mod 源被关掉）时回落到网易；账户缓存不动（原 useOnlineProviderPlatform）。 */
+/**
+ * 当前平台：存的平台在列表里且已配置就用它；不在列表（例如 mod 源被关掉）或未配置
+ * （手机壳没有网易后端，默认值却是 netease）时，回落到第一个已配置的平台，最后才回落网易。
+ * 账户缓存不动（原 useOnlineProviderPlatform）。
+ */
 export const resolveActiveProviderId = (
     providers: readonly ProviderAccountSummary[],
     storedProviderId: OnlineProviderId,
-): OnlineProviderId => (
-    providers.some(provider => provider.providerId === storedProviderId) ? storedProviderId : 'netease'
-);
+): OnlineProviderId => {
+    const stored = providers.find(provider => provider.providerId === storedProviderId);
+    if (stored?.availability.configured) return storedProviderId;
+    const configured = providers.find(provider => provider.availability.configured);
+    if (configured) return configured.providerId;
+    // 一个都没配置：保留用户在列表里选中的那个（让界面显示它的未配置状态），否则维持网易。
+    return stored ? storedProviderId : 'netease';
+};
 
 /** 当前平台的摘要；回落后的 id 也找不到（列表里没有网易）时取第一个。 */
 export const resolveActiveProviderSummary = (

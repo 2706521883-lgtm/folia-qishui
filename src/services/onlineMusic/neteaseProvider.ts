@@ -16,7 +16,7 @@ import { getPersonalFmRequestOptions } from '../../stores/usePersonalFmModeStore
 import { parseNeteaseChorusRanges, processNeteaseLyrics } from '../../utils/lyrics/neteaseProcessing';
 import { toFiniteNumber } from '../../utils/replayGain';
 import { createProviderSongMetadata } from '../../utils/songMetadata';
-import { getNeteaseRemoteApiBase, isSongMarkedUnavailable, neteaseApi } from '../netease';
+import { getNeteaseRemoteApiBase, isNeteaseApiConfigured, isSongMarkedUnavailable, neteaseApi } from '../netease';
 import { readProviderSessionValue, writeProviderSessionValue } from './providerStorage';
 import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
 import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
@@ -277,7 +277,11 @@ export const neteaseProvider: OnlineMusicProvider = {
     id: 'netease',
     displayName: 'NetEase Cloud Music',
     shortName: '网易云',
-    getAvailability: () => ({ configured: true }),
+    // 手机壳不内置网易：没有 VITE_NETEASE_API_BASE 时必须如实报未配置，
+    // 否则首启会停在网易并让每次搜索都报网络错误。
+    getAvailability: () => (isNeteaseApiConfigured()
+        ? { configured: true }
+        : { configured: false, reason: 'not-configured' }),
     capabilities: {
         search: true,
         playback: true,

@@ -1,0 +1,13 @@
+{
+  "name": "folia-node-backend",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Folia 内置在线音源服务端（酷狗 / QQ / 汽水）",
+  "main": "main.js",
+  "license": "MIT",
+  "dependencies": {
+    "@yakult-green-tea/qq-music-api": "3.1.4",
+    "kugoumusicapi": "file:vendor/KuGouMusicApi",
+    "qrcode": "1.5.4"
+  }
+}

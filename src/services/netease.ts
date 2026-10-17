@@ -39,6 +39,9 @@ const getConfiguredApiBase = () => {
 /** 网页版配置的远端 API 地址（自检与诊断报告用）；桌面版走内嵌后端，返回 null。 */
 export const getNeteaseRemoteApiBase = (): string | null => (isElectronRuntime() ? null : getConfiguredApiBase());
 
+/** 当前运行环境是否有可用的网易云端点：桌面版有内嵌后端，网页/手机壳必须有 VITE_NETEASE_API_BASE。 */
+export const isNeteaseApiConfigured = (): boolean => isElectronRuntime() || Boolean(getConfiguredApiBase());
+
 // Thrown (as the error's `code`, and at the start of its message) when the Electron backend is not
 // listening, so it stays distinguishable from an ordinary request failure. The message carries the
 // backend's own status and error, which is what the QR login timeline needs to say why.
