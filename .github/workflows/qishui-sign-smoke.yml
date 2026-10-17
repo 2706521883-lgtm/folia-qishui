@@ -11,7 +11,8 @@ name: Qishui Sign Smoke (macOS arm64)
 # 判据：响应不是空 body。未签名的同一请求稳定返回 HTTP 200 + content-length 0；
 # 签名被接受时，即使没有登录态也会返回结构化 JSON。
 #
-# 不提交、不上传任何专有二进制；DMG 在 runner 上现场下载并解包。
+# 不提交、不上传任何专有二进制；官方小包（.tgz，约 19MB）在 runner 上现场下载并解包。
+# 小包里的 app.asar.unpacked/ 直接包含 bdms.node + libMetaSecML.dylib，不需要挂载 DMG。
 # 触发：手动，或推送到 mobile-shell 时改了本工作流/探针脚本。
 
 on:
@@ -51,40 +52,27 @@ jobs:
           node -p "process.version + ' ' + process.arch + ' ' + process.platform"
           test "$(node -p process.arch)" = "arm64"
 
-      - name: Download official macOS client
+      - name: Download official macOS native package
         env:
-          DMG_URL: https://lf-luna-release.qishui.com/obj/luna-release/3.7.0/452316191/SodaMusic-v3.7.0-official-darwin_arm64.dmg
-          DMG_SHA256: 9c90c4d0ed66e0c0f937758d20366e0ea2449fbd826e16f4b42b29be07e3aa0b
+          PACKAGE_URL: https://lf-luna-release.qishui.com/obj/luna-release/3.7.0/452316191/SodaMusic-v3.7.0-official-darwin_arm64.tgz
+          PACKAGE_SHA256: 40c6bc80aa32cd1d5c76ad1b05bccc67e5ec22cf779b6dc3617ee5432b88ee04
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/qishui"
-          curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/qishui/SodaMusic.dmg" "$DMG_URL"
-          echo "$DMG_SHA256  $RUNNER_TEMP/qishui/SodaMusic.dmg" | shasum -a 256 -c -
-          ls -lh "$RUNNER_TEMP/qishui/SodaMusic.dmg"
+          curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/qishui/native-package.tgz" "$PACKAGE_URL"
+          echo "$PACKAGE_SHA256  $RUNNER_TEMP/qishui/native-package.tgz" | shasum -a 256 -c -
+          ls -lh "$RUNNER_TEMP/qishui/native-package.tgz"
 
       - name: Extract bdms.node and libMetaSecML.dylib
         run: |
           set -euo pipefail
-          DMG="$RUNNER_TEMP/qishui/SodaMusic.dmg"
-          MOUNT="$RUNNER_TEMP/qishui/mnt"
-          mkdir -p "$MOUNT"
-          hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG"
-          echo "mounted at $MOUNT"
+          PKG="$RUNNER_TEMP/qishui/native-package.tgz"
+          OUT="$RUNNER_TEMP/qishui/pkg"
+          mkdir -p "$OUT"
+          tar -xzf "$PKG" -C "$OUT"
 
-          BDMS="$(find "$MOUNT" -name bdms.node -type f | head -n 1)"
-          DYLIB="$(find "$MOUNT" -name libMetaSecML.dylib -type f | head -n 1)"
-
-          # 官方包里组件通常在 app.asar.unpacked；若被重新打进 app.asar，则现场解包。
-          if [ -z "$BDMS" ] || [ -z "$DYLIB" ]; then
-            echo "not found in plain files; trying app.asar extraction"
-            ASAR="$(find "$MOUNT" -name app.asar -type f | head -n 1)"
-            test -n "$ASAR"
-            mkdir -p "$RUNNER_TEMP/qishui/asar"
-            npx --yes @electron/asar extract "$ASAR" "$RUNNER_TEMP/qishui/asar"
-            BDMS="$(find "$RUNNER_TEMP/qishui/asar" -name bdms.node -type f | head -n 1)"
-            DYLIB="$(find "$RUNNER_TEMP/qishui/asar" -name libMetaSecML.dylib -type f | head -n 1)"
-          fi
-
+          BDMS="$(find "$OUT" -name bdms.node -type f | head -n 1)"
+          DYLIB="$(find "$OUT" -name libMetaSecML.dylib -type f | head -n 1)"
           test -n "$BDMS"
           test -n "$DYLIB"
           cp "$BDMS" "$RUNNER_TEMP/qishui/bdms.node"
@@ -95,8 +83,6 @@ jobs:
           lipo -info "$RUNNER_TEMP/qishui/bdms.node"
           ls -l "$RUNNER_TEMP/qishui"
 
-          hdiutil detach "$MOUNT" || true
-
       - name: Run no-cookie signing probe
         env:
           # 让 addon 的 @rpath/libMetaSecML.dylib 能被 dyld 找到。
@@ -104,9 +90,3 @@ jobs:
         run: |
           set -euo pipefail
           node dev/mobile/qishui-sign-smoke.cjs "$RUNNER_TEMP/qishui/bdms.node"
-
-      - name: Detach DMG on failure
-        if: always()
-        run: |
-          MOUNT="$RUNNER_TEMP/qishui/mnt"
-          if mount | grep -q "$MOUNT"; then hdiutil detach "$MOUNT" || true; fi
