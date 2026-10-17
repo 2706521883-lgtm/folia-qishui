@@ -22,6 +22,9 @@
 | 2 | **壁纸引擎背景** | 新增「壁纸引擎」背景类型：扫描本机 Wallpaper Engine 场景并采集为 Folia 的背景层（见 [`docs/wallpaper-engine-background.md`](./docs/wallpaper-engine-background.md)） |
 | 3 | **QQ 歌词接口加固** | QQ 歌词接口返回 `code 2001`（被风控/限流）时的重试与降级，不再直接给空结果 |
 | 4 | **酷狗依赖 vendor 化** | 把 `KuGouMusicApi` 改为仓库内 `vendor/` 依赖，新增 `qrcode` 依赖与原生模块的 `asarUnpack` 打包配置 |
+| 5 | **QQ 音乐 / 波点音乐音源** | 在网易云、酷狗、汽水之外再接入「QQ 音乐」与「波点音乐」：搜索、播放、歌词、扫码登录 |
+| 6 | **跨音源聚合搜索与自动换源** | 「全部音源」一次搜遍所有已登录平台，无需切换账号；歌曲下架或播放失败时自动到其他音源找同一首歌 |
+| 7 | **队列融合与拼贴墙** | 切换在线平台不再清空播放队列；打开在线歌单直接并入当前队列；队列拼贴墙按歌曲来源显示平台徽章 |
 
 本二创版自 **0.3.1** 起使用自己的版本号（与上游 0.7.x 无对应关系，比它小是正常的）。除上述改动以外，其余代码与上游保持一致。
 
@@ -67,7 +70,7 @@
 
 **方式 A：安装包（Windows）**
 
-1. 到本仓库的 [Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) 页面下载最新安装包 `Folia-Setup-<版本>.exe`（例如 `Folia-Setup-0.3.1.exe`）。
+1. 到本仓库的 [Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) 页面下载最新安装包 `Folia-Setup-<版本>.exe`（例如 `Folia-Setup-0.3.2.exe`）。
 2. 双击运行，向导里选「仅为我安装」，安装目录按需要选择即可。
 3. 装完会自动启动。首次打开时在音源列表里选「汽水音乐」，点登录，用汽水 App 扫码。
 
