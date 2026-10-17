@@ -3,10 +3,12 @@ import { Disc, Play, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { UnifiedSong } from '../../../types';
 import type { MediaId } from '../../../types/onlineMusic';
+import { getOnlineProviderIdForSong } from '../../../utils/appPlaybackGuards';
 import { formatSongName } from '../../../utils/songNameFormatter';
 import { getSizedCoverUrl } from '../../../utils/coverUrl';
 import { getSongUnavailableLabel, isSongUnavailable } from '../../../services/onlineMusic/songAvailability';
 import { canResolveSongCatalogRef } from '../../../services/onlineMusic/catalogRefs';
+import { omni } from '../../../services/onlineMusic/omni';
 import { getProviderSongMetadata } from '../../../services/onlineMusic/songMetadata';
 
 // src/components/app/search/SearchResultRow.tsx
@@ -19,6 +21,7 @@ type SearchResultRowProps = {
     onAddTrackToQueue: (track: UnifiedSong) => void;
     onOpenArtist: (track: UnifiedSong, artistName: string, artistId?: MediaId, entityId?: string) => void;
     onOpenAlbum: (track: UnifiedSong, albumName: string, albumId?: MediaId, entityId?: string) => void;
+    showProviderBadge?: boolean;
 };
 
 const formatDuration = (duration: number) => {
@@ -36,10 +39,13 @@ const SearchResultRow: React.FC<SearchResultRowProps> = ({
     onAddTrackToQueue,
     onOpenArtist,
     onOpenAlbum,
+    showProviderBadge = false,
 }) => {
     const { t } = useTranslation();
     const isUnavailable = isSongUnavailable(track);
     const unavailableLabel = getSongUnavailableLabel(track, t('status.songUnavailableTag'));
+    const providerId = showProviderBadge ? getOnlineProviderIdForSong(track) : null;
+    const providerLabel = providerId ? omni.getProviderLabel(providerId) : '';
     const metadata = getProviderSongMetadata(track);
     const coverUrl = getSizedCoverUrl(metadata.coverUrl, 120);
     const artists = metadata.artists;
@@ -61,9 +67,8 @@ const SearchResultRow: React.FC<SearchResultRowProps> = ({
             >
                 <button
                     type="button"
-                    disabled={isUnavailable}
                     onClick={() => onPlayTrack(track)}
-                    className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-500/15 disabled:cursor-not-allowed"
+                    className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-zinc-500/15"
                     aria-label={t('search.playTrack')}
                 >
                     {coverUrl ? (
@@ -73,24 +78,26 @@ const SearchResultRow: React.FC<SearchResultRowProps> = ({
                             <Disc size={22} />
                         </span>
                     )}
-                    {!isUnavailable && (
-                        <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
-                            <Play size={18} fill="currentColor" />
-                        </span>
-                    )}
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                        <Play size={18} fill="currentColor" />
+                    </span>
                 </button>
 
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
-                            disabled={isUnavailable}
                             onClick={() => onPlayTrack(track)}
-                            className="truncate text-left text-sm font-semibold disabled:cursor-not-allowed"
+                            className="truncate text-left text-sm font-semibold"
                             style={{ color: 'var(--text-primary)' }}
                         >
                             {formatSongName(track)}
                         </button>
+                        {providerLabel && (
+                            <span className="shrink-0 rounded-full border border-current/10 px-2 py-0.5 text-[10px] opacity-60">
+                                {providerLabel}
+                            </span>
+                        )}
                         {isUnavailable && (
                             <span className="shrink-0 rounded-full border border-current/10 px-2 py-0.5 text-[10px] opacity-60">
                     {unavailableLabel}

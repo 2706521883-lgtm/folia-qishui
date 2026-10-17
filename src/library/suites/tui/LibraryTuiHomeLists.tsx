@@ -90,8 +90,11 @@ export const LibraryTuiOnlineList: React.FC<LibraryTuiListCommonProps & {
 }> = ({ tab, online, list, account, accountsOpen, onCloseAccounts, homeActions, onOpenGridView, directoryKey, hiddenScope, ...common }) => {
     const { t } = useTranslation();
     const isGuest = online.accountView === 'guest';
-    const showAccounts = isGuest || accountsOpen;
-    const showList = !showAccounts && online.accountView !== 'accountless' && online.accountView !== 'resolving';
+    // 合并歌单可能在当前平台未登录 / 无账户 / 解析中时也有内容（其他平台已登录）：有内容就铺列表。
+    const hasOnlineItems = tab === 'playlist' && list.items.length > 0;
+    const showAccounts = accountsOpen || (isGuest && !hasOnlineItems);
+    const showList = !showAccounts && (hasOnlineItems
+        || (online.accountView !== 'accountless' && online.accountView !== 'resolving'));
 
     useLibraryHomeListRegistration({
         enabled: showList,
@@ -130,7 +133,7 @@ export const LibraryTuiOnlineList: React.FC<LibraryTuiListCommonProps & {
             />
         );
     }
-    if (online.accountView === 'accountless') {
+    if (!showList && online.accountView === 'accountless') {
         return (
             <StatusText status="accountless">
                 <span>{t('libraryTui.accountless', { provider: online.providerLabel })}</span>
@@ -138,7 +141,7 @@ export const LibraryTuiOnlineList: React.FC<LibraryTuiListCommonProps & {
             </StatusText>
         );
     }
-    if (online.accountView === 'resolving') {
+    if (!showList && online.accountView === 'resolving') {
         return <StatusText status="resolving"><span className="opacity-50">{t('home.loadingLibrary')}</span></StatusText>;
     }
 

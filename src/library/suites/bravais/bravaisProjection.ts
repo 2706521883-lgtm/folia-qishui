@@ -42,13 +42,15 @@ export const projectHomeCardItem = (
     const kind = homeCardKind(card.type);
     const collectionCount = resolveCollectionTrackCount(resolveBravaisTileForm({ kind, direct }), card.trackCount);
     const count = collectionCount === undefined && typeof card.trackCount === 'number' && card.trackCount > 0 ? labels.trackCount(card.trackCount) : '';
+    // 合并歌单的来源平台进类型标签：「网易云 · 歌单 · 124」。
+    const kindLabel = [card.providerLabel, labels.kindLabel(kind)].filter(Boolean).join(' · ');
     const item: BravaisItem = {
         key,
         kind,
         title: card.name,
         subtitle: [count, card.description].filter(Boolean).join(' · '),
         coverUrl: card.coverUrl,
-        badge: formatCollectionBadge(labels.kindLabel(kind), collectionCount),
+        badge: formatCollectionBadge(kindLabel, collectionCount),
     };
     if (collectionCount !== undefined) item.trackCountLabel = labels.trackCount(collectionCount);
     return item;

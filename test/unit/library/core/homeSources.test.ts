@@ -6,6 +6,7 @@ import {
     homeScanPercent,
     isHomeImportBusy,
     isOnlineHomeTab,
+    mergeHomePlaylists,
     onlineHomeTitleKey,
     resolveHomeOnlineSource,
     resolveHomeTabs,
@@ -88,6 +89,43 @@ describe('resolveHomeOnlineSource', () => {
         expect(source({ capabilities: NONE })).toMatchObject({ canUsePlaylists: false, canUseAlbums: false, canUseRadio: false });
     });
 
+    it('interleaves other signed-in providers into the playlist tab while keeping the active provider', () => {
+        const active = summary({ user: { id: 1, nickname: 'U' }, collections: [collection('a'), collection('b')] });
+        const kugou = {
+            providerId: 'kugou',
+            providerLabel: '酷狗',
+            collections: [collection('k1'), { ...collection('k2'), providerId: 'kugou' }],
+        };
+        const qq = { providerId: 'qq', providerLabel: 'QQ音乐', collections: [collection('q1')] };
+        const online = source({ providerId: 'netease', provider: active, playlistProviders: [kugou, qq] });
+        expect(online.providerId).toBe('netease');
+        expect(online.collections.map(item => item.id)).toEqual(['a', 'b']);
+        expect(online.playlistEntries.map(entry => [entry.providerId, entry.collection.id])).toEqual([
+            ['netease', 'a'],
+            ['kugou', 'k1'],
+            ['qq', 'q1'],
+            ['netease', 'b'],
+            ['kugou', 'k2'],
+        ]);
+    });
+
+    it('offers the playlist tab when only another provider can list playlists', () => {
+        const other = { providerId: 'kugou', providerLabel: '酷狗', collections: [] as ProviderCollection[] };
+        expect(source({ capabilities: NONE, playlistProviders: [other] })).toMatchObject({ canUsePlaylists: true, playlistEntries: [] });
+        expect(source({ capabilities: NONE, playlistProviders: [{ ...other, providerId: 'p' }] })).toMatchObject({ canUsePlaylists: false });
+    });
+
+    it('drops duplicate collections within a provider and keeps provider order', () => {
+        const duplicate = collection('same');
+        expect(mergeHomePlaylists([
+            { providerId: 'netease', providerLabel: '网易云', collections: [duplicate, duplicate] },
+            { providerId: 'kugou', providerLabel: '酷狗', collections: [collection('same')] },
+        ]).map(entry => [entry.providerId, entry.collection.id])).toEqual([
+            ['netease', 'same'],
+            ['kugou', 'same'],
+        ]);
+    });
+
     it('reads the account view and an expired login from the summary', () => {
         expect(source({ provider: summary({ status: 'unknown', hydration: 'loading' } as Partial<ProviderAccountSummary>) }).accountView).toBe('resolving');
         expect(source({ provider: summary({ status: 'anonymous' }), platformAvailable: true }).accountView).toBe('guest');
@@ -161,7 +199,11 @@ describe('online loading and import state', () => {
         const signedIn = source({ provider: summary({ user: { id: 1, nickname: 'U' } }) });
         const base = { favoriteAlbumsLoading: false, radioFeedLoading: false };
         expect(resolveOnlineHomeLoading({ ...base, tab: 'playlist', source: signedIn })).toBe(true);
-        expect(resolveOnlineHomeLoading({ ...base, tab: 'playlist', source: { ...signedIn, collections: [collection('a')] } })).toBe(false);
+        expect(resolveOnlineHomeLoading({
+            ...base,
+            tab: 'playlist',
+            source: { ...signedIn, playlistEntries: [{ providerId: 'p', providerLabel: 'P', collection: collection('a') }] },
+        })).toBe(false);
         expect(resolveOnlineHomeLoading({ ...base, tab: 'playlist', source: { ...signedIn, user: null } })).toBe(false);
         expect(resolveOnlineHomeLoading({ ...base, tab: 'playlist', source: { ...signedIn, canUsePlaylists: false } })).toBe(false);
     });

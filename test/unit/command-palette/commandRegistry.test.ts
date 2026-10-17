@@ -138,6 +138,7 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             toggleAutoPlayOnLaunch: vi.fn(),
             toggleTranscodeFallback: vi.fn(),
             togglePlaybackFade: vi.fn(),
+            toggleAutoCrossSourceFallback: vi.fn(),
             toggleAlwaysShowMainWindowTitlebar: vi.fn(),
             toggleHideFullscreenButton: vi.fn(),
             toggleNativeMacFullscreenButton: vi.fn(),
@@ -570,15 +571,14 @@ describe('command palette registry', () => {
         const matches = getCommandPaletteMatches('search touhou', context);
         const searchMatches = matches.filter(m => m.command.group === 'search');
 
-        expect(searchMatches).toHaveLength(1);
-        expect(searchMatches[0].command.id).toBe('search-current');
+        expect(searchMatches.map(match => match.command.id)).toEqual(['search-current', 'search-all']);
     });
 
     it('returns all search commands when context is not provided', () => {
         const matches = getCommandPaletteMatches('search');
         const searchMatches = matches.filter(m => m.command.group === 'search');
-        // search-current, search-local, search-navidrome, search-netease
-        expect(searchMatches.length).toBe(4);
+        // search-current, search-all, search-local, search-navidrome, search-netease
+        expect(searchMatches.length).toBe(5);
     });
 
     it('matches and executes color/theme-park command', () => {

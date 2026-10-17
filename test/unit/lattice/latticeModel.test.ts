@@ -58,6 +58,25 @@ describe('buildLatticeTiles', () => {
         expect(tiles).toHaveLength(3);
     });
 
+    it('labels every tile with its own playback source', () => {
+        const tiles = buildLatticeTiles({
+            queue: [
+                online('netease'),
+                song('qq', { kind: 'online', providerId: 'qq', mediaId: 'qq' }),
+                song('nav', { kind: 'navidrome', mediaId: 'nav' }),
+                song('local', { kind: 'local', mediaId: 'local' }),
+            ],
+            currentSong: null,
+        });
+
+        expect(tiles.map(tile => [tile.sourceKind, tile.providerId])).toEqual([
+            ['online', 'netease'],
+            ['online', 'qq'],
+            ['navidrome', null],
+            ['local', null],
+        ]);
+    });
+
     it('returns nothing for an empty queue', () => {
         expect(buildLatticeTiles({ queue: [], currentSong: null })).toEqual([]);
     });

@@ -3,6 +3,10 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { MotionValue } from 'framer-motion';
 import { applyOnlineAudioSourceMetadata, loadOnlineSongAudioSource, loadOnlineSongLyrics } from '../services/onlinePlayback';
 import { getSongReplacement, isSongUnavailable } from '../services/onlineMusic/songAvailability';
+import {
+    findCrossSourceFallback,
+    MAX_CROSS_SOURCE_FALLBACK_ATTEMPTS,
+} from '../services/onlineMusic/crossSourceFallback';
 import { getSongResourceCacheKey } from '../services/onlineMusic/resourceKeys';
 import { omni } from '../services/onlineMusic/omni';
 import { getCachedSongCoverUrl, hasCachedSongAudio } from '../services/onlineMusic/resourceCache';
@@ -12,18 +16,21 @@ import type { ThemeCacheSongKey } from '../services/themeCache';
 import { loadOnlineLyricsState } from '../utils/onlineLyricsState';
 import { PlayerState, type StagePlayerQueueDiffOp, type StagePlayerQueueRequest, type StagePlayerSnapshot } from '../types';
 import type { LocalSong, QueueAddBehavior, SongResult, StatusMessage, UnifiedSong } from '../types';
-import type { AudioQualityPreference, MediaId } from '../types/onlineMusic';
+import type { AudioQualityPreference, MediaId, OnlineProviderId } from '../types/onlineMusic';
 import type { NextTrackOptions, PlaybackNavigationOptions, SkipPromptMessageKey, UnavailableReplacementRequest } from '../types/appPlayback';
 import type { NavidromeSong } from '../types/navidrome';
 import {
+    getOnlineProviderIdForSong,
     getPlaybackSongKey,
     isLocalPlaybackSong,
     isNavidromePlaybackSong,
     isSamePlaybackSong,
+    replacePlaybackSongAtSamePosition,
     replacePlaybackSongInQueue,
     resolveNavidromePlaybackCarrier,
 } from '../utils/appPlaybackGuards';
 import { applyQueueAddBehavior } from '../utils/queueAddBehavior';
+import { appendUniqueQueueSongs } from '../utils/queueMerge';
 import { buildStagePlayerSnapshot, resolveStagePlayerQueueItemIndex } from '../utils/stagePlayerSnapshot';
 import type { LocalLibraryDisplayCatalog } from '../services/playbackAdapters';
 import type { SearchReturnView, SearchSource } from '../stores/useSearchNavigationStore';
@@ -44,6 +51,15 @@ import { hasBeforePlayHook, runBeforePlayHook } from '../services/hostExtensionH
 // src/hooks/usePlaybackQueueController.ts
 
 type SetState<T> = Dispatch<SetStateAction<T>>;
+
+type PlaySongFunction = (
+    song: SongResult,
+    queue?: SongResult[],
+    isFmCall?: boolean,
+    options?: PlaybackNavigationOptions,
+) => Promise<void>;
+
+type CrossSourceFallbackOutcome = 'handled' | 'unavailable';
 
 type SearchDeps = {
     submitSearch: (args: {
@@ -187,6 +203,7 @@ export function usePlaybackQueueController({
     const audioQuality = useAudioSettingsStore(state => state.audioQuality);
     const queueAddBehavior = useAudioSettingsStore(state => state.queueAddBehavior);
     const loopMode = useAudioSettingsStore(state => state.loopMode);
+    const autoCrossSourceFallback = useAudioSettingsStore(state => state.autoCrossSourceFallback);
     const activePlaybackContext = usePlaybackStore(state => state.activePlaybackContext);
     const currentSong = usePlaybackStore(state => state.currentSong);
     const playQueue = usePlaybackStore(state => state.playQueue);
@@ -197,6 +214,11 @@ export function usePlaybackQueueController({
     const searchReturnView = useSearchNavigationStore(state => state.searchReturnView);
 
     const [pendingUnavailableReplacement, setPendingUnavailableReplacement] = useState<UnavailableReplacementRequest | null>(null);
+    const crossSourceFallbackInFlightRef = useRef(false);
+    const crossSourceFallbackAttemptCountRef = useRef(0);
+    const crossSourceFallbackExcludedProviderIdsRef = useRef<OnlineProviderId[]>([]);
+    const crossSourceFallbackMissKeysRef = useRef<Set<string>>(new Set());
+    const playSongRef = useRef<PlaySongFunction | null>(null);
 
     const appendOnlineSongsToMainQueue = useCallback((songs: SongResult[], options?: { suppressToast?: boolean }) => {
         if (songs.length === 0) {
@@ -439,6 +461,108 @@ export function usePlaybackQueueController({
         }, UNAVAILABLE_SKIP_CONFIRM_INTERVAL_MS);
     }, [clearPendingUnavailableSkip, pendingUnavailableSkipIntervalRef, pendingUnavailableSkipTimerRef, setStatusMsg, t]);
 
+    const tryCrossSourceFallback = useCallback(async ({
+        song,
+        queue,
+        isFmCall,
+        options,
+        requireCurrentSongKey,
+    }: {
+        song: SongResult;
+        queue: SongResult[];
+        isFmCall: boolean;
+        options: PlaybackNavigationOptions;
+        requireCurrentSongKey?: string | number | null;
+    }): Promise<CrossSourceFallbackOutcome> => {
+        if (!autoCrossSourceFallback || !getOnlineProviderIdForSong(song)) {
+            return 'unavailable';
+        }
+        if (crossSourceFallbackAttemptCountRef.current >= MAX_CROSS_SOURCE_FALLBACK_ATTEMPTS) {
+            return 'unavailable';
+        }
+        if (crossSourceFallbackInFlightRef.current) {
+            return 'handled';
+        }
+
+        const songKey = getPlaybackSongKey(song);
+        if (crossSourceFallbackMissKeysRef.current.has(songKey)) {
+            return 'unavailable';
+        }
+        if (requireCurrentSongKey && currentSongRef.current !== requireCurrentSongKey) {
+            return 'handled';
+        }
+
+        const requestId = playbackRequestIdRef.current;
+        crossSourceFallbackInFlightRef.current = true;
+        setStatusMsg({ type: 'info', text: t('status.crossSourceFallbackSearching') });
+
+        try {
+            const result = await findCrossSourceFallback(song, {
+                excludedProviderIds: crossSourceFallbackExcludedProviderIdsRef.current,
+                activeProviderId: omni.getActiveProviderSummary()?.providerId,
+            });
+
+            if (playbackRequestIdRef.current !== requestId) {
+                return 'handled';
+            }
+            if (requireCurrentSongKey && currentSongRef.current !== requireCurrentSongKey) {
+                return 'handled';
+            }
+            if (!result.match) {
+                crossSourceFallbackMissKeysRef.current.add(songKey);
+                return 'unavailable';
+            }
+
+            const originalProviderId = getOnlineProviderIdForSong(song);
+            const nextAttemptCount = crossSourceFallbackAttemptCountRef.current + 1;
+            const nextExcludedProviderIds = [...new Set([
+                ...crossSourceFallbackExcludedProviderIdsRef.current,
+                ...(originalProviderId ? [originalProviderId] : []),
+                result.match.providerId,
+            ])];
+            crossSourceFallbackAttemptCountRef.current = nextAttemptCount;
+            crossSourceFallbackExcludedProviderIdsRef.current = nextExcludedProviderIds;
+
+            const sourceQueue = queue.some(queuedSong => getPlaybackSongKey(queuedSong) === songKey)
+                ? queue
+                : playQueue;
+            const replacementQueue = replacePlaybackSongAtSamePosition(sourceQueue, song, result.match.song);
+            const playReplacement = playSongRef.current;
+            if (!playReplacement) {
+                crossSourceFallbackMissKeysRef.current.add(songKey);
+                return 'unavailable';
+            }
+
+            // Clear before re-entering playSong so the replacement's own failure path can fall back again.
+            crossSourceFallbackInFlightRef.current = false;
+            void playReplacement(result.match.song, replacementQueue, isFmCall, {
+                ...options,
+                crossSourceFallbackAttemptCount: nextAttemptCount,
+                crossSourceFallbackExcludedProviderIds: nextExcludedProviderIds,
+            });
+            setStatusMsg({
+                type: 'success',
+                text: t('status.crossSourceFallbackSwitched', {
+                    source: omni.getProviderLabel(result.match.providerId),
+                }),
+            });
+            return 'handled';
+        } catch (error) {
+            console.warn('[App] Cross-source fallback failed:', error);
+            crossSourceFallbackMissKeysRef.current.add(songKey);
+            return 'unavailable';
+        } finally {
+            crossSourceFallbackInFlightRef.current = false;
+        }
+    }, [
+        autoCrossSourceFallback,
+        currentSongRef,
+        playQueue,
+        playbackRequestIdRef,
+        setStatusMsg,
+        t,
+    ]);
+
     // Loads one requested song and normalizes queue behavior across sources.
     const playSong = useCallback(async (
         requestedSong: SongResult,
@@ -485,6 +609,13 @@ export function usePlaybackQueueController({
 
         const playbackRequestId = ++playbackRequestIdRef.current;
         const isLatestPlaybackRequest = () => playbackRequestIdRef.current === playbackRequestId;
+        crossSourceFallbackAttemptCountRef.current = options.crossSourceFallbackAttemptCount ?? 0;
+        crossSourceFallbackExcludedProviderIdsRef.current = [
+            ...(options.crossSourceFallbackExcludedProviderIds ?? []),
+        ];
+        if (crossSourceFallbackAttemptCountRef.current === 0) {
+            crossSourceFallbackMissKeysRef.current.clear();
+        }
         const isLocal = isLocalPlaybackSong(song);
         const isNavidrome = isNavidromePlaybackSong(song);
         let prefetched: ReturnType<typeof getPrefetchedData> = null;
@@ -498,6 +629,13 @@ export function usePlaybackQueueController({
         const deferredPlayOptions: PlaybackNavigationOptions = { ...options, isAutomixAdvance: undefined };
 
         if (!isLocal && !isNavidrome && isSongUnavailable(song)) {
+            const fallbackOutcome = await tryCrossSourceFallback({
+                song,
+                queue: queueContext,
+                isFmCall,
+                options,
+            });
+            if (fallbackOutcome === 'handled') return;
             if (await handleMarkedUnavailableSong(song, queueContext, isFmCall, deferredPlayOptions)) {
                 return;
             }
@@ -568,6 +706,14 @@ export function usePlaybackQueueController({
             }
 
             if (preloadedOnlineAudioResult.kind === 'unavailable') {
+                const fallbackOutcome = await tryCrossSourceFallback({
+                    song,
+                    queue: queueContext,
+                    isFmCall,
+                    options,
+                });
+                if (fallbackOutcome === 'handled') return;
+
                 if (preloadedOnlineAudioResult.reason === 'preview-only' || preloadedOnlineAudioResult.reason === 'auth-required'
                     || preloadedOnlineAudioResult.reason === 'region-restricted') {
                     shouldAutoPlayRef.current = false;
@@ -749,8 +895,13 @@ export function usePlaybackQueueController({
         shouldAutoPlayRef,
         showTimedSkipPrompt,
         t,
+        tryCrossSourceFallback,
         userId,
     ]);
+
+    useEffect(() => {
+        playSongRef.current = playSong;
+    }, [playSong]);
 
     const playOnlineQueueFromStart = useCallback((songs: SongResult[]) => {
         const retainedSongs = getPlayableOnlineQueue(songs);
@@ -762,6 +913,33 @@ export function usePlaybackQueueController({
 
         void playSong(firstPlayableSong, retainedSongs, false);
     }, [getPlayableOnlineQueue, isQueueSongPlayable, playSong, setStatusMsg, t]);
+
+    // 合并歌单墙打开在线歌单时的播放语义：把歌单曲目接到现有队列尾部，而不是替换。
+    // 队列条目各自带 sourceRef，所以合并后的 Lattice 拼贴可以同时混排网易云、酷狗、QQ、汽水与波点。
+    const buildMergedQueue = useCallback((songs: SongResult[]) => {
+        const baseQueue = playQueue.length > 0 ? playQueue : (currentSong ? [currentSong] : []);
+        return appendUniqueQueueSongs(baseQueue, songs);
+    }, [currentSong, playQueue]);
+
+    const playMergedQueueFromStart = useCallback((songs: SongResult[]) => {
+        const { queue: mergedQueue, added } = buildMergedQueue(songs);
+        // 整张歌单都已经在队列里时，仍从用户点的这张歌单的第一首开始播。
+        const candidates = added.length > 0 ? added : songs;
+        const firstPlayableSong = candidates.find(isQueueSongPlayable);
+        if (!firstPlayableSong) {
+            setStatusMsg({ type: 'error', text: t('status.noPlayableSongs') });
+            return;
+        }
+
+        void playSong(firstPlayableSong, mergedQueue, false);
+    }, [buildMergedQueue, isQueueSongPlayable, playSong, setStatusMsg, t]);
+
+    const playMergedQueueTrack = useCallback((track: SongResult, collectionQueue: SongResult[] = []) => {
+        const { queue: mergedQueue } = buildMergedQueue(
+            collectionQueue.length > 0 ? collectionQueue : [track],
+        );
+        void playSong(track, mergedQueue, false);
+    }, [buildMergedQueue, playSong]);
 
     const handleQueueAddAndPlay = useCallback((song: SongResult) => {
         const songKey = getPlaybackSongKey(song);
@@ -823,9 +1001,7 @@ export function usePlaybackQueueController({
     }, [localLibraryCatalog, localSongs, searchDeps, t]);
 
     const handleSearchResultPlay = useCallback((track: UnifiedSong) => {
-        if (!isSongUnavailable(track)) {
-            handleQueueAddAndPlay(track);
-        }
+        handleQueueAddAndPlay(track);
     }, [handleQueueAddAndPlay]);
 
     const handleUnavailableReplacementConfirm = useCallback(async () => {
@@ -963,10 +1139,45 @@ export function usePlaybackQueueController({
         }
     }, [currentSong, endHeldTransition, getDisplaySong, isFmMode, isNowPlayingStageActive, loopMode, playQueue, playSong, shouldNavigateToPlayerOnTrackChange]);
 
-    const skipAfterPlaybackFailure = useCallback(() => {
+    const skipAfterPlaybackFailure = useCallback(async ({
+        songKeyAtFailure,
+    }: {
+        failedSrc?: string | null;
+        songKeyAtFailure?: string | number | null;
+    } = {}) => {
         clearPendingUnavailableSkip();
+        const failureKey = songKeyAtFailure ?? (currentSong ? getPlaybackSongKey(currentSong) : null);
+        if (failureKey && currentSongRef.current !== failureKey) {
+            return;
+        }
+        const failedSong = failureKey
+            ? playQueue.find(song => getPlaybackSongKey(song) === failureKey)
+                ?? (currentSong && getPlaybackSongKey(currentSong) === failureKey ? currentSong : null)
+            : currentSong;
+
+        if (failedSong) {
+            const fallbackOutcome = await tryCrossSourceFallback({
+                song: failedSong,
+                queue: playQueue,
+                isFmCall: isFmMode,
+                options: {
+                    shouldNavigateToPlayer: false,
+                    unavailableSkipCount: playbackAutoSkipCountRef.current,
+                    crossSourceFallbackAttemptCount: crossSourceFallbackAttemptCountRef.current,
+                    crossSourceFallbackExcludedProviderIds: crossSourceFallbackExcludedProviderIdsRef.current,
+                },
+                requireCurrentSongKey: failureKey,
+            });
+            if (fallbackOutcome === 'handled') {
+                return;
+            }
+            if (failureKey && currentSongRef.current !== failureKey) {
+                return;
+            }
+        }
+
         const skipCount = playbackAutoSkipCountRef.current;
-        const currentSongKey = currentSong ? getPlaybackSongKey(currentSong) : null;
+        const currentSongKey = failureKey ?? (currentSong ? getPlaybackSongKey(currentSong) : null);
         const currentIndex = currentSongKey
             ? playQueue.findIndex(song => getPlaybackSongKey(song) === currentSongKey)
             : -1;
@@ -992,7 +1203,19 @@ export function usePlaybackQueueController({
                 fromSong: currentSong ?? undefined,
             });
         });
-    }, [clearPendingUnavailableSkip, currentSong, handleNextTrack, loopMode, playQueue, playbackAutoSkipCountRef, setPlayerState, showTimedSkipPrompt]);
+    }, [
+        clearPendingUnavailableSkip,
+        currentSong,
+        currentSongRef,
+        handleNextTrack,
+        isFmMode,
+        loopMode,
+        playQueue,
+        playbackAutoSkipCountRef,
+        setPlayerState,
+        showTimedSkipPrompt,
+        tryCrossSourceFallback,
+    ]);
 
     const buildStageQueueOperationSnapshot = useCallback((
         nextCurrentSong: SongResult | null,
@@ -1330,6 +1553,8 @@ export function usePlaybackQueueController({
         addOnlineSongsToQueue,
         playSong,
         playOnlineQueueFromStart,
+        playMergedQueueFromStart,
+        playMergedQueueTrack,
         handleQueueAddAndPlay,
         handleSearchOverlaySubmit,
         handleSearchLoadMore,

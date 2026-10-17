@@ -337,8 +337,8 @@ export type LibraryProviderAccountPort = {
 };
 
 /**
- * 切换清理端口：用户确认切换后、写新的当前平台之前调用。宿主在这里清掉播放（automix 尾音、audio、队列、歌词、
- * prefetch、track profile）、搜索运行态与集合导航（现 App.tsx 的 handleConfirmProviderSwitch）。
+ * 切换清理端口：用户确认切换后、写新的当前平台之前调用。切换只重置浏览态（搜索运行态与集合导航）；
+ * 播放队列、当前歌曲、歌词、预取与 Lattice 拼贴都保留——每首歌按自己的 sourceRef 取流，不依赖 active provider。
  */
 export type LibraryProviderSwitchCleanupPort = {
     resetForProviderSwitch(nextProviderId: OnlineProviderId, previousProviderId: OnlineProviderId): void | Promise<void>;

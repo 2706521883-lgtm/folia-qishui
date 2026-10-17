@@ -2,6 +2,7 @@ import React from 'react';
 import type { LibraryActionId, LibraryCollectionSurfaceProps } from '../../../core/contracts/suite';
 import { useGridMorphPlan } from '../transitions/useGridMorphPlan';
 import { useGridStayPlayback } from '../shared/useGridStayPlayback';
+import { shouldMergeCollectionQueue } from '../../../core/model/collectionPlayback';
 import GridView from './GridView';
 
 // src/library/suites/grid/collection/GridCollectionSurface.tsx
@@ -27,7 +28,11 @@ const GridCollectionSurface: React.FC<LibraryCollectionSurfaceProps> = ({
     onOpenArtist,
 }) => {
     const morphPlan = useGridMorphPlan();
-    const stayPlayback = useGridStayPlayback(playback.playTrack, playback);
+    // 在线歌单从合并歌单墙打开：播放时并入现有队列，拼贴墙保持跨平台混排。
+    const mergesQueue = shouldMergeCollectionQueue(collection);
+    const playTrack = mergesQueue && playback.playTrackMerged ? playback.playTrackMerged : playback.playTrack;
+    const playAll = mergesQueue && playback.playAllMerged ? playback.playAllMerged : playback.playAll;
+    const stayPlayback = useGridStayPlayback(playTrack, playback);
     // 卡片上的专辑 / 歌手链接只在网格声明了 open-album / open-artist 时出现（声明 ∩ 曲目上能解析出的目录引用）。
     const declares = (action: LibraryActionId) => declaredActions.actions.includes(action);
     const subtitle = (collection as any).creator?.nickname || (collection as any).artists?.[0]?.name || collection.description || '';
@@ -43,7 +48,7 @@ const GridCollectionSurface: React.FC<LibraryCollectionSurfaceProps> = ({
             onSelectTrack={stayPlayback.selectTrack}
             trackPlaybackMark={stayPlayback.markFor}
             onAddTrackToQueue={playback.enqueueTrack}
-            onPlayAll={playback.playAll}
+            onPlayAll={playAll}
             onAddAllToQueue={playback.enqueueAll}
             onSelectAlbum={declares('open-album') ? onOpenAlbum : undefined}
             onSelectArtist={declares('open-artist') ? onOpenArtist : undefined}

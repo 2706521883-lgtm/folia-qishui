@@ -63,6 +63,19 @@ export const useLibraryHomeSources = ({
     const { providers, activeProviderId: providerId } = useLibraryAccountProviders(account);
     const provider = useMemo(() => resolveActiveProviderSummary(providers, providerId), [providerId, providers]);
     const capabilities = readOnlineProviderCapabilities(providerId);
+    // 当前平台之外、能列歌单的平台：已登录（或无需登录）且 provider 声明了歌单能力。它们只参与歌单页签的合并，
+    // 不改变当前平台；收藏专辑 / 电台仍只看当前平台。
+    const playlistProviders = useMemo(() => providers.flatMap(candidate => {
+        if (candidate.providerId === providerId) return [];
+        if (!candidate.user && candidate.requiresAccount !== false) return [];
+        const candidateCapabilities = readOnlineProviderCapabilities(candidate.providerId);
+        if (!candidateCapabilities.userLibrary || !candidateCapabilities.playlists) return [];
+        return [{
+            providerId: candidate.providerId,
+            providerLabel: candidate.shortName || candidate.displayName || candidate.providerId,
+            collections: candidate.collections,
+        }];
+    }), [providerId, providers]);
     const { userLibrary, playlists: canListPlaylists, userAlbums, recommendations, personalFmModes } = capabilities;
     const online = useMemo(() => resolveHomeOnlineSource({
         providerId,
@@ -72,11 +85,12 @@ export const useLibraryHomeSources = ({
         fallbackUser: user,
         fallbackPlaylists: playlists,
         fallbackCloud: cloudPlaylist,
+        playlistProviders,
         platformAvailable: true,
     }), [
         // capabilities 每次读都是新对象：按用到的几个开关比较。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        canListPlaylists, cloudPlaylist, personalFmModes, playlists, provider, providerId, recommendations, user, userAlbums, userLibrary,
+        canListPlaylists, cloudPlaylist, personalFmModes, playlists, playlistProviders, provider, providerId, recommendations, user, userAlbums, userLibrary,
     ]);
 
     const localAvailability = getLocalLibraryAvailability();

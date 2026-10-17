@@ -114,6 +114,28 @@ export const replacePlaybackSongInQueue = (
     return replaced ? nextQueue : [replacement, ...nextQueue];
 };
 
+// Swaps one queue entry in place so cross-source fallback does not reorder or discard neighboring songs.
+export const replacePlaybackSongAtSamePosition = (
+    queue: SongResult[],
+    originalSong: SongResult,
+    replacementSong: SongResult,
+): SongResult[] => {
+    const originalKey = getPlaybackSongKey(originalSong);
+    const replacementKey = getPlaybackSongKey(replacementSong);
+    const originalIndex = queue.findIndex(song => getPlaybackSongKey(song) === originalKey);
+
+    if (originalIndex === -1) {
+        const alreadyPresent = queue.some(song => getPlaybackSongKey(song) === replacementKey);
+        return alreadyPresent ? queue : [replacementSong, ...queue];
+    }
+
+    return queue.flatMap((song, index) => {
+        if (index === originalIndex) return [replacementSong];
+        if (getPlaybackSongKey(song) === replacementKey) return [];
+        return [song];
+    });
+};
+
 export const hasMixedPlaybackSources = (queue: SongResult[]): boolean => (
     new Set(queue.map(getPlaybackSongSource)).size > 1
 );

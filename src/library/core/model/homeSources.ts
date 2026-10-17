@@ -6,6 +6,8 @@ import type {
     LibraryHomeMessage,
     LibraryHomeOnlineSource,
     LibraryHomeOnlineTab,
+    LibraryHomePlaylistEntry,
+    LibraryHomePlaylistProvider,
     LibraryHomeScanProgress,
     LibraryHomeTab,
     LibraryHomeTabKey,
@@ -33,8 +35,34 @@ export const translateHomeMessage = (t: TFunction, message: LibraryHomeMessage):
 );
 
 /**
+ * 合并多个平台的歌单（纯规则）：按传入顺序轮流各取一张，所以当前平台的第一张在最前，其他平台的歌单紧跟着
+ * 交错出现，而不是整段排在当前平台之后。每个平台内部的顺序不变；同一 provider 的重复集合只留第一张。
+ */
+export const mergeHomePlaylists = (
+    providers: readonly LibraryHomePlaylistProvider[],
+): LibraryHomePlaylistEntry[] => {
+    const groups = providers.filter(group => group.collections.length > 0);
+    if (groups.length === 0) return [];
+    const longest = groups.reduce((max, group) => Math.max(max, group.collections.length), 0);
+    const entries: LibraryHomePlaylistEntry[] = [];
+    const seen = new Set<string>();
+    for (let index = 0; index < longest; index += 1) {
+        for (const group of groups) {
+            const collection = group.collections[index];
+            if (!collection) continue;
+            const key = `${group.providerId}:${collection.type}:${String(collection.id)}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            entries.push({ providerId: group.providerId, providerLabel: group.providerLabel, collection });
+        }
+    }
+    return entries;
+};
+
+/**
  * 当前在线来源。provider 的账户摘要优先；只有网易云在平台还没给出摘要时才退回应用传入的旧账户与歌单
  * （原先 Grid3D 的写法）。能力缺失按「全不支持」处理（provider 可能刚被 mod 移除）。
+ * playlistProviders 是当前平台之外、已登录且能列歌单的平台：歌单页签把它们与当前平台合并，切歌单不改当前平台。
  */
 export const resolveHomeOnlineSource = ({
     providerId,
@@ -44,6 +72,7 @@ export const resolveHomeOnlineSource = ({
     fallbackUser,
     fallbackPlaylists,
     fallbackCloud,
+    playlistProviders = [],
     platformAvailable,
 }: {
     providerId: string;
@@ -54,21 +83,31 @@ export const resolveHomeOnlineSource = ({
     fallbackUser: ProviderUser | null;
     fallbackPlaylists: readonly ProviderCollection[];
     fallbackCloud?: ProviderCollection | null;
+    /** 其他已登录平台（当前平台由 provider / fallback 决定，不重复传）。 */
+    playlistProviders?: readonly LibraryHomePlaylistProvider[];
     platformAvailable: boolean;
 }): LibraryHomeOnlineSource => {
     const isNetease = providerId === 'netease';
     const user = provider?.user || (isNetease ? fallbackUser : null);
+    const providerLabel = provider?.shortName || provider?.displayName || fallbackLabel;
+    const collections = provider?.collections || (isNetease
+        ? [...fallbackPlaylists, ...(fallbackCloud ? [fallbackCloud] : [])]
+        : []);
+    const canUseActivePlaylists = capabilities.userLibrary && capabilities.playlists;
+    const otherPlaylistProviders = playlistProviders.filter(group => group.providerId !== providerId);
     return {
         providerId,
-        providerLabel: provider?.shortName || provider?.displayName || fallbackLabel,
+        providerLabel,
         provider,
         user,
         accountView: resolveOnlineProviderAccountView({ provider, hasUser: Boolean(user), platformAvailable }),
         needsRelogin: provider?.error === 'auth-required',
-        collections: provider?.collections || (isNetease
-            ? [...fallbackPlaylists, ...(fallbackCloud ? [fallbackCloud] : [])]
-            : []),
-        canUsePlaylists: capabilities.userLibrary && capabilities.playlists,
+        collections,
+        playlistEntries: mergeHomePlaylists([
+            { providerId, providerLabel, collections },
+            ...otherPlaylistProviders,
+        ]),
+        canUsePlaylists: canUseActivePlaylists || otherPlaylistProviders.length > 0,
         canUseAlbums: capabilities.userLibrary && Boolean(capabilities.userAlbums),
         canUseRadio: capabilities.recommendations,
         hasPersonalFmModes: Boolean(capabilities.personalFmModes),
@@ -155,14 +194,18 @@ export const resolveOnlineHomeLoading = ({
     radioFeedLoading,
 }: {
     tab: LibraryHomeTabKey;
-    source: Pick<LibraryHomeOnlineSource, 'canUsePlaylists' | 'canUseAlbums' | 'canUseRadio' | 'collections' | 'user'>;
+    source: Pick<LibraryHomeOnlineSource, 'canUsePlaylists' | 'canUseAlbums' | 'canUseRadio' | 'collections' | 'user'>
+        & Partial<Pick<LibraryHomeOnlineSource, 'playlistEntries'>>;
     favoriteAlbumsLoading: boolean;
     radioFeedLoading: boolean;
-}): boolean => (
-    (tab === 'playlist' && source.canUsePlaylists && source.collections.length === 0 && source.user !== null)
-    || (tab === 'albums' && source.canUseAlbums && favoriteAlbumsLoading)
-    || (tab === 'radio' && source.canUseRadio && radioFeedLoading)
-);
+}): boolean => {
+    const playlistCount = source.playlistEntries ? source.playlistEntries.length : source.collections.length;
+    return (
+        (tab === 'playlist' && source.canUsePlaylists && playlistCount === 0 && source.user !== null)
+        || (tab === 'albums' && source.canUseAlbums && favoriteAlbumsLoading)
+        || (tab === 'radio' && source.canUseRadio && radioFeedLoading)
+    );
+};
 
 /** 三个本地导入动作（导入文件夹、刷新、导入歌单文件）此刻是否都该禁用：任何一个在进行，或扫描在进行。 */
 export const isHomeImportBusy = (snapshot: LibraryHomeActionsSnapshot): boolean => (
@@ -180,8 +223,14 @@ export const homeScanPercent = (scan: LibraryHomeScanProgress | null): number =>
 );
 
 /**
+ * 歌单页签合并了所有平台，目录会话与隐藏作用域因此不再属于某一个 provider：统一用这个作用域 id。
+ * 切当前平台不会换掉歌单页签的筛选、焦点或隐藏状态。
+ */
+export const MERGED_PLAYLIST_SCOPE_ID = 'all';
+
+/**
  * 首页当前列表的目录会话 key（GridMap / TUI 目录的筛选与批选按它分开）。原先三个首页视图各自在 JSX 里算，
- * 现在只在这里：在线按 provider 与页签（歌单页签记作 playlists），本地与 Navidrome 按 section。
+ * 现在只在这里：歌单页签是合并作用域，其余在线页签按 provider，本地与 Navidrome 按 section。
  */
 export const resolveHomeDirectoryKey = ({
     tab,
@@ -196,12 +245,13 @@ export const resolveHomeDirectoryKey = ({
 }): string => {
     if (tab === 'local') return directoryKey({ source: 'local', section: localSection });
     if (tab === 'navidrome') return directoryKey({ source: 'navidrome', section: navidromeSection });
-    return directoryKey({ source: 'online', providerId, section: tab === 'playlist' ? 'playlists' : tab });
+    const onlineProviderId = tab === 'playlist' ? MERGED_PLAYLIST_SCOPE_ID : providerId;
+    return directoryKey({ source: 'online', providerId: onlineProviderId, section: tab === 'playlist' ? 'playlists' : tab });
 };
 
-/** 首页当前列表的隐藏作用域：在线按 provider，本地与 Navidrome 各一个。 */
+/** 首页当前列表的隐藏作用域：歌单页签是合并作用域，其余在线页签按 provider，本地与 Navidrome 各一个。 */
 export const resolveHomeHiddenScope = (tab: LibraryHomeTabKey, providerId: string): LibraryHiddenScope => (
-    tab === 'local' ? 'local' : tab === 'navidrome' ? 'navidrome' : onlineHiddenScope(providerId)
+    tab === 'local' ? 'local' : tab === 'navidrome' ? 'navidrome' : onlineHiddenScope(tab === 'playlist' ? MERGED_PLAYLIST_SCOPE_ID : providerId)
 );
 
 /** 首页的一个来源：在线（歌单 / 电台 / 专辑三个页签）、本地、Navidrome。 */

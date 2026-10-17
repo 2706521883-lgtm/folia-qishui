@@ -15,6 +15,7 @@ type SearchResultsListProps = {
     onAddTrackToQueue: (track: UnifiedSong) => void;
     onOpenArtist: (track: UnifiedSong, artistName: string, artistId?: MediaId, entityId?: string) => void;
     onOpenAlbum: (track: UnifiedSong, albumName: string, albumId?: MediaId, entityId?: string) => void;
+    showProviderBadge?: boolean;
 };
 
 type RowProps = Omit<SearchResultsListProps, 'scrollTop' | 'onScrollTopChange'>;

@@ -9,7 +9,7 @@ import type {
     LibraryHomePort,
     LibraryHomeScanProgress,
 } from '../contracts/homeModel';
-import { isPersonalFmCard, onlineCardCollection } from '../model/homeCards';
+import { isPersonalFmCard, onlineCardCollection, resolveOnlineCardProviderId } from '../model/homeCards';
 import { isHomeImportBusy, resolveLocalUnavailableReason } from '../model/homeSources';
 
 // src/library/core/services/libraryHomeActions.ts
@@ -136,7 +136,8 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
 
         openOnlineCard: async (card: LibraryHomeCard, providerId: string, open: LibraryHomeOpenCollection) => {
             if (isPersonalFmCard(card)) return playPersonalFm();
-            open(port.describeOnlineCollection(onlineCardCollection(card), providerId));
+            // 合并歌单里的卡片带自己的 providerId：打开它不会切当前平台，也不会用错平台的集合接口。
+            open(port.describeOnlineCollection(onlineCardCollection(card), resolveOnlineCardProviderId(card, providerId)));
             return OK;
         },
 

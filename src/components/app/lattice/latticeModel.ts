@@ -1,6 +1,7 @@
 import type { SongResult } from '../../../types';
+import type { OnlineProviderId, PlaybackSourceRef } from '../../../types/onlineMusic';
 import { getSongArtistLabel, getSongCoverUrl } from '../../../services/onlineMusic/songMetadata';
-import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
+import { getPlaybackSongKey, getPlaybackSourceRef } from '../../../utils/appPlaybackGuards';
 
 // Projects the play queue onto the wall; queue order is the only source of truth.
 
@@ -15,6 +16,9 @@ export type LatticeTile = {
     artist: string;
     coverUrl?: string;
     section: LatticeSection;
+    /** Where this queue entry plays from; the poster labels it so mixed-platform queues are readable. */
+    sourceKind: PlaybackSourceRef['kind'];
+    providerId: OnlineProviderId | null;
 };
 
 // Marks each entry relative to the playhead; the queue is already de-duplicated by the queue controller.
@@ -35,6 +39,8 @@ export const buildLatticeTiles = ({
         if (index === currentIndex) section = 'now';
         else if (currentIndex >= 0 && index < currentIndex) section = 'played';
 
+        const sourceRef = getPlaybackSourceRef(song);
+
         return {
             id: getPlaybackSongKey(song),
             queueIndex: index,
@@ -43,6 +49,8 @@ export const buildLatticeTiles = ({
             artist: getSongArtistLabel(song) || song.album?.name || 'Unknown artist',
             coverUrl: getSongCoverUrl(song) || song.album?.coverUrl,
             section,
+            sourceKind: sourceRef.kind,
+            providerId: sourceRef.kind === 'online' ? sourceRef.providerId : null,
         };
     });
 };

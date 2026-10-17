@@ -18,6 +18,8 @@ const naviCarrier = {
 const surface = (localSongs: LocalSong[] = [localSong]) => ({
     onPlaySong: vi.fn(),
     onPlayAll: vi.fn(),
+    onPlayAllMerged: vi.fn(),
+    onPlayTrackMerged: vi.fn(),
     onAddAllToQueue: vi.fn(),
     onAddSongToQueue: vi.fn(),
     onAddLocalSongToQueue: vi.fn(),
@@ -58,6 +60,26 @@ describe('library playback port', () => {
         expect(props.onPlayAll).toHaveBeenCalledWith([onlineSong]);
         expect(props.onAddAllToQueue).toHaveBeenCalledWith([onlineSong], undefined);
         expect(props.onAddSongToQueue).toHaveBeenCalledWith(onlineSong);
+    });
+
+    it('passes merged playlist playback through to the host', () => {
+        const props = surface();
+        const port = createLibraryPlaybackPort(props);
+        port.playAllMerged?.([onlineSong]);
+        port.playTrackMerged?.(onlineSong, [onlineSong]);
+        expect(props.onPlayAllMerged).toHaveBeenCalledWith([onlineSong]);
+        expect(props.onPlayTrackMerged).toHaveBeenCalledWith(onlineSong, [onlineSong]);
+        expect(props.onPlayAll).not.toHaveBeenCalled();
+        expect(props.onPlaySong).not.toHaveBeenCalled();
+    });
+
+    it('falls back to replace playback when the host has no merged callbacks', () => {
+        const props = { ...surface(), onPlayAllMerged: undefined, onPlayTrackMerged: undefined };
+        const port = createLibraryPlaybackPort(props);
+        port.playAllMerged?.([onlineSong]);
+        port.playTrackMerged?.(onlineSong, [onlineSong]);
+        expect(props.onPlayAll).toHaveBeenCalledWith([onlineSong]);
+        expect(props.onPlaySong).toHaveBeenCalledWith(onlineSong, [onlineSong]);
     });
 
     // b0bea643 起端口吞掉了这两样，歌手页的「加入热门歌曲」因此先弹队列自己的提示、再报交出去的条数而不是收下的条数。

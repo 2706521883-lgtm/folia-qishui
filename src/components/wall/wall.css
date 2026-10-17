@@ -273,6 +273,25 @@
     background: rgb(var(--lattice-shade-rgb) / 78%);
 }
 
+/* Source platform of this queue entry. The wall mixes providers in one queue, so each poster
+   names its own playback source instead of inheriting the active browsing provider. */
+.lattice-poster-provider {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    max-width: calc(100% - 96px);
+    overflow: hidden;
+    padding: 5px 8px;
+    color: var(--lattice-poster-ink);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: rgb(var(--lattice-shade-rgb) / 62%);
+    pointer-events: none;
+}
+
 .lattice-poster-copy {
     position: absolute;
     right: 17px;

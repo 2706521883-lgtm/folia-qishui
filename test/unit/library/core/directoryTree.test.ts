@@ -110,6 +110,8 @@ describe('home cards in a directory', () => {
         expect(resolveDirectoryFolderLabel({ name: 'Mix', type: 'playlist' })).toBe('');
         expect(homeCardToDirectoryItem({ id: 'p', name: 'Mix', type: 'playlist', description: 'by me' }))
             .toMatchObject({ path: undefined, description: 'by me' });
+        expect(homeCardToDirectoryItem({ id: 'p2', name: 'Mix', type: 'playlist', description: 'by me', providerLabel: '网易云' }))
+            .toMatchObject({ path: undefined, description: '网易云 · by me' });
     });
 });
 

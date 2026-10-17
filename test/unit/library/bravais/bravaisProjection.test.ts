@@ -27,6 +27,13 @@ describe('home cards', () => {
         expect(homeCardKind(undefined)).toBe('playlist');
     });
 
+    it('shows a merged playlist card\'s provider before its kind', () => {
+        const [item] = projectHomeCards([
+            card('kugou:playlist:1', 'playlist', { providerLabel: '酷狗', trackCount: 8 }),
+        ], { kindLabel: kind => `[${kind}]`, trackCount: count => `${count} tracks` });
+        expect(item.badge).toBe('酷狗 · [playlist] · 8');
+    });
+
     it('folds a collection track count into the kind label instead of the subtitle', () => {
         const items = projectHomeCards([
             card(1, 'playlist', { trackCount: 12, description: 'Curator', coverUrl: 'cover.jpg' }),

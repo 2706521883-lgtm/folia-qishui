@@ -9,6 +9,13 @@ import type { LocalGridViewCollectionDescriptor } from './collection';
 export interface LibraryPlaybackPort {
     playTrack(track: SongResult, queue: SongResult[]): void;
     playAll(tracks: SongResult[]): void;
+    /**
+     * 合并播放整张歌单：把曲目接到当前队列尾部（跨平台去重）后，从新加入的第一首开始播。
+     * 合并歌单墙打开在线歌单时用它；宿主没提供时回退到 playAll。
+     */
+    playAllMerged?(tracks: SongResult[]): void;
+    /** 合并播放单曲：先把所在的歌单队列并入当前队列，再播放这首；宿主没提供时回退到 playTrack。 */
+    playTrackMerged?(track: SongResult, queue: SongResult[]): void;
     enqueueTrack(track: SongResult): void;
     /**
      * 整批入队。`suppressToast` 让队列不弹自己的「已加入」提示（调用方要报自己的，例如歌手页的「已加入 N 首热门歌曲」）；

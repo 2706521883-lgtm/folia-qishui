@@ -5,7 +5,7 @@ import { APP_VERSION, GUIDE_VERSION_STORAGE_KEY, waitForAppMounted } from '../he
 // 帮助页的「加入社区」：一颗胶囊，点开在 GitHub 仓库与作者 QQ 之间选。GitHub 打开仓库链接；
 // QQ 复制号码并在这一项上显示「已复制」（剪贴板 API 被拒时退回 execCommand）；Escape 只关菜单不关设置。
 
-const QQ_CONTACT_NUMBER = '3103472989';
+const QQ_CONTACT_NUMBER = '2706521883';
 const REPOSITORY_URL = 'https://github.com/2706521883-lgtm/folia-qishui';
 
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });

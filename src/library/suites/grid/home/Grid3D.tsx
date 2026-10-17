@@ -169,11 +169,13 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
         providerId: activeProviderId,
         localRow: localMusicState.activeRow,
     });
-    // 在线列表只在账户已就绪时显示（无账户 / 解析中 / 未登录各有面板）。
-    const showOnlineList = isOnlineTab
-        && activeAccountView !== 'accountless'
-        && activeAccountView !== 'resolving'
-        && activeAccountView !== 'guest';
+    // 在线列表只在账户已就绪时显示（无账户 / 解析中 / 未登录各有面板）；歌单页签合并了所有平台，
+    // 当前平台未就绪但其他平台已有歌单时照常显示列表。
+    const hasOnlineItems = isOnlineTab && onlineList.items.length > 0;
+    const showOnlineList = isOnlineTab && (hasOnlineItems
+        || (activeAccountView !== 'accountless'
+            && activeAccountView !== 'resolving'
+            && activeAccountView !== 'guest'));
 
     const [focusedIndex, setFocusedIndex] = useState(0);
     const gridRootRef = useRef<HTMLDivElement>(null);
@@ -498,17 +500,17 @@ export const Grid3D: React.FC<Grid3DProps> = (props) => {
 
             {/* Desktop Canvas Surface */}
             <div className="flex-1 min-h-0 flex flex-col items-center justify-center relative">
-                {isOnlineTab && activeAccountView === 'accountless' ? (
+                {isOnlineTab && !hasOnlineItems && activeAccountView === 'accountless' ? (
                     <OnlineProviderAccountlessPanel
                         providerLabel={activeProviderLabel}
                         isDaylight={isDaylight}
                         onSearch={() => searchInputRef.current?.focus()}
                     />
-                ) : isOnlineTab && activeAccountView === 'resolving' ? (
+                ) : isOnlineTab && !hasOnlineItems && activeAccountView === 'resolving' ? (
                     <div className="flex flex-1 w-full items-center justify-center" aria-busy="true">
                         <Loader2 className="animate-spin opacity-30" size={28} />
                     </div>
-                ) : isOnlineTab && activeAccountView === 'guest' ? (
+                ) : isOnlineTab && !hasOnlineItems && activeAccountView === 'guest' ? (
                     <OnlineProviderConnectPanel
                         providers={accountProviders}
                         isDaylight={isDaylight}

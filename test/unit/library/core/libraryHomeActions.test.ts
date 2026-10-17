@@ -205,6 +205,19 @@ describe('createLibraryHomeActions — opening cards', () => {
         expect(open).toHaveBeenCalledWith(expect.objectContaining({ source: 'online', providerId: 'p', id: 'daily_recommendations' }));
     });
 
+    it('a merged playlist opens under its own provider instead of the active one', async () => {
+        const { port } = createPort();
+        const open = vi.fn();
+        const raw = { id: 'k-list', name: 'KuGou List', type: 'playlist', providerId: 'kugou' };
+        await createLibraryHomeActions(port).openOnlineCard(
+            { id: 'kugou:playlist:k-list', name: 'KuGou List', type: 'playlist', providerId: 'kugou', providerLabel: '酷狗', raw },
+            'netease',
+            open,
+        );
+        expect(port.describeOnlineCollection).toHaveBeenCalledWith(raw, 'kugou');
+        expect(open).toHaveBeenCalledWith(expect.objectContaining({ source: 'online', providerId: 'kugou', id: 'k-list' }));
+    });
+
     it('local groups and Navidrome cards open through the port\'s descriptor factories', () => {
         const { port } = createPort();
         const actions = createLibraryHomeActions(port);

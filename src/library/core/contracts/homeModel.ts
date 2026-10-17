@@ -38,6 +38,20 @@ export type LibraryHomeTabView = {
 /** 在线 provider 的账户视图（规则见 core/model/onlineProviderAccountView）。 */
 export type LibraryHomeAccountView = 'resolving' | 'guest' | 'authenticated' | 'accountless';
 
+/** 合并歌单里的一个条目：集合本身 + 它来自哪个平台（卡片按 provider 区分身份与徽标）。 */
+export type LibraryHomePlaylistEntry = {
+    providerId: string;
+    providerLabel: string;
+    collection: ProviderCollection;
+};
+
+/** 参与合并歌单的一个平台：当前平台之外的已登录平台及其歌单。 */
+export type LibraryHomePlaylistProvider = {
+    providerId: string;
+    providerLabel: string;
+    collections: readonly ProviderCollection[];
+};
+
 /** 当前在线来源：provider、账户、能用哪些页签。 */
 export type LibraryHomeOnlineSource = {
     providerId: string;
@@ -47,8 +61,11 @@ export type LibraryHomeOnlineSource = {
     accountView: LibraryHomeAccountView;
     /** 账户登录过期（provider 报 auth-required）。 */
     needsRelogin: boolean;
-    /** 账户歌单页签的条目（含云盘）。 */
+    /** 当前平台的账户歌单（含云盘）；合并视图的完整条目见 playlistEntries。 */
     collections: ProviderCollection[];
+    /** 歌单页签实际展示的条目：当前平台在前，其余已登录平台与它交错。 */
+    playlistEntries: LibraryHomePlaylistEntry[];
+    /** 歌单页签可用：当前平台支持，或任意其他已登录平台能提供歌单。 */
     canUsePlaylists: boolean;
     canUseAlbums: boolean;
     canUseRadio: boolean;
@@ -133,6 +150,10 @@ export type LibraryHomeCard = {
     trackCount?: number;
     trackIds?: string[];
     isVirtual?: boolean;
+    /** 在线卡片来自哪个平台（合并歌单的身份与徽标；本地 / Navidrome 卡片没有）。 */
+    providerId?: string;
+    /** 来源平台的短名（「网易云」「酷狗」…），卡片上的来源徽标。 */
+    providerLabel?: string;
     raw?: unknown;
     /** Navidrome 专辑卡的展示字段（交给集合描述）。 */
     albumArtist?: string;

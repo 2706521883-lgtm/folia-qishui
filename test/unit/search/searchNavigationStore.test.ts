@@ -2,7 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveCommandPaletteSearchSource, useSearchNavigationStore } from '@/stores/useSearchNavigationStore';
 import { neteaseApi } from '@/services/netease';
 import { getNavidromeConfig, navidromeApi } from '@/services/navidromeService';
+import {
+    mergeFederatedSearchSongs,
+    searchAllSources,
+    type FederatedSearchCursorMap,
+    type FederatedSearchPage,
+} from '@/services/onlineMusic/federatedSearch';
+import type { UnifiedSong } from '@/types';
 import type { LocalLibraryAssignment, LocalLibraryEntity } from '@/types/localLibrary';
+
+vi.mock('@/services/onlineMusic/federatedSearch', () => ({
+    searchAllSources: vi.fn(),
+    mergeFederatedSearchSongs: vi.fn((existing: UnifiedSong[], incoming: UnifiedSong[]) => [
+        ...existing,
+        ...incoming,
+    ]),
+}));
 
 vi.mock('@/services/netease', () => ({
     neteaseApi: {
@@ -24,10 +39,49 @@ describe('useSearchNavigationStore', () => {
     const getNavidromeConfigMock = vi.mocked(getNavidromeConfig);
     const navidromeSearchMock = vi.mocked(navidromeApi.search);
     const toNavidromeSongMock = vi.mocked(navidromeApi.toNavidromeSong);
+    const searchAllSourcesMock = vi.mocked(searchAllSources);
+    const mergeFederatedSearchSongsMock = vi.mocked(mergeFederatedSearchSongs);
     const deps = {
         localSongs: [],
         t: (_key: string, fallback?: string) => fallback || '',
     };
+
+    const onlineSong = (providerId: 'netease' | 'kugou', mediaId: string): UnifiedSong => ({
+        id: mediaId,
+        name: `${providerId}-${mediaId}`,
+        artists: [],
+        album: { id: 0, name: '' },
+        durationMs: 1000,
+        sourceRef: { kind: 'online', providerId, mediaId },
+    });
+
+    const cursor = (
+        providerId: 'netease' | 'kugou',
+        nextOffset: number,
+        exhausted = false,
+    ) => ({
+        providerId,
+        limit: 15,
+        nextOffset,
+        hasMore: !exhausted,
+        exhausted,
+        consecutiveFailures: 0,
+    });
+
+    const federatedPage = (
+        items: UnifiedSong[],
+        cursors: FederatedSearchCursorMap,
+        overrides: Partial<FederatedSearchPage> = {},
+    ): FederatedSearchPage => ({
+        items,
+        cursors,
+        hasMore: Object.values(cursors).some(entry => !entry.exhausted),
+        errors: [],
+        providerIds: ['netease', 'kugou'],
+        attemptedProviderCount: 2,
+        succeededProviderCount: 2,
+        ...overrides,
+    });
 
     beforeEach(() => {
         cloudSearchMock.mockReset();
@@ -35,6 +89,8 @@ describe('useSearchNavigationStore', () => {
         getNavidromeConfigMock.mockReturnValue(null);
         navidromeSearchMock.mockReset();
         toNavidromeSongMock.mockReset();
+        searchAllSourcesMock.mockReset();
+        mergeFederatedSearchSongsMock.mockClear();
         useSearchNavigationStore.setState({
             homeViewTab: 'playlist',
             searchQuery: '',
@@ -51,6 +107,8 @@ describe('useSearchNavigationStore', () => {
             hasMore: false,
             scrollTop: 0,
             searchCache: {},
+            searchProviderCursors: null,
+            searchProviderIds: null,
         });
     });
 
@@ -63,6 +121,164 @@ describe('useSearchNavigationStore', () => {
             durationMs: 1,
         }, 'netease', 'kugou')).toBe('kugou');
         expect(resolveCommandPaletteSearchSource(null, 'netease', 'kugou')).toBe('kugou');
+    });
+
+    it('keeps the all-source tab for command palette searches regardless of the playing song', () => {
+        expect(resolveCommandPaletteSearchSource({
+            id: 1,
+            name: 'NetEase track still playing',
+            artists: [],
+            album: { id: 1, name: '' },
+            durationMs: 1,
+        }, 'all', 'kugou')).toBe('all');
+        expect(resolveCommandPaletteSearchSource(null, 'all', 'kugou')).toBe('all');
+    });
+
+    it('keeps the all-source tab when runtime state resets', () => {
+        useSearchNavigationStore.setState({ searchSourceTab: 'all' });
+        useSearchNavigationStore.getState().resetRuntime('kugou');
+
+        expect(useSearchNavigationStore.getState().searchSourceTab).toBe('all');
+        expect(useSearchNavigationStore.getState().searchProviderCursors).toBeNull();
+        expect(useSearchNavigationStore.getState().searchProviderIds).toBeNull();
+    });
+
+    it('searches every configured source through the federated orchestrator', async () => {
+        const netease = onlineSong('netease', '1');
+        const kugou = onlineSong('kugou', '2');
+        const cursors = {
+            netease: cursor('netease', 1),
+            kugou: cursor('kugou', 1),
+        };
+        searchAllSourcesMock.mockResolvedValueOnce(federatedPage([netease, kugou], cursors));
+
+        await useSearchNavigationStore.getState().submitSearch({
+            query: 'unified',
+            sourceTab: 'all',
+            deps,
+        });
+
+        expect(searchAllSourcesMock).toHaveBeenCalledWith(expect.objectContaining({
+            query: 'unified',
+            limit: 30,
+            providerIds: undefined,
+            cursors: undefined,
+        }));
+        expect(cloudSearchMock).not.toHaveBeenCalled();
+        expect(useSearchNavigationStore.getState()).toMatchObject({
+            searchSourceTab: 'all',
+            searchResults: [netease, kugou],
+            searchProviderCursors: cursors,
+            searchProviderIds: ['netease', 'kugou'],
+            searchError: null,
+        });
+    });
+
+    it('keeps successful all-source results when another provider fails', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const netease = onlineSong('netease', '1');
+        const error = { providerId: 'kugou' as const, message: 'kugou down', timedOut: false };
+        searchAllSourcesMock.mockResolvedValueOnce(federatedPage(
+            [netease],
+            { netease: cursor('netease', 1), kugou: cursor('kugou', 0, true) },
+            { errors: [error], attemptedProviderCount: 2, succeededProviderCount: 1 },
+        ));
+
+        try {
+            await useSearchNavigationStore.getState().submitSearch({
+                query: 'partial',
+                sourceTab: 'all',
+                deps,
+            });
+
+            expect(useSearchNavigationStore.getState().searchError).toBeNull();
+            expect(useSearchNavigationStore.getState().searchResults).toEqual([netease]);
+        } finally {
+            warnSpy.mockRestore();
+        }
+    });
+
+    it('shows a localized error only when every online source fails', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        searchAllSourcesMock.mockResolvedValueOnce(federatedPage(
+            [],
+            { netease: cursor('netease', 0, true), kugou: cursor('kugou', 0, true) },
+            {
+                attemptedProviderCount: 2,
+                succeededProviderCount: 0,
+                errors: [
+                    { providerId: 'netease', message: 'netease down', timedOut: false },
+                    { providerId: 'kugou', message: 'kugou down', timedOut: false },
+                ],
+            },
+        ));
+
+        try {
+            await useSearchNavigationStore.getState().submitSearch({
+                query: 'failed',
+                sourceTab: 'all',
+                deps,
+            });
+
+            expect(useSearchNavigationStore.getState().searchError).toBe('All online sources failed to search');
+        } finally {
+            warnSpy.mockRestore();
+        }
+    });
+
+    it('loads the next all-source page with the saved provider cursors', async () => {
+        const first = onlineSong('netease', '1');
+        const second = onlineSong('kugou', '2');
+        const third = onlineSong('netease', '3');
+        const fourth = onlineSong('kugou', '4');
+        const firstCursors = {
+            netease: cursor('netease', 1),
+            kugou: cursor('kugou', 1),
+        };
+        const secondCursors = {
+            netease: cursor('netease', 2, true),
+            kugou: cursor('kugou', 2, true),
+        };
+        searchAllSourcesMock
+            .mockResolvedValueOnce(federatedPage([first, second], firstCursors))
+            .mockResolvedValueOnce(federatedPage([third, fourth], secondCursors, { hasMore: false }));
+
+        await useSearchNavigationStore.getState().submitSearch({
+            query: 'paged all',
+            sourceTab: 'all',
+            deps,
+        });
+        await useSearchNavigationStore.getState().loadMoreSearchResults({ deps });
+
+        expect(searchAllSourcesMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
+            query: 'paged all',
+            providerIds: ['netease', 'kugou'],
+            cursors: firstCursors,
+        }));
+        expect(mergeFederatedSearchSongsMock).toHaveBeenCalledWith(
+            [first, second],
+            [third, fourth],
+        );
+        expect(useSearchNavigationStore.getState()).toMatchObject({
+            searchResults: [first, second, third, fourth],
+            searchProviderCursors: secondCursors,
+            hasMore: false,
+        });
+    });
+
+    it('does not restart an all-source search without cursors when loading more', async () => {
+        useSearchNavigationStore.setState({
+            searchQuery: 'all no cursors',
+            searchSourceTab: 'all',
+            searchResults: [onlineSong('netease', '1')],
+            hasMore: true,
+            searchProviderCursors: null,
+            offset: 1,
+        });
+
+        await useSearchNavigationStore.getState().loadMoreSearchResults({ deps });
+
+        expect(searchAllSourcesMock).not.toHaveBeenCalled();
     });
 
     it('submits a local search and opens the overlay', async () => {

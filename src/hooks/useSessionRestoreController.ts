@@ -5,7 +5,6 @@ import { getLocalLibraryCatalogSnapshot } from '../services/localLibraryEntityRe
 import { buildLocalQueue } from '../services/playbackAdapters';
 import { prefetchNearbySongs } from '../services/prefetchService';
 import type { ThemeCacheSongKey } from '../services/themeCache';
-import { useOnlineProviderAccountStore } from '../stores/useOnlineProviderAccountStore';
 import { restorePlaybackSourceForSong } from '../components/app/playback/restorePlaybackSource';
 import { getPlaybackSongKey, isStagePlaybackSong, normalizePlaybackSongSource } from '../utils/appPlaybackGuards';
 import type { LyricData, SongResult, StatusMessage } from '../types';
@@ -129,13 +128,8 @@ export function useSessionRestoreController({
                 }
 
                 console.log('[Session] Restoring last song:', lastSong.name);
-                if (lastSong.sourceRef?.kind === 'online' && lastSong.sourceRef.providerId) {
-                    const currentActiveProviderId = useOnlineProviderAccountStore.getState().activeProviderId;
-                    if (currentActiveProviderId !== lastSong.sourceRef.providerId) {
-                        console.log(`[Session] Aligning active provider to restored song provider: ${lastSong.sourceRef.providerId}`);
-                        useOnlineProviderAccountStore.getState().setActiveProviderId(lastSong.sourceRef.providerId);
-                    }
-                }
+                // 恢复的是播放队列，不是浏览平台：当前歌曲可以来自任意音源，active provider 保持用户上次
+                // 选择的平台。否则重启后合并歌单墙会被上一首歌的平台顶掉，跨平台拼贴也像被重置了。
                 setCurrentSong(lastSong);
                 setPlayQueue(lastQueue && lastQueue.length > 0 ? lastQueue : [lastSong]);
 

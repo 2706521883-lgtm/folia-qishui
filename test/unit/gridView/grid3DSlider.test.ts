@@ -59,6 +59,14 @@ describe('getGrid3DSliderSecondaryText', () => {
         })).toBe('Creator');
     });
 
+    it('shows the provider in front of a merged playlist description without repeating the summary', () => {
+        const playlist = { type: 'playlist', description: 'Creator', summary: '猜你喜欢的歌单', providerLabel: '酷狗' };
+        expect(getGrid3DSliderSecondaryText(playlist)).toBe('酷狗 · 猜你喜欢的歌单');
+        expect(getGrid3DSliderSummaryText(playlist)).toBe('');
+        // 专辑的第二行是描述，简介仍然单独显示；providerLabel 不参与简介去重。
+        expect(getGrid3DSliderSummaryText({ ...playlist, type: 'album', description: '歌单', summary: '专辑简介' })).toBe('专辑简介');
+    });
+
     it('does not create placeholder text when metadata is absent', () => {
         expect(getGrid3DSliderSecondaryText({ type: 'playlist' })).toBe('');
     });

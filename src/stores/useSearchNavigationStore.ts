@@ -7,12 +7,18 @@ import {
     buildUnifiedLocalSong,
     type LocalLibraryDisplayCatalog,
 } from '../services/playbackAdapters';
+import {
+    mergeFederatedSearchSongs,
+    searchAllSources,
+    type FederatedSearchCursorMap,
+    type FederatedSearchProviderError,
+} from '../services/onlineMusic/federatedSearch';
 import { omni } from '../services/onlineMusic/omni';
 import { isLocalPlaybackSong, isNavidromePlaybackSong } from '../utils/appPlaybackGuards';
 
 const LAST_HOME_VIEW_TAB_KEY = 'last_home_view_tab';
 const DEFAULT_SEARCH_LIMIT = 30;
-export type SearchSource = OnlineProviderId | 'local' | 'navidrome';
+export type SearchSource = OnlineProviderId | 'all' | 'local' | 'navidrome';
 export type SearchReturnView = 'home' | 'player';
 
 type SearchExecutorDeps = {
@@ -25,6 +31,11 @@ type SearchExecutionResult = {
     results: UnifiedSong[];
     hasMore: boolean;
     nextOffset: number;
+    providerCursors?: FederatedSearchCursorMap | null;
+    providerIds?: OnlineProviderId[] | null;
+    attemptedProviderCount?: number;
+    succeededProviderCount?: number;
+    errors?: FederatedSearchProviderError[];
 };
 
 type SearchCacheEntry = {
@@ -32,6 +43,8 @@ type SearchCacheEntry = {
     offset: number;
     hasMore: boolean;
     scrollTop: number;
+    providerCursors?: FederatedSearchCursorMap | null;
+    providerIds?: OnlineProviderId[] | null;
 };
 
 interface SearchNavigationState {
@@ -50,6 +63,8 @@ interface SearchNavigationState {
     hasMore: boolean;
     scrollTop: number;
     searchCache: Record<string, SearchCacheEntry>;
+    searchProviderCursors: FederatedSearchCursorMap | null;
+    searchProviderIds: OnlineProviderId[] | null;
     setHomeViewTab: (tab: HomeViewTab) => void;
     setSearchQuery: (query: string) => void;
     setSearchScrollTop: (scrollTop: number) => void;
@@ -66,7 +81,7 @@ const getSearchCacheKey = (query: string, sourceTab: SearchSource) => (
 );
 
 export const resolveSearchSource = (tab: HomeViewTab | SearchSource): SearchSource => {
-    if (tab === 'local' || tab === 'navidrome') {
+    if (tab === 'all' || tab === 'local' || tab === 'navidrome') {
         return tab;
     }
     if (tab !== 'playlist' && tab !== 'albums' && tab !== 'radio') return tab as OnlineProviderId;
@@ -78,6 +93,7 @@ export const resolveCommandPaletteSearchSource = (
     searchSourceTab: SearchSource,
     activeOnlineProviderId: OnlineProviderId,
 ): SearchSource => {
+    if (searchSourceTab === 'all') return 'all';
     if (currentSong && isLocalPlaybackSong(currentSong)) return 'local';
     if (currentSong && isNavidromePlaybackSong(currentSong)) return 'navidrome';
     if (currentSong || searchSourceTab === 'netease') return activeOnlineProviderId;
@@ -153,7 +169,9 @@ const executeSearch = async (
     sourceTab: SearchSource,
     offset: number,
     limit: number,
-    deps: SearchExecutorDeps
+    deps: SearchExecutorDeps,
+    providerCursors?: FederatedSearchCursorMap | null,
+    providerIds?: OnlineProviderId[] | null,
 ): Promise<SearchExecutionResult> => {
     if (sourceTab === 'local') {
         return searchLocalSongs(deps, query);
@@ -161,6 +179,26 @@ const executeSearch = async (
 
     if (sourceTab === 'navidrome') {
         return searchNavidromeSongs(query);
+    }
+
+    if (sourceTab === 'all') {
+        const page = await searchAllSources({
+            query,
+            limit,
+            activeProviderId: omni.getActiveProviderSummary()?.providerId,
+            providerIds: providerIds ?? undefined,
+            cursors: providerCursors ?? undefined,
+        });
+        return {
+            results: page.items,
+            hasMore: page.hasMore,
+            nextOffset: offset + page.items.length,
+            providerCursors: page.cursors,
+            providerIds: page.providerIds,
+            attemptedProviderCount: page.attemptedProviderCount,
+            succeededProviderCount: page.succeededProviderCount,
+            errors: page.errors,
+        };
     }
 
     return searchOnlineProviderSongs(sourceTab, query, limit, offset);
@@ -179,7 +217,7 @@ const getInitialHomeViewTab = (): HomeViewTab => {
 export const useSearchNavigationStore = create<SearchNavigationState>((set, get) => ({
     homeViewTab: getInitialHomeViewTab(),
     searchQuery: '',
-    searchSourceTab: 'netease',
+    searchSourceTab: 'all',
     searchResults: null,
     searchReturnView: 'home',
     isSearchOpen: false,
@@ -192,6 +230,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     hasMore: false,
     scrollTop: 0,
     searchCache: {},
+    searchProviderCursors: null,
+    searchProviderIds: null,
     setHomeViewTab: (tab) => {
         if (typeof window !== 'undefined') {
             localStorage.setItem(LAST_HOME_VIEW_TAB_KEY, tab);
@@ -222,6 +262,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
             offset: cached?.offset ?? 0,
             hasMore: cached?.hasMore ?? false,
             scrollTop: cached?.scrollTop ?? 0,
+            searchProviderCursors: cached?.providerCursors ?? null,
+            searchProviderIds: cached?.providerIds ?? null,
             searchError: null,
             isSearching: false,
             isLoadingMore: false,
@@ -231,7 +273,9 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
     hideSearchOverlay: () => set({ isSearchOpen: false, searchReturnView: 'home' }),
     resetRuntime: (onlineProviderId) => set(state => ({
         searchQuery: '',
-        searchSourceTab: onlineProviderId ?? state.searchSourceTab,
+        searchSourceTab: state.searchSourceTab === 'all'
+            ? 'all'
+            : (onlineProviderId ?? state.searchSourceTab),
         searchResults: null,
         searchReturnView: 'home',
         isSearchOpen: false,
@@ -242,13 +286,18 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
         offset: 0,
         hasMore: false,
         scrollTop: 0,
+        searchProviderCursors: null,
+        searchProviderIds: null,
     })),
     // The overlay's online source is the active provider. A switch moves it through resetRuntime, but
     // the active provider also changes without one (startup, session restore, a Folium mod source going
     // away), so this keeps it in step. Local and Navidrome are left alone, and the results stay: clearing
     // them is the switch's job.
     followOnlineProvider: (providerId) => set(state => (
-        state.searchSourceTab === 'local' || state.searchSourceTab === 'navidrome' || state.searchSourceTab === providerId
+        state.searchSourceTab === 'all'
+        || state.searchSourceTab === 'local'
+        || state.searchSourceTab === 'navidrome'
+        || state.searchSourceTab === providerId
             ? state
             : { searchSourceTab: providerId }
     )),
@@ -272,6 +321,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
             offset: 0,
             hasMore: false,
             scrollTop: 0,
+            searchProviderCursors: null,
+            searchProviderIds: null,
         });
 
         try {
@@ -279,11 +330,22 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
             if (get().requestId !== requestId) {
                 return true;
             }
+            const allSourcesFailed = sourceTab === 'all'
+                && (result.attemptedProviderCount ?? 0) > 0
+                && (result.succeededProviderCount ?? 0) === 0;
+            if (result.errors && result.errors.length > 0) {
+                console.warn('[SearchStore] partial online source search failure:', result.errors);
+            }
             set(state => ({
                 searchResults: result.results,
                 hasMore: result.hasMore,
                 offset: result.nextOffset,
                 isSearching: false,
+                searchError: allSourcesFailed
+                    ? deps.t('search.allSourcesFailed', 'All online sources failed to search')
+                    : null,
+                searchProviderCursors: result.providerCursors ?? null,
+                searchProviderIds: result.providerIds ?? null,
                 searchCache: {
                     ...state.searchCache,
                     [getSearchCacheKey(trimmedQuery, sourceTab)]: {
@@ -291,6 +353,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
                         hasMore: result.hasMore,
                         offset: result.nextOffset,
                         scrollTop: 0,
+                        providerCursors: result.providerCursors ?? null,
+                        providerIds: result.providerIds ?? null,
                     },
                 },
             }));
@@ -320,11 +384,14 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
             isLoadingMore,
             offset,
             limit,
+            searchProviderCursors,
+            searchProviderIds,
         } = get();
 
         if (
             searchSourceTab === 'local'
             || searchSourceTab === 'navidrome'
+            || (searchSourceTab === 'all' && !searchProviderCursors)
             || !hasMore
             || isSearching
             || isLoadingMore
@@ -337,17 +404,44 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
         set({ isLoadingMore: true, searchError: null });
 
         try {
-            const result = await executeSearch(searchQuery, searchSourceTab, offset, limit, deps);
+            const result = await executeSearch(
+                searchQuery,
+                searchSourceTab,
+                offset,
+                limit,
+                deps,
+                searchProviderCursors,
+                searchProviderIds,
+            );
             if (get().requestId !== requestId) {
                 return;
             }
+            const allSourcesFailed = searchSourceTab === 'all'
+                && (result.attemptedProviderCount ?? 0) > 0
+                && (result.succeededProviderCount ?? 0) === 0;
+            if (result.errors && result.errors.length > 0) {
+                console.warn('[SearchStore] partial online source search failure:', result.errors);
+            }
             set(state => {
-                const results = [...(searchResults || []), ...result.results];
+                const results = searchSourceTab === 'all'
+                    ? mergeFederatedSearchSongs(searchResults || [], result.results)
+                    : [...(searchResults || []), ...result.results];
+                const providerCursors = searchSourceTab === 'all'
+                    ? (result.providerCursors ?? searchProviderCursors ?? null)
+                    : null;
+                const providerIds = searchSourceTab === 'all'
+                    ? (result.providerIds ?? searchProviderIds ?? null)
+                    : null;
                 return {
                     searchResults: results,
                     hasMore: result.hasMore,
                     offset: result.nextOffset,
                     isLoadingMore: false,
+                    searchError: allSourcesFailed
+                        ? deps.t('search.allSourcesFailed', 'All online sources failed to search')
+                        : null,
+                    searchProviderCursors: providerCursors,
+                    searchProviderIds: providerIds,
                     searchCache: {
                         ...state.searchCache,
                         [getSearchCacheKey(searchQuery, searchSourceTab)]: {
@@ -355,6 +449,8 @@ export const useSearchNavigationStore = create<SearchNavigationState>((set, get)
                             hasMore: result.hasMore,
                             offset: result.nextOffset,
                             scrollTop: state.scrollTop,
+                            providerCursors,
+                            providerIds,
                         },
                     },
                 };

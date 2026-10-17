@@ -53,6 +53,7 @@ describe('settings section anchors', () => {
             ['replayGainSettings', 'anchorId="replayGainSettings"'],
             ['lyrics', 'anchorId="lyrics"'],
             ['audioOutputSettings', 'anchorId="audioOutputSettings"'],
+            ['crossSourcePlayback', 'anchorId="crossSourcePlayback"'],
         ]
             .map(([id, marker]) => {
                 expect(source, `${marker} missing`).toContain(marker);

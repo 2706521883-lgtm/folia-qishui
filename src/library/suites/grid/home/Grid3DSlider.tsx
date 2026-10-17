@@ -19,6 +19,8 @@ export interface Grid3DSliderItem {
     trackIds?: string[];
     type?: string;
     isVirtual?: boolean;
+    /** 在线歌单卡片的来源平台（合并歌单）：显示在描述最前面。 */
+    providerLabel?: string;
 }
 
 interface Grid3DSliderProps {
@@ -40,7 +42,7 @@ const compactDescription = (description?: string, maxLength = 72) => {
 };
 
 type Grid3DSliderTextItem = Pick<Grid3DSliderItem, 'type' | 'description' | 'summary'>
-    & Partial<Pick<Grid3DSliderItem, 'name' | 'isVirtual'>>;
+    & Partial<Pick<Grid3DSliderItem, 'name' | 'isVirtual' | 'providerLabel'>>;
 
 // 文件夹卡片的第二行 / 信息行显示文件夹路径（= 名称）。虚拟的「全部歌曲」没有真实路径，但同一个位置照样
 // 显示它的名称（「All Songs / 全部歌曲」），不退回描述「Folder / 本地」：这是一直以来的可见文字，
@@ -58,20 +60,27 @@ export const getGrid3DSliderDisplayName = (
     return folderPath ? formatGridMapFolderTitle(folderPath) : item.name;
 };
 
-export const getGrid3DSliderSecondaryText = (
-    item: Grid3DSliderTextItem,
-): string => (
+// 合并歌单卡片的来源平台：只加在描述前，摘要的重复判断仍按去掉平台名之后的原文比较。
+const withProviderLabel = (item: Pick<Grid3DSliderItem, 'providerLabel'>, text: string): string => (
+    item.providerLabel ? [item.providerLabel, text].filter(Boolean).join(' · ') : text
+);
+
+const getSecondaryBaseText = (item: Grid3DSliderTextItem): string => (
     getLocalFolderPath(item)
         || (item.type === 'playlist'
         ? compactDescription(item.summary) || compactDescription(item.description)
         : compactDescription(item.description) || compactDescription(item.summary))
 );
 
+export const getGrid3DSliderSecondaryText = (
+    item: Grid3DSliderTextItem,
+): string => withProviderLabel(item, getSecondaryBaseText(item));
+
 export const getGrid3DSliderSummaryText = (
     item: Pick<Grid3DSliderItem, 'type' | 'description' | 'summary'>,
 ): string => {
     const summary = compactDescription(item.summary);
-    return summary && summary !== getGrid3DSliderSecondaryText(item) ? summary : '';
+    return summary && summary !== getSecondaryBaseText(item) ? summary : '';
 };
 
 const DISCRETE_WHEEL_PIXEL_THRESHOLD = 40;

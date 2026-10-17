@@ -10,13 +10,15 @@ import type {
     StageSource,
     StageStatus,
 } from '../types';
-import type { MediaId } from './onlineMusic';
+import type { MediaId, OnlineProviderId } from './onlineMusic';
 
 // Shared playback-specific types extracted from App.tsx.
 export type PlaybackNavigationOptions = {
     shouldNavigateToPlayer?: boolean;
     unavailableSkipCount?: number;
     unifiedQueue?: SongResult[];
+    crossSourceFallbackAttemptCount?: number;
+    crossSourceFallbackExcludedProviderIds?: OnlineProviderId[];
     /**
      * Set only by the automix blend's own advance. That play skips extension `beforePlay` hooks:
      * the blend starts the arriving track on a fixed schedule, and its cancel paths assume the

@@ -52,20 +52,24 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
         enableTranscodeFallback,
         neteaseScrobbleEnabled,
         playbackFadeEnabled,
+        autoCrossSourceFallback,
         queueAddBehavior,
         onToggleTranscodeFallback,
         onToggleNeteaseScrobble,
         onTogglePlaybackFade,
+        onToggleAutoCrossSourceFallback,
         onQueueAddBehaviorChange,
     } = useAudioSettingsStore(useShallow(state => ({
         audioOutputDeviceId: state.audioOutputDeviceId,
         enableTranscodeFallback: state.enableTranscodeFallback,
         neteaseScrobbleEnabled: state.neteaseScrobbleEnabled,
         playbackFadeEnabled: state.playbackFadeEnabled,
+        autoCrossSourceFallback: state.autoCrossSourceFallback,
         queueAddBehavior: state.queueAddBehavior,
         onToggleTranscodeFallback: state.handleToggleTranscodeFallback,
         onToggleNeteaseScrobble: state.handleToggleNeteaseScrobble,
         onTogglePlaybackFade: state.handleTogglePlaybackFade,
+        onToggleAutoCrossSourceFallback: state.handleToggleAutoCrossSourceFallback,
         onQueueAddBehaviorChange: state.handleSetQueueAddBehavior,
     })));
     // Subscribed to rather than read once: the panel has to grey out the moment the NetEase account
@@ -497,6 +501,23 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
                             )}
                         </div>
                     )}
+                </div>
+            </SettingsAnchor>
+
+            <SettingsAnchor anchorId="crossSourcePlayback" label={t('options.crossSourcePlayback')}>
+                <SettingsSectionHeading icon={RefreshCw} label={t('options.crossSourcePlayback')} />
+                <div className={`p-4 rounded-xl border ${settingsCardClass}`}>
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                                {t('options.autoCrossSourceFallback')}
+                            </div>
+                            <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
+                                {t('options.autoCrossSourceFallbackDesc')}
+                            </div>
+                        </div>
+                        {renderToggle(autoCrossSourceFallback, () => onToggleAutoCrossSourceFallback(!autoCrossSourceFallback))}
+                    </div>
                 </div>
             </SettingsAnchor>
         </div>

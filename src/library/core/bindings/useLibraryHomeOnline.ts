@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LibraryHomeCard, LibraryHomeResources } from '../contracts/homeModel';
-import { buildOnlineAlbumCards, buildOnlinePlaylistCards, buildOnlineRadioCards } from '../model/homeCards';
+import { buildMergedPlaylistCards, buildOnlineAlbumCards, buildOnlineRadioCards } from '../model/homeCards';
 import {
     isOnlineHomeTab,
     onlineHomeTitleKey,
@@ -40,7 +40,10 @@ export const useLibraryHomeOnline = (
         canUseRadio: online.canUseRadio,
     });
 
-    const playlistCards = useMemo(() => buildOnlinePlaylistCards(online.collections, t), [online.collections, t]);
+    const playlistCards = useMemo(
+        () => buildMergedPlaylistCards(online.playlistEntries, t),
+        [online.playlistEntries, t],
+    );
     const albumCards = useMemo(() => buildOnlineAlbumCards(favoriteAlbums.data, t), [favoriteAlbums.data, t]);
     const radioCards = useMemo(
         () => buildOnlineRadioCards(radioFeed.data, { t, personalFmModeLabel }),

@@ -6,6 +6,9 @@ import type { CommandPaletteCommand, CommandPaletteContext, CommandPaletteSearch
 // Commands in the `search` group: run a query against one music source and navigate to results.
 
 const getSearchSourceLabel = (sourceTab: SearchSource, context: CommandPaletteContext) => {
+    if (sourceTab === 'all') {
+        return context.shared.t('commandPalette.sourceAll', 'all online sources');
+    }
     if (sourceTab === 'local') {
         return context.shared.t('commandPalette.sourceLocal', 'local library');
     }
@@ -84,7 +87,7 @@ const createSearchCommand = (
     ...options,
     // Only the current-source variant is offered in-app; the rest stay reachable for tests
     // and for callers that match without a context.
-    isAvailable: context => !context || id === 'search-current',
+    isAvailable: context => !context || id === 'search-current' || id === 'search-all',
     icon: Search,
     placeholder: () => `${keywords[0]} ${description}`,
     requiresInput: true,
@@ -99,6 +102,7 @@ const createSearchCommand = (
 
 export const searchCommands: CommandPaletteCommand[] = [
     createSearchCommand('search-current', 'Search songs', 'Search songs in the current source', ['search', 'find', 'song', '搜索', '搜歌'], context => context.search.currentSearchSourceTab, { executeShortcut: 'f' }),
+    createSearchCommand('search-all', 'Search all sources', 'Search every configured online source without switching accounts', ['all sources', 'search all', 'cross source', '全部音源', '全音源', '跨音源'], () => 'all'),
     createSearchCommand('search-local', 'Search local songs', 'Search local library', ['local', 'local search', 'search local', '本地', '本地音乐'], () => 'local'),
     createSearchCommand('search-navidrome', 'Search Navidrome songs', 'Search Navidrome library', ['navi', 'navidrome', 'search navidrome', '导航', '服务器'], () => 'navidrome'),
     createSearchCommand('search-netease', 'Search NetEase songs', 'Search NetEase Cloud Music', ['netease', 'cloud', 'search netease', '网易云', '网抑云'], () => 'netease'),

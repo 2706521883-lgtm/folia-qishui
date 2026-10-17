@@ -11,6 +11,7 @@ import { useLatticeExpansionSettled } from './useLatticeExpansionSettled';
 import { prewarmLatticeLyrics } from './lyrics/prewarmLatticeLyrics';
 import { prewarmWallPosterArtwork, useWallPosterArtwork } from '../../wall/useWallPosterArtwork';
 import { countRender } from '../../../dev/renderCount';
+import { omni } from '../../../services/onlineMusic/omni';
 import {
     WALL_HANDOFF_FLIP_IN_MS,
     WALL_HANDOFF_FLIP_OUT_MS,
@@ -94,6 +95,7 @@ const sameRect = (a: LatticePosterProps['rect'], b: LatticePosterProps['rect']) 
 const sameTile = (a: LatticeTile, b: LatticeTile) => (
     a.id === b.id && a.queueIndex === b.queueIndex && a.section === b.section
     && a.title === b.title && a.artist === b.artist && a.coverUrl === b.coverUrl && a.song === b.song
+    && a.sourceKind === b.sourceKind && a.providerId === b.providerId
 );
 
 const arePosterPropsEqual = (previous: LatticePosterProps, next: LatticePosterProps) => {
@@ -152,6 +154,14 @@ function LatticePoster({
     const popScaleX = popped && rect.width > 0 ? (rect.width + gap * 2) / rect.width : 1;
     const popScaleY = popped && rect.height > 0 ? (rect.height + gap * 2) / rect.height : 1;
     const isCurrent = tile.section === 'now';
+    // 拼贴墙展示的是跨平台队列：角落标出这一首会从哪个音源取流，切换播放平台后标签仍然跟着歌走。
+    const sourceLabel = tile.sourceKind === 'online'
+        ? (tile.providerId ? omni.getProviderLabel(tile.providerId) : '')
+        : tile.sourceKind === 'navidrome'
+            ? 'Navidrome'
+            : tile.sourceKind === 'stage'
+                ? t('home.latticeSourceStage')
+                : t('home.latticeSourceLocal');
     // The lyric scene is a Pixi renderer whose layout is rebuilt from the card's box, so mounting it
     // mid-expansion would rasterize every line once per animation frame. It waits for the spring.
     const [expansionSettled, onExpansionComplete] = useLatticeExpansionSettled(expanded, Boolean(reducedMotion));
@@ -290,6 +300,7 @@ function LatticePoster({
                 {isCurrent && <>{t('home.latticeBadgeNow')} · </>}
                 {String(tile.queueIndex + 1).padStart(2, '0')}
             </span>
+            {sourceLabel && <span className="lattice-poster-provider">{sourceLabel}</span>}
             {expanded && expansionSettled && isCurrent ? (
                 <Suspense fallback={<span className="lattice-poster-copy"><WallTitle title={tile.title} expanded={expanded} targetPosterWidth={rect.width} /><small>{tile.artist}</small></span>}>
                     <LatticeLyrics key={tile.id} tile={tile} reducedMotion={Boolean(reducedMotion)} />

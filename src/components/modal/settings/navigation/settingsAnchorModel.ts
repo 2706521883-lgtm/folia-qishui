@@ -38,6 +38,7 @@ export const SETTINGS_ANCHOR_DEFINITIONS = {
     replayGainSettings: { section: 'playback', labelKey: 'options.replayGainSettings' },
     lyrics: { section: 'playback', labelKey: 'options.lyrics' },
     audioOutputSettings: { section: 'playback', labelKey: 'options.audioOutputSettings' },
+    crossSourcePlayback: { section: 'playback', labelKey: 'options.crossSourcePlayback' },
 
     // InteractionSettingsSubview
     gridActionButton: { section: 'interaction', labelKey: 'options.gridActionButton' },

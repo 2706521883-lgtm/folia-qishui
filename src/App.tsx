@@ -757,12 +757,8 @@ export default function App() {
     }), [handleLogout, logoutKugouLibrary, logoutQqLibrary, logoutBodianLibrary, logoutQishuiLibrary]);
 
     // 在线账户 controller（Library v2 · A4）：扫码登录、选平台、切换确认与登出都在 core，App 只交出 per-provider 的
-    // 刷新与登出，以及确认切换后的播放清理端口。端口读的三样（audio / automix 句柄、歌词写入）都是稳定引用，建一次。
-    const [providerSwitchCleanup] = useState(() => createLibraryAccountSwitchCleanupPort(() => ({
-        audioRef,
-        automixRef,
-        setLyrics: setLyricsStable,
-    })));
+    // 刷新与登出，以及确认切换后的浏览态重置端口。播放队列与 Lattice 拼贴不再随平台切换清空。
+    const [providerSwitchCleanup] = useState(() => createLibraryAccountSwitchCleanupPort());
     const accountController = useLibraryAccountController({
         refreshers: onlineProviderRefreshers,
         logouts: onlineProviderLogouts,
@@ -1020,6 +1016,8 @@ export default function App() {
         addOnlineSongsToQueue,
         playSong,
         playOnlineQueueFromStart,
+        playMergedQueueFromStart,
+        playMergedQueueTrack,
         handleQueueAddAndPlay,
         handleSearchOverlaySubmit,
         handleSearchLoadMore,
@@ -2179,6 +2177,8 @@ export default function App() {
         openStagePlayer,
         theme,
         playAll: playOnlineQueueFromStart,
+        playAllMerged: playMergedQueueFromStart,
+        playTrackMerged: playMergedQueueTrack,
         addAllToQueue: addOnlineSongsToQueue,
         addSongToQueue: addOnlineSongToQueue,
         onStatusMessage: setStatusMsg,
@@ -2642,6 +2642,7 @@ export default function App() {
                 }
 
                 const failedSrc = e.currentTarget.currentSrc || audioSrc;
+                const songKeyAtFailure = currentSong ? getPlaybackSongKey(currentSong) : null;
                 const shouldRetryOnlineSong = Boolean(
                     currentSong &&
                     !isLocalPlaybackSong(currentSong) &&
@@ -2660,13 +2661,13 @@ export default function App() {
                         });
 
                         if (!recovered) {
-                            skipAfterPlaybackFailure();
+                            skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure });
                         }
                     })();
                     return;
                 }
 
-                skipAfterPlaybackFailure();
+                skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure });
             }}
         />
     );

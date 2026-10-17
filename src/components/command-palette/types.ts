@@ -294,6 +294,8 @@ export type CommandPaletteSettingsContext = {
     toggleTranscodeFallback: () => void;
     /** Whether pause and resume fade the sound out and in. */
     togglePlaybackFade: () => void;
+    /** Whether an unavailable online song is retried on the other configured sources. */
+    toggleAutoCrossSourceFallback: () => void;
     /**
      * Whether this build can watch the imported local folders at all. A getter because the answer
      * is a runtime API check (FileSystemObserver) rather than a stored value, and the settings

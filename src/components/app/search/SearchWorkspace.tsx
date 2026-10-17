@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Loader2, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -11,8 +11,8 @@ import {
 } from '../../../stores/useSearchNavigationStore';
 import SearchResultsList from './SearchResultsList';
 import { useCollectionNavigationStore } from '../../../stores/useCollectionNavigationStore';
-import { useOnlineProviderAccountStore } from '../../../stores/useOnlineProviderAccountStore';
 import { omni } from '../../../services/onlineMusic/omni';
+import { resolveSearchSources } from './searchSources';
 
 // src/components/app/search/SearchWorkspace.tsx
 
@@ -76,10 +76,20 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
         const raw = searchResults || [];
         return resolveTrackDisplay ? raw.map(resolveTrackDisplay) : raw;
     }, [resolveTrackDisplay, searchResults]);
-    const activeOnlineProviderId = useOnlineProviderAccountStore(state => state.activeProviderId);
-    const sources = useMemo<SearchSource[]>(() => [activeOnlineProviderId, 'local', 'navidrome'], [activeOnlineProviderId]);
+    // Folium mods can add or remove providers after the first render; the registry version keeps the
+    // source tabs in step with what Omni can actually search.
+    const providerRegistryVersion = useSyncExternalStore(
+        omni.subscribeProviders,
+        omni.getProviderRegistryVersion,
+        omni.getProviderRegistryVersion,
+    );
+    const sources = useMemo<SearchSource[]>(
+        () => resolveSearchSources(omni.getProviderSummaries(), omni.getProviderCapabilities),
+        [providerRegistryVersion],
+    );
     const hasCollection = useCollectionNavigationStore(state => Boolean(state.snapshot?.stack.length));
     const getSourceLabel = (source: SearchSource) => {
+        if (source === 'all') return t('search.sourceAll');
         if (source === 'local') return t('search.sourceLocal');
         if (source === 'navidrome') return t('search.sourceNavidrome');
         return omni.getProviderLabel(source);
@@ -214,6 +224,7 @@ const SearchWorkspace: React.FC<SearchWorkspaceProps> = ({
                                         onAddTrackToQueue={onAddTrackToQueue}
                                         onOpenArtist={onOpenArtist}
                                         onOpenAlbum={onOpenAlbum}
+                                        showProviderBadge={searchSourceTab === 'all'}
                                     />
                                 </div>
                                 {searchError ? (

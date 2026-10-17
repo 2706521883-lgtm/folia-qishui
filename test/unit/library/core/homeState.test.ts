@@ -21,17 +21,18 @@ const node = (path: string): LibraryDirectoryNode => ({
 });
 
 describe('home directory key and hidden scope', () => {
-    it('keys online lists by provider and tab (the playlist tab reads as playlists)', () => {
+    it('keys the merged playlist tab once and the other online tabs by provider', () => {
         const base = { providerId: 'p', localSection: 'folders', navidromeSection: 'albums' };
-        expect(resolveHomeDirectoryKey({ ...base, tab: 'playlist' })).toBe('home:online:p:playlists');
+        expect(resolveHomeDirectoryKey({ ...base, tab: 'playlist' })).toBe('home:online:all:playlists');
         expect(resolveHomeDirectoryKey({ ...base, tab: 'albums' })).toBe('home:online:p:albums');
         expect(resolveHomeDirectoryKey({ ...base, tab: 'radio' })).toBe('home:online:p:radio');
         expect(resolveHomeDirectoryKey({ ...base, tab: 'local', localSection: 'artists' })).toBe('home:local:artists');
         expect(resolveHomeDirectoryKey({ ...base, tab: 'navidrome', navidromeSection: 'playlists' })).toBe('home:navidrome:playlists');
     });
 
-    it('scopes hidden items per provider, local and Navidrome', () => {
-        expect(resolveHomeHiddenScope('playlist', 'p')).toBe('online:p');
+    it('scopes hidden playlists across providers; radio still follows the active provider', () => {
+        expect(resolveHomeHiddenScope('playlist', 'p')).toBe('online:all');
+        expect(resolveHomeHiddenScope('playlist', 'q')).toBe('online:all');
         expect(resolveHomeHiddenScope('radio', 'q')).toBe('online:q');
         expect(resolveHomeHiddenScope('local', 'p')).toBe('local');
         expect(resolveHomeHiddenScope('navidrome', 'p')).toBe('navidrome');

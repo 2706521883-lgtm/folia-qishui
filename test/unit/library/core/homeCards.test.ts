@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
 import type { ProviderCollection } from '@/types/onlineMusic';
 import {
+    buildMergedPlaylistCards,
     buildOnlineAlbumCards,
     buildOnlinePlaylistCards,
     buildOnlineRadioCards,
     getProviderCollectionArtistLabel,
     isPersonalFmCard,
     onlineCardCollection,
+    resolveOnlineCardProviderId,
 } from '@/library/core/model/homeCards';
 
 // test/unit/library/core/homeCards.test.ts
@@ -32,6 +34,28 @@ describe('online home cards', () => {
             { id: 'a', name: 'Collection', coverUrl: undefined, trackCount: 3, description: 'Owner', summary: 'About', type: 'playlist', raw: owned },
             { id: 'cloud', name: 'Collection', coverUrl: undefined, trackCount: undefined, description: 't:home.playlists', summary: '', type: 'cloud', raw: cloud },
         ]);
+    });
+
+    it('merged playlist cards keep provider identity even when two platforms use the same collection id', () => {
+        const netease = collection({ id: 'same', name: '网易歌单', creator: { id: 1, nickname: 'N' } });
+        const kugou = collection({ providerId: 'kugou', id: 'same', name: '酷狗歌单' });
+        const cards = buildMergedPlaylistCards([
+            { providerId: 'netease', providerLabel: '网易云', collection: netease },
+            { providerId: 'kugou', providerLabel: '酷狗', collection: kugou },
+        ], t);
+        expect(cards.map(card => [card.id, card.providerId, card.providerLabel, card.name])).toEqual([
+            ['netease:playlist:same', 'netease', '网易云', '网易歌单'],
+            ['kugou:playlist:same', 'kugou', '酷狗', '酷狗歌单'],
+        ]);
+        // raw 仍是原始集合：打开时按它自己的 providerId 路由，而不是卡片 id。
+        expect(cards[1].raw).toBe(kugou);
+        expect(cards[1].description).toBe('t:home.playlists');
+    });
+
+    it('opening a card uses its own provider, falling back to the active one for providerless cards', () => {
+        expect(resolveOnlineCardProviderId({ raw: collection({ providerId: 'kugou', id: 'k' }) }, 'netease')).toBe('kugou');
+        expect(resolveOnlineCardProviderId({ raw: { id: 'daily_recommendations' } }, 'netease')).toBe('netease');
+        expect(resolveOnlineCardProviderId({}, 'netease')).toBe('netease');
     });
 
     it('album cards are typed album and show the artists or the unknown-artist label', () => {

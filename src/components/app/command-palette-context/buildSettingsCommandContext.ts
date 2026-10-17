@@ -183,6 +183,9 @@ export const buildSettingsCommandContext = (
         togglePlaybackFade: () => audio.handleTogglePlaybackFade(
             !useAudioSettingsStore.getState().playbackFadeEnabled,
         ),
+        toggleAutoCrossSourceFallback: () => audio.handleToggleAutoCrossSourceFallback(
+            !useAudioSettingsStore.getState().autoCrossSourceFallback,
+        ),
         canAutoScanLocalLibrary: isLocalLibraryAutoScanSupported,
         toggleLocalLibraryAutoScan: () => useLocalLibrarySettingsStore.getState().toggleAutoScan(),
         canReportNeteasePlayback: isNeteaseScrobbleReady,

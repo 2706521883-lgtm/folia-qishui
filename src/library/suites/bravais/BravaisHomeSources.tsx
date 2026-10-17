@@ -63,7 +63,8 @@ export const BravaisHomeOnline: React.FC<BravaisHomeSourceCommonProps & {
     account: LibraryAccountController;
 }> = ({ tab, online, list, account: accountController, homeActions, onOpenGridView, ...common }) => {
     const { t } = useTranslation();
-    const showList = online.accountView === 'authenticated';
+    // 合并歌单可能在当前平台未登录时也有内容（其他平台已登录）：这时仍然铺墙，不把登录面板挡在前面。
+    const showList = online.accountView === 'authenticated' || list.items.length > 0;
     useLibraryHomeListRegistration({
         enabled: showList,
         getState: (): LibraryHomeListState => ({

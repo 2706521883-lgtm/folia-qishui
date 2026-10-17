@@ -11,6 +11,8 @@ type PlaybackSurface = Pick<
     HomeSurfaceProps,
     | 'onPlaySong'
     | 'onPlayAll'
+    | 'onPlayAllMerged'
+    | 'onPlayTrackMerged'
     | 'onAddAllToQueue'
     | 'onAddSongToQueue'
     | 'onAddLocalSongToQueue'
@@ -22,6 +24,11 @@ type PlaybackSurface = Pick<
 export const createLibraryPlaybackPort = (surface: PlaybackSurface): LibraryPlaybackPort => ({
     playTrack: (track, queue) => surface.onPlaySong(track, queue),
     playAll: tracks => surface.onPlayAll?.(tracks),
+    // 合并播放只由在线歌单使用；宿主没接这两个回调时回退到原来的替换语义。
+    playAllMerged: tracks => (surface.onPlayAllMerged ?? surface.onPlayAll)?.(tracks),
+    playTrackMerged: (track, queue) => (surface.onPlayTrackMerged
+        ? surface.onPlayTrackMerged(track, queue)
+        : surface.onPlaySong(track, queue)),
     // 单曲入队按来源分流：本地歌交给本地队列，Navidrome 歌交出它的播放载体，其余走在线入队。
     enqueueTrack: (track: SongResult) => {
         const unifiedTrack = track as UnifiedSong;

@@ -17,16 +17,21 @@ type HomeCardLike = {
     trackCount?: number;
     trackIds?: string[];
     isVirtual?: boolean;
+    /** 合并歌单卡片的来源平台：目录行在描述前带上它，平台徽标不只墙上有。 */
+    providerLabel?: string;
 };
 
 /** 首页卡片在目录里的样子（GridMap 的条目、TUI 的一行）。 */
 export const homeCardToDirectoryItem = (card: HomeCardLike): LibraryDirectoryItem => {
     const isFolder = card.type === 'folder';
+    const description = isFolder
+        ? card.name
+        : [card.providerLabel, card.description].filter(Boolean).join(' · ') || undefined;
     return {
         id: card.id,
         name: card.name,
         coverUrl: card.coverUrl,
-        description: isFolder ? card.name : card.description,
+        description,
         summary: card.summary,
         trackCount: card.trackCount,
         type: card.type,
