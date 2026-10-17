@@ -151,12 +151,17 @@ jobs:
           curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/nodejs-mobile-ios.zip" \
             "https://github.com/nodejs-mobile/nodejs-mobile/releases/download/v18.20.4/nodejs-mobile-v18.20.4-ios.zip"
           unzip -q "$RUNNER_TEMP/nodejs-mobile-ios.zip" -d "$RUNNER_TEMP/nodejs-mobile"
-          FRAMEWORK="$(find "$RUNNER_TEMP/nodejs-mobile" -maxdepth 5 -type d -name NodeMobile.framework | head -n 1)"
-          test -n "$FRAMEWORK"
+          # v18.20.4 的 zip 是 XCFramework：ios-arm64 是真机切片，ios-arm64_x86_64-simulator 是模拟器切片。
+          # 只能链真机切片 —— 之前用 find | head -1 抓到了模拟器切片，链接期报 “built for 'iOS-simulator'”。
+          FRAMEWORK="$RUNNER_TEMP/nodejs-mobile/NodeMobile.xcframework/ios-arm64/NodeMobile.framework"
+          test -d "$FRAMEWORK"
           test -f "$FRAMEWORK/NodeMobile"
           rm -rf ios/App/App/NodeMobile.framework
           cp -R "$FRAMEWORK" ios/App/App/NodeMobile.framework
           lipo -info ios/App/App/NodeMobile.framework/NodeMobile
+          PLATFORM="$(xcrun vtool -show-build ios/App/App/NodeMobile.framework/NodeMobile | awk '/platform/ {print $2; exit}')"
+          echo "NodeMobile platform: $PLATFORM (must be IOS, not IOSSIMULATOR)"
+          test "$PLATFORM" = "IOS"
           du -sh ios/App/App/NodeMobile.framework
           # 编译要 <NodeMobile/NodeMobile.h>：把框架结构打出来，缺头文件时一眼可见。
           find ios/App/App/NodeMobile.framework -maxdepth 2 -print
