@@ -4,6 +4,10 @@ name: Qishui Sign Smoke (macOS arm64)
 # 这里在 macOS arm64 runner 上原样加载它，为 /luna/pc/track_v2 生成
 # X-Helios / X-Medusa，然后发一个不带 cookie 的请求。
 #
+# 版本必须用当前官方客户端（3.7.0）：2.1.0 的组件能加载、能出签名，但服务端
+# 返回 200 + 空 body（签名被拒）。版本号从官方 settings 接口的
+# pc_download.darwin.arm64.url 取，不要用下载页 JS 里的旧 fallback 链接。
+#
 # 判据：响应不是空 body。未签名的同一请求稳定返回 HTTP 200 + content-length 0；
 # 签名被接受时，即使没有登录态也会返回结构化 JSON。
 #
@@ -49,11 +53,13 @@ jobs:
 
       - name: Download official macOS client
         env:
-          DMG_URL: https://lf-luna-release.qishui.com/obj/luna-release/2.1.0/12292405/SodaMusic-v2.1.0-official-darwin_arm64.dmg
+          DMG_URL: https://lf-luna-release.qishui.com/obj/luna-release/3.7.0/452316191/SodaMusic-v3.7.0-official-darwin_arm64.dmg
+          DMG_SHA256: 9c90c4d0ed66e0c0f937758d20366e0ea2449fbd826e16f4b42b29be07e3aa0b
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/qishui"
           curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/qishui/SodaMusic.dmg" "$DMG_URL"
+          echo "$DMG_SHA256  $RUNNER_TEMP/qishui/SodaMusic.dmg" | shasum -a 256 -c -
           ls -lh "$RUNNER_TEMP/qishui/SodaMusic.dmg"
 
       - name: Extract bdms.node and libMetaSecML.dylib
