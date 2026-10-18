@@ -247,8 +247,39 @@ const endpointFor = (operation: QqOperation, params: QqParams): { path: string; 
     return { path: ENDPOINTS[operation], query };
 };
 
+// 曲库 CGI 偶尔会在上游把响应流掐断（AxiosError: stream has been aborted），后端据此回 500。
+// 这不是「歌单不存在」，同一个请求隔一会儿重试通常就能拿到；只对幂等的读路由重试，
+// 登录、播放、推荐流等会改变服务端状态或推进游标的操作一律不在此列。
+const QQ_RETRYABLE_OPERATIONS: ReadonlySet<QqOperation> = new Set<QqOperation>([
+    'song_list_detail',
+    'song_info',
+    'album_info',
+    'artist_albums',
+    'artist_songs',
+    'user_detail',
+    'user_playlist',
+    'user_albums',
+    'user_liked_songs',
+    'user_playlist_detail',
+]);
+
+const QQ_RETRY_DELAYS_MS = [500, 1200];
+// 整个重试链的总预算，避免上游连续超时时让界面等上将近一分钟。
+const QQ_RETRY_BUDGET_MS = 20_000;
+
+const waitForRetry = (ms: number): Promise<void> => new Promise((resolve) => {
+    setTimeout(resolve, ms);
+});
+
+const isRetryableQqFailure = (operation: QqOperation, error: unknown): boolean => (
+    QQ_RETRYABLE_OPERATIONS.has(operation)
+    && error instanceof OnlineProviderError
+    && error.code === 'network'
+    && (error.httpStatus === undefined || error.httpStatus >= 500)
+);
+
 // Routes one provider request through the embedded Electron server or the configured Web base URL.
-export const requestQq = async <T = unknown>(operation: QqOperation, params: QqParams = {}): Promise<T> => {
+const requestQqOnce = async <T = unknown>(operation: QqOperation, params: QqParams = {}): Promise<T> => {
     const base = await resolveApiBase();
 
     const endpoint = endpointFor(operation, params);
@@ -322,4 +353,30 @@ export const requestQq = async <T = unknown>(operation: QqOperation, params: QqP
     assertUpstreamAccepted(operation, body);
     persistConfirmedSession(operation, body);
     return body as T;
+};
+
+/**
+ * 对幂等读路由做有限重试：第一次失败后等 500ms，第二次失败后等 1200ms，最多三次。
+ * 只重试 HTTP 5xx / 连不上后端；401、404、429 和响应体里的上游拒绝都直接交给调用方，
+ * 重试它们只会拖慢真正的错误提示。
+ */
+export const requestQq = async <T = unknown>(operation: QqOperation, params: QqParams = {}): Promise<T> => {
+    const delays = QQ_RETRYABLE_OPERATIONS.has(operation) ? QQ_RETRY_DELAYS_MS : [];
+    const deadline = Date.now() + QQ_RETRY_BUDGET_MS;
+
+    for (let attempt = 0; ; attempt += 1) {
+        try {
+            return await requestQqOnce<T>(operation, params);
+        } catch (error) {
+            const nextDelay = delays[attempt];
+            if (
+                nextDelay === undefined
+                || !isRetryableQqFailure(operation, error)
+                || Date.now() + nextDelay >= deadline
+            ) {
+                throw error;
+            }
+            await waitForRetry(nextDelay);
+        }
+    }
 };
