@@ -24,6 +24,8 @@ interface WeBackgroundLayerProps {
     active: boolean;
     /** Poster frame shown while the capture is starting or when it failed. */
     posterUrl?: string | null;
+    /** The player window is hidden/minimized: stop drawing capture frames until it returns. */
+    paused?: boolean;
 }
 
 // The playback window is created by the engine, which returns from openWallpaper before Windows has
@@ -39,8 +41,10 @@ const CAPTURE_ACQUIRE_ATTEMPTS = 3;
 
 const delay = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 
-const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, posterUrl }) => {
+const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, posterUrl, paused = false }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
+    const pausedRef = useRef(paused);
+    pausedRef.current = paused;
     const frameRate = tuning.frameRate;
     // Seeded from the service so a remount that can adopt the running capture never paints the
     // poster first (effects run after paint, which would be a visible blurry frame).
@@ -87,7 +91,9 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                 const video = videoRef.current;
                 if (video) {
                     video.srcObject = stream;
-                    await video.play().catch(() => undefined);
+                    // A capture that lands while the window is minimized stays paused; the
+                    // visibility effect below starts it when the window returns.
+                    if (!pausedRef.current) await video.play().catch(() => undefined);
                     if (!disposed) setStreamReady(true);
                 }
                 return;
@@ -104,6 +110,16 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
             if (video) video.srcObject = null;
         };
     }, [active, frameRate]);
+
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (paused) {
+            video.pause();
+            return;
+        }
+        if (video.srcObject) void video.play().catch(() => undefined);
+    }, [active, paused, streamReady]);
 
     if (!active && !posterUrl) return null;
 

@@ -9,6 +9,12 @@ import {
 } from '../services/onlineMusic/crossSourceFallback';
 import { getSongResourceCacheKey } from '../services/onlineMusic/resourceKeys';
 import { omni } from '../services/onlineMusic/omni';
+import { PERSONAL_FM_TIMEOUT_MS } from '../services/onlineMusic/recommendationConstants';
+import {
+    clearRecommendationHistoryForSongs,
+    filterUnseenRecommendations,
+    markRecommendationsSeen,
+} from '../services/onlineMusic/recommendationHistory';
 import { getCachedSongCoverUrl, hasCachedSongAudio } from '../services/onlineMusic/resourceCache';
 import { getPrefetchedData, invalidateAndRefetch, prefetchNearbySongs } from '../services/prefetchService';
 import { retireBlobUrl } from '../services/playbackBlobUrls';
@@ -30,6 +36,7 @@ import {
     resolveNavidromePlaybackCarrier,
 } from '../utils/appPlaybackGuards';
 import { applyQueueAddBehavior } from '../utils/queueAddBehavior';
+import { withTimeout } from '../utils/withTimeout';
 import { appendUniqueQueueSongs } from '../utils/queueMerge';
 import { buildStagePlayerSnapshot, resolveStagePlayerQueueItemIndex } from '../utils/stagePlayerSnapshot';
 import type { LocalLibraryDisplayCatalog } from '../services/playbackAdapters';
@@ -1080,11 +1087,24 @@ export function usePlaybackQueueController({
         if (isFmMode && currentIndex >= playQueue.length - 2 && !fmRefillInFlightRef.current) {
             fmRefillInFlightRef.current = true;
             try {
-                const fmSongs = await omni.getPersonalFm();
+                const fmSongs = await withTimeout(
+                    omni.getPersonalFm(),
+                    PERSONAL_FM_TIMEOUT_MS,
+                    'Personal FM refill',
+                );
+                // Queue-only dedupe forgets songs once they leave the queue; the history ledger
+                // stops the provider from handing the same track back on a later batch.
+                let candidates = filterUnseenRecommendations(fmSongs);
+                if (candidates.length === 0 && fmSongs.length > 0) {
+                    // A small catalogue can exhaust the ledger. Start it over once rather than
+                    // ending playback with nothing queued.
+                    clearRecommendationHistoryForSongs(fmSongs);
+                    candidates = fmSongs;
+                }
                 // Repeated ids make findIndex resolve to an older entry, which dilutes the
                 // currentIndex >= length - 2 refill threshold and grows the queue forever.
                 const queuedKeys = new Set(playQueue.map(song => getPlaybackSongKey(song)));
-                const freshSongs = fmSongs.filter(song => {
+                const freshSongs = candidates.filter(song => {
                     const key = getPlaybackSongKey(song);
                     if (queuedKeys.has(key)) return false;
                     // Also dedupe within the incoming batch itself.
@@ -1092,6 +1112,7 @@ export function usePlaybackQueueController({
                     return true;
                 });
                 if (freshSongs.length > 0) {
+                    markRecommendationsSeen(freshSongs);
                     const nextQueue = [...playQueue, ...freshSongs];
                     setPlayQueue(nextQueue);
                     void playSong(nextQueue[currentIndex + 1], nextQueue, true, {

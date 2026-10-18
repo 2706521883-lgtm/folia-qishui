@@ -66,6 +66,18 @@ test('切歌词样式复用采集流、不退回低清预览图', async ({ mount
     expect(afterSwitch.calls).toBe(1);
 });
 
+test('窗口隐藏时暂停采集，恢复后继续播放', async ({ mount }) => {
+    const component = await mount('weBackgroundRemount');
+    const video = component.locator('video');
+    await expect.poll(() => videoWidth(video)).toBeGreaterThan(0);
+
+    await component.getByRole('button', { name: 'Pause capture' }).click();
+    await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
+
+    await component.getByRole('button', { name: 'Resume capture' }).click();
+    await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(false);
+});
+
 test('采集接上之前的预览图回退仍然有效', async ({ mount, page }) => {
     await watchPosters(page);
     const component = await mount('weBackgroundRemount');

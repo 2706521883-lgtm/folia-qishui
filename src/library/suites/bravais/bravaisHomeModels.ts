@@ -134,6 +134,10 @@ export type BravaisHomeAction = {
     icon?: 'sparkles' | 'play';
     /** 强调色底（推荐流）或中性底（回到播放页）；缺省强调色。 */
     tone?: 'accent' | 'neutral';
+    /** 请求在途：显示转圈并禁止重复点击。 */
+    busy?: boolean;
+    /** 这张入口此刻不可用（例如 QQ 推荐路由没注册）；点击不执行。 */
+    disabled?: boolean;
     run: () => void;
 };
 

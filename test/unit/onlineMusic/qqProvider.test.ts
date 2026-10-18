@@ -7,11 +7,15 @@ const clearSessionMock = vi.hoisted(() => vi.fn());
 const writeSessionValueMock = vi.hoisted(() => vi.fn());
 const searchQQLyricsMock = vi.hoisted(() => vi.fn());
 const fetchQQLyricsMock = vi.hoisted(() => vi.fn());
-const transportState = vi.hoisted(() => ({ hasSession: true }));
+const transportState = vi.hoisted(() => ({
+    hasSession: true,
+    personalFmRoute: 'registered' as 'registered' | 'unavailable' | 'unknown',
+}));
 
 vi.mock('@/services/onlineMusic/qqTransport', () => ({
     getQqTransportAvailability: () => ({ configured: true }),
     getQqRemoteApiBase: () => 'https://qq.example.test',
+    getQqPersonalFmRouteStatus: async () => transportState.personalFmRoute,
     hasQqSession: () => transportState.hasSession,
     clearQqSession: clearSessionMock,
     requestQq: requestMock,
@@ -163,6 +167,7 @@ describe('qqProvider', () => {
         searchQQLyricsMock.mockReset();
         fetchQQLyricsMock.mockReset();
         transportState.hasSession = true;
+        transportState.personalFmRoute = 'registered';
         resetQqProviderRuntimeCache();
     });
 
@@ -178,6 +183,16 @@ describe('qqProvider', () => {
         });
         expect(qqProvider.mutations).toBeUndefined();
         expect(qqProvider.recommendations?.getPersonalFm).toBeTypeOf('function');
+    });
+
+    it('does not call the backend when the personal-FM route was not registered', async () => {
+        transportState.personalFmRoute = 'unavailable';
+        await expect(qqProvider.recommendations!.getPersonalFm!()).rejects.toMatchObject({
+            name: 'OnlineProviderError',
+            code: 'unsupported',
+            providerId: 'qq',
+        });
+        expect(requestMock).not.toHaveBeenCalled();
     });
 
     it('advances the personal-FM cursor and resets it after an empty batch', async () => {

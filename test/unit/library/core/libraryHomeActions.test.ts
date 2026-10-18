@@ -3,6 +3,7 @@ import type { LocalLibraryGroup, SongResult } from '@/types';
 import type { LibraryHomeNotice, LibraryHomePort, LibraryHomeScanProgress } from '@/library/core/contracts/homeModel';
 import type { LibraryCollectionDescriptor } from '@/library/core/contracts/collection';
 import { createLibraryHomeActions } from '@/library/core/services/libraryHomeActions';
+import { PERSONAL_FM_TIMEOUT_MS } from '@/services/onlineMusic/recommendationConstants';
 
 // test/unit/library/core/libraryHomeActions.test.ts
 // 首页动作层（原 Grid3D 的导入、私人 FM、打开卡片）：三个导入共用的「忙」、本地不可用时的提示、有新歌才刷新、
@@ -35,6 +36,9 @@ const createPort = (patch: Partial<LibraryHomePort> = {}) => {
         }),
         getPersonalFm: vi.fn(async () => [{ id: 'fm-1' }, { id: 'fm-2' }] as unknown as SongResult[]),
         playPersonalFm: vi.fn(),
+        filterPersonalFm: vi.fn(songs => songs),
+        markPersonalFmSeen: vi.fn(),
+        clearPersonalFmHistory: vi.fn(),
         enqueuePersonalFm: vi.fn(() => 2),
         describeOnlineCollection: vi.fn((collection, providerId) => ({ ...collection, source: 'online', providerId }) as unknown as LibraryCollectionDescriptor),
         describeLocalGroup: vi.fn(group => ({ source: 'local', id: group.id }) as unknown as LibraryCollectionDescriptor),
@@ -215,10 +219,99 @@ describe('createLibraryHomeActions — opening cards', () => {
         expect(port.playPersonalFm).not.toHaveBeenCalled();
     });
 
-    it('does not enqueue an empty next batch', async () => {
-        const { port } = createPort({ getPersonalFm: vi.fn(async () => []) });
-        expect(await createLibraryHomeActions(port).loadMorePersonalFm()).toEqual({ ok: true });
+    it('does not enqueue an empty next batch and tells the user once', async () => {
+        const { port, notices } = createPort({ getPersonalFm: vi.fn(async () => []) });
+        expect(await createLibraryHomeActions(port).loadMorePersonalFm()).toEqual({ ok: false, reason: 'empty' });
         expect(port.enqueuePersonalFm).not.toHaveBeenCalled();
+        expect(notices).toEqual([{
+            kind: 'status',
+            type: 'info',
+            message: { key: 'libraryBravaisHome.recommendFeedEmpty', fallback: 'recommendFeedEmpty' },
+        }]);
+    });
+
+    it('times out a hung request, tells the user and releases the lock', async () => {
+        vi.useFakeTimers();
+        try {
+            const pending = deferred<SongResult[]>();
+            const { port, notices } = createPort({ getPersonalFm: vi.fn(() => pending.promise) });
+            const actions = createLibraryHomeActions(port);
+            const first = actions.playPersonalFm();
+            expect(actions.getSnapshot().personalFmBusy).toBe(true);
+
+            await vi.advanceTimersByTimeAsync(PERSONAL_FM_TIMEOUT_MS);
+
+            expect(await first).toEqual({ ok: false, reason: 'timeout' });
+            expect(actions.getSnapshot().personalFmBusy).toBe(false);
+            expect(notices).toEqual([{
+                kind: 'status',
+                type: 'error',
+                message: { key: 'libraryBravaisHome.recommendFeedTimeout', fallback: 'recommendFeedTimeout' },
+            }]);
+            expect(port.playPersonalFm).not.toHaveBeenCalled();
+
+            (port.getPersonalFm as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+                { id: 'fm-3' }, { id: 'fm-4' },
+            ] as unknown as SongResult[]);
+            expect(await actions.playPersonalFm()).toEqual({ ok: true });
+            expect(port.playPersonalFm).toHaveBeenCalledTimes(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('shows the busy state while a request is in flight', async () => {
+        const pending = deferred<SongResult[]>();
+        const { port } = createPort({ getPersonalFm: vi.fn(() => pending.promise) });
+        const actions = createLibraryHomeActions(port);
+        const request = actions.loadMorePersonalFm();
+        expect(actions.getSnapshot().personalFmBusy).toBe(true);
+        pending.resolve([{ id: 'fm-3' }] as unknown as SongResult[]);
+        expect(await request).toEqual({ ok: true });
+        expect(actions.getSnapshot().personalFmBusy).toBe(false);
+    });
+
+    it('treats a provider switch as a silent cancellation', async () => {
+        const { port, notices } = createPort({
+            getPersonalFm: vi.fn(async () => {
+                throw new DOMException('Active online provider changed', 'AbortError');
+            }),
+        });
+        expect(await createLibraryHomeActions(port).playPersonalFm()).toEqual({ ok: false, reason: 'cancelled' });
+        expect(notices).toEqual([]);
+    });
+
+    it('filters recently recommended songs and resets the ledger when a batch is exhausted', async () => {
+        const songs = [{ id: 'fm-1' }, { id: 'fm-2' }] as unknown as SongResult[];
+        const filterPersonalFm = vi.fn(() => []);
+        const clearPersonalFmHistory = vi.fn();
+        const markPersonalFmSeen = vi.fn();
+        const { port } = createPort({
+            getPersonalFm: vi.fn(async () => songs),
+            filterPersonalFm,
+            clearPersonalFmHistory,
+            markPersonalFmSeen,
+        });
+        expect(await createLibraryHomeActions(port).playPersonalFm()).toEqual({ ok: true });
+        expect(filterPersonalFm).toHaveBeenCalledWith(songs);
+        expect(clearPersonalFmHistory).toHaveBeenCalledWith(songs);
+        expect(markPersonalFmSeen).toHaveBeenCalledWith(songs);
+        expect(port.playPersonalFm).toHaveBeenCalledWith(songs[0], songs);
+    });
+
+    it('passes only the unseen songs to playback and the history ledger', async () => {
+        const songs = [{ id: 'fm-1' }, { id: 'fm-2' }] as unknown as SongResult[];
+        const fresh = [songs[1]];
+        const markPersonalFmSeen = vi.fn();
+        const { port } = createPort({
+            getPersonalFm: vi.fn(async () => songs),
+            filterPersonalFm: vi.fn(() => fresh),
+            markPersonalFmSeen,
+        });
+        await createLibraryHomeActions(port).loadMorePersonalFm();
+        expect(port.enqueuePersonalFm).toHaveBeenCalledWith(fresh);
+        expect(markPersonalFmSeen).toHaveBeenCalledWith(fresh);
+        expect(port.clearPersonalFmHistory).not.toHaveBeenCalled();
     });
 
     it('serialises start and load-more so rapid clicks cannot race two requests', async () => {

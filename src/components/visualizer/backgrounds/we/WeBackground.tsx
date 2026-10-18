@@ -11,6 +11,8 @@ interface WeBackgroundProps {
     tuning: WeBackgroundTuning;
     /** The visualizer is in a state where a live wallpaper should be playing. */
     enabled: boolean;
+    /** Window hidden/minimized: keep the engine running but stop pulling capture frames. */
+    paused?: boolean;
 }
 
 // Leaving the mode without a remount — another background type, the player page going away — never
@@ -41,7 +43,7 @@ const scheduleIdleStop = () => {
     }, IDLE_STOP_DELAY_MS);
 };
 
-const WeBackground: React.FC<WeBackgroundProps> = ({ tuning, enabled }) => {
+const WeBackground: React.FC<WeBackgroundProps> = ({ tuning, enabled, paused = false }) => {
     const phase = useWallpaperEngineStore(state => state.phase);
     const activeItemId = useWallpaperEngineStore(state => state.activeItemId);
     const supported = useWallpaperEngineStore(state => state.supported);
@@ -83,6 +85,7 @@ const WeBackground: React.FC<WeBackgroundProps> = ({ tuning, enabled }) => {
         <WeBackgroundLayer
             tuning={tuning}
             active={sessionRunning}
+            paused={paused}
             posterUrl={`folia-we://preview/${tuning.itemId}`}
         />
     );

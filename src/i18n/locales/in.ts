@@ -87,6 +87,13 @@ export default {
     "connect": "Hubungkan layanan streaming",
     "recommendFeed": "Mix",
     "recommendFeedTitle": "{{provider}} · Mix",
+    "recommendFeedBusy": "Memuat rekomendasi…",
+    "recommendFeedTimeout": "Permintaan Mix habis waktu. Coba lagi sebentar.",
+    "recommendFeedFailed": "Mix sedang tidak tersedia. Coba lagi sebentar.",
+    "recommendFeedEmpty": "Belum ada rekomendasi lain dari layanan ini.",
+    "recommendFeedAuthExpired": "Sesi Anda berakhir. Silakan masuk lagi.",
+    "recommendFeedUnavailable": "Mix tidak tersedia untuk layanan ini.",
+    "recommendFeedAppended": "{{count}} rekomendasi ditambahkan",
     "noMatch": "Tidak ada yang cocok di halaman ini",
     "shortcuts": "Langsung ke",
     "special": {"liked": "Lagu Disukai", "cloud": "Cloud Drive", "personal-fm": "FM Pribadi", "daily": "Harian", "all-songs": "Semua Lagu", "local-favorites": "Favorit", "navidrome-random": "Acak", "navidrome-favorites": "Berbintang"}

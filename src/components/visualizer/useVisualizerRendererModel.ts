@@ -12,6 +12,7 @@ import { usePlayerChromeSettingsStore } from '../../stores/usePlayerChromeSettin
 import { useVisualizerSettingsStore } from '../../stores/useVisualizerSettingsStore';
 import { useVisualizerAssetStore } from '../../stores/useVisualizerAssetStore';
 import { useStageSettingsStore } from '../../stores/useStageSettingsStore';
+import { useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { resolveMainWindowVisualizerMode } from '../../utils/obsBrowserSource';
 import {
     selectDisplayCoverUrl,
@@ -27,6 +28,7 @@ import { NO_LYRIC_LINES } from '../../utils/lyrics/noLyricLines';
 import { selectLibraryPlayerBackdrop, useLibraryPlayerOcclusionStore } from '../../stores/useLibraryPlayerOcclusionStore';
 import { resolveVisualizerShowText } from '../app/presentation/playerVisualizerBackdrop';
 import { useIsDesktopLayout } from '../../hooks/useMobileShellLayout';
+import { useDocumentHidden } from '../../hooks/useDocumentVisibility';
 
 // src/components/visualizer/useVisualizerRendererModel.ts
 //
@@ -77,6 +79,8 @@ export const useVisualizerRendererModel = ({
     const backdropLyrics = useLibraryPlayerOcclusionStore(state => selectLibraryPlayerBackdrop(state).lyrics);
     const isDaylight = useThemeSettingsStore(state => state.isDaylight);
     const staticMode = useThemeSettingsStore(state => state.staticMode);
+    const wallpaperMode = useDesktopSettingsStore(state => state.wallpaperMode);
+    const documentHidden = useDocumentHidden();
     const alwaysShowPlayerBackButton = usePlayerChromeSettingsStore(state => state.alwaysShowPlayerBackButton);
     const visualizerMode = useVisualizerSettingsStore(state => state.visualizerMode);
     const obsKeepMainWindowAnimation = useStageSettingsStore(state => state.obsKeepMainWindowAnimation);
@@ -154,7 +158,9 @@ export const useVisualizerRendererModel = ({
                 && background.latent?.tuning?.dynamicOnlyInPlayer
                 && currentView !== 'player'
             ),
-        paused: displayPlayerState !== PlayerState.PLAYING,
+        // Pause Pixi/Canvas/WebGL work while the window is minimized or on another desktop. Wallpaper
+        // mode keeps rendering: the wallpaper is expected to stay alive when the app is not focused.
+        paused: displayPlayerState !== PlayerState.PLAYING || (documentHidden && !wallpaperMode),
         visualizerOpacity,
         background,
         ...typography,

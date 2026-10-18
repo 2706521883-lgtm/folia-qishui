@@ -1,5 +1,8 @@
-import type { LocalLibraryGroup } from '../../../types';
+import type { LocalLibraryGroup, SongResult } from '../../../types';
 import type { NavidromeGridViewCollectionType } from '../contracts/collection';
+import { OnlineProviderError } from '../../../types/onlineMusic';
+import { PERSONAL_FM_TIMEOUT_MS } from '../../../services/onlineMusic/recommendationConstants';
+import { isTimeoutError, withTimeout } from '../../../utils/withTimeout';
 import type {
     LibraryHomeActionResult,
     LibraryHomeActionsController,
@@ -24,12 +27,73 @@ const OK: LibraryHomeActionResult = { ok: true };
 const BUSY: LibraryHomeActionResult = { ok: false, reason: 'busy' };
 const UNSUPPORTED: LibraryHomeActionResult = { ok: false, reason: 'unsupported' };
 const FAILED: LibraryHomeActionResult = { ok: false, reason: 'failed' };
+const TIMEOUT: LibraryHomeActionResult = { ok: false, reason: 'timeout' };
+const EMPTY: LibraryHomeActionResult = { ok: false, reason: 'empty' };
+const CANCELLED: LibraryHomeActionResult = { ok: false, reason: 'cancelled' };
+const AUTH_REQUIRED: LibraryHomeActionResult = { ok: false, reason: 'auth' };
 
 const IDLE: LibraryHomeActionsSnapshot = {
     importingFolder: false,
     refreshingFolders: false,
     importingPlaylist: false,
+    personalFmBusy: false,
     scan: null,
+};
+
+const RECOMMEND_FEED_I18N = 'libraryBravaisHome';
+
+const notifyRecommendFeed = (
+    port: LibraryHomePort,
+    type: 'error' | 'info',
+    key: string,
+): void => {
+    port.notify({
+        kind: 'status',
+        type,
+        message: {
+            key: `${RECOMMEND_FEED_I18N}.${key}`,
+            fallback: key,
+        },
+    });
+};
+
+// A provider that keeps handing back the same batch after history filtering is better served by a
+// fresh ledger than by an empty feed. History is bounded and per-provider, so this is cheap.
+const resolvePersonalFmBatch = (port: LibraryHomePort, songs: SongResult[]): SongResult[] => {
+    if (songs.length === 0) return songs;
+    const fresh = port.filterPersonalFm(songs);
+    if (fresh.length > 0) return fresh;
+    port.clearPersonalFmHistory(songs);
+    // Re-filter after clearing: this still removes duplicates inside the batch itself. If the
+    // caller's filter is still empty (for example a provider with all-identical ids), fall back to
+    // the raw batch rather than ending the stream.
+    const afterClear = port.filterPersonalFm(songs);
+    return afterClear.length > 0 ? afterClear : songs;
+};
+
+const handlePersonalFmError = (port: LibraryHomePort, error: unknown): LibraryHomeActionResult => {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+        // The user switched providers while the request was in flight; that is a cancellation,
+        // not a failure worth a toast.
+        return CANCELLED;
+    }
+    if (isTimeoutError(error)) {
+        notifyRecommendFeed(port, 'error', 'recommendFeedTimeout');
+        return TIMEOUT;
+    }
+    if (error instanceof OnlineProviderError) {
+        if (error.code === 'auth-required') {
+            notifyRecommendFeed(port, 'error', 'recommendFeedAuthExpired');
+            return AUTH_REQUIRED;
+        }
+        if (error.code === 'unsupported') {
+            notifyRecommendFeed(port, 'error', 'recommendFeedUnavailable');
+            return UNSUPPORTED;
+        }
+    }
+    console.error('[LibraryHome] Failed to fetch Personal FM:', error);
+    notifyRecommendFeed(port, 'error', 'recommendFeedFailed');
+    return FAILED;
 };
 
 /** 创建首页动作控制器。端口在调用时现读（宿主每次渲染都可能换新的曲库与回调）。 */
@@ -52,34 +116,46 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
     const playPersonalFm = async (options?: { shouldNavigateToPlayer?: boolean }): Promise<LibraryHomeActionResult> => {
         if (personalFmInFlight) return BUSY;
         personalFmInFlight = true;
+        patch({ personalFmBusy: true });
         try {
-            const songs = await port.getPersonalFm();
-            if (songs.length > 0) {
-                if (options) port.playPersonalFm(songs[0], songs, options);
-                else port.playPersonalFm(songs[0], songs);
+            const fetched = await withTimeout(port.getPersonalFm(), PERSONAL_FM_TIMEOUT_MS, 'Personal FM');
+            const songs = resolvePersonalFmBatch(port, fetched);
+            if (songs.length === 0) {
+                notifyRecommendFeed(port, 'info', 'recommendFeedEmpty');
+                return EMPTY;
             }
+            port.markPersonalFmSeen(songs);
+            if (options) port.playPersonalFm(songs[0], songs, options);
+            else port.playPersonalFm(songs[0], songs);
             return OK;
         } catch (error) {
-            console.error('[LibraryHome] Failed to fetch and play Personal FM:', error);
-            return FAILED;
+            return handlePersonalFmError(port, error);
         } finally {
             personalFmInFlight = false;
+            patch({ personalFmBusy: false });
         }
     };
 
     const loadMorePersonalFm = async (): Promise<LibraryHomeActionResult> => {
         if (personalFmInFlight) return BUSY;
         personalFmInFlight = true;
+        patch({ personalFmBusy: true });
         try {
-            const songs = await port.getPersonalFm();
-            // 队列侧会按歌曲 key 去重；这里只负责把下一批交过去，不打断当前播放。
-            if (songs.length > 0) port.enqueuePersonalFm(songs);
+            const fetched = await withTimeout(port.getPersonalFm(), PERSONAL_FM_TIMEOUT_MS, 'Personal FM');
+            const songs = resolvePersonalFmBatch(port, fetched);
+            if (songs.length === 0) {
+                notifyRecommendFeed(port, 'info', 'recommendFeedEmpty');
+                return EMPTY;
+            }
+            // 队列侧仍会按歌曲 key 去重；这里先把最近推荐过的歌滤掉，避免离开队列后又被推回。
+            port.markPersonalFmSeen(songs);
+            port.enqueuePersonalFm(songs);
             return OK;
         } catch (error) {
-            console.error('[LibraryHome] Failed to load more Personal FM:', error);
-            return FAILED;
+            return handlePersonalFmError(port, error);
         } finally {
             personalFmInFlight = false;
+            patch({ personalFmBusy: false });
         }
     };
 

@@ -16,7 +16,14 @@ import { toSafePlaybackUrl } from '../../utils/appPlaybackHelpers';
 import { fetchQQLyrics, searchQQLyrics } from '../../utils/lyrics/providers/qqLyricProvider';
 import { writeProviderSessionValue } from './providerStorage';
 import { normalizeQqCollection, normalizeQqSong, normalizeQqUser } from './qqNormalize';
-import { clearQqSession, getQqRemoteApiBase, getQqTransportAvailability, hasQqSession, requestQq } from './qqTransport';
+import {
+    clearQqSession,
+    getQqPersonalFmRouteStatus,
+    getQqRemoteApiBase,
+    getQqTransportAvailability,
+    hasQqSession,
+    requestQq,
+} from './qqTransport';
 import { collectLoginBackendDiagnostics } from './loginBackendDiagnostics';
 import { canRunLoginSelfCheck, runLoginSelfCheck } from './loginSelfCheck';
 import { formatDiagnosticClock } from '../../utils/qrLoginDiagnosticReport';
@@ -115,6 +122,13 @@ let qqPersonalFmPage = 1;
 let qqPersonalFmExhausted = false;
 
 const getPersonalFm = async (): Promise<UnifiedSong[]> => {
+    if (await getQqPersonalFmRouteStatus() === 'unavailable') {
+        throw new OnlineProviderError(
+            'unsupported',
+            'The embedded QQ API did not register the personal-FM route',
+            'qq',
+        );
+    }
     if (qqPersonalFmExhausted) {
         qqPersonalFmOffset = 0;
         qqPersonalFmPage = 1;

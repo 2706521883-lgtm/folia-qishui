@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { LocalLibraryGroup, LocalPlaylist, LocalSong } from '../../../types';
 import type { LibraryCollectionDescriptor } from '../../core/contracts/collection';
@@ -100,6 +100,32 @@ export const BravaisHomeOnline: React.FC<BravaisHomeSourceCommonProps & {
         const source = getPlaybackSourceRef(song);
         return source.kind === 'online' && source.providerId === online.providerId;
     });
+    const { snapshot: homeActionSnapshot } = useLibraryHomeActions(homeActions);
+    // QQ 的 personal-FM 路由是主进程在包内注册的，注册失败时账号/搜索仍然可用，只有推荐流是死入口。
+    // 读到 unavailable 就把按钮禁用，避免用户点了才看到错误。
+    const [qqFeedUnavailable, setQqFeedUnavailable] = useState(false);
+    useEffect(() => {
+        if (online.providerId !== 'qq') {
+            setQqFeedUnavailable(false);
+            return undefined;
+        }
+        let cancelled = false;
+        const applyStatus = (status: ElectronQqApiStatus | undefined) => {
+            if (!cancelled) setQqFeedUnavailable(status?.personalFmRoute === 'unavailable');
+        };
+        // The main process rebroadcasts on every backend start/stop; subscribe as well as probe so a
+        // restart that loses the route updates the button without remounting the home tab.
+        const unsubscribe = window.electron?.onQqApiStatusChanged?.(applyStatus);
+        void window.electron?.getQqApiStatus?.()
+            .then(applyStatus)
+            .catch(() => {
+                // A status probe failure is not evidence that the route is missing.
+            });
+        return () => {
+            cancelled = true;
+            unsubscribe?.();
+        };
+    }, [online.providerId]);
     const latest = useRef({ homeActions, providerId: online.providerId, onOpenGridView, canAppend });
     latest.current = { homeActions, providerId: online.providerId, onOpenGridView, canAppend };
     // 推荐流：任何实现了连续个性化推荐（getPersonalFm）且已登录的平台，都在缝的中段给同一个入口。
@@ -107,20 +133,28 @@ export const BravaisHomeOnline: React.FC<BravaisHomeSourceCommonProps & {
     // 已经在播时再点，取下一批接到队尾，可以连点几次先把队列垫长。队列快结束时
     // usePlaybackQueueController 仍会自动续批；各平台自己的叫法（私人FM / 猜你喜欢…）
     // 不进按钮，只保留统一的「推荐流」。
-    const feedAction = useMemo<BravaisHomeAction | null>(() => (
-        online.hasPersonalFm && online.accountView === 'authenticated'
-            ? {
-                id: 'recommend-feed',
-                label: t('libraryBravaisHome.recommendFeed', '推荐流'),
-                title: t('libraryBravaisHome.recommendFeedTitle', { provider: online.providerLabel, defaultValue: `${online.providerLabel} · 推荐流` }),
-                run: () => {
-                    const { homeActions: actions, canAppend: append } = latest.current;
-                    // 首次也开始在后台播放，不把用户从书库拉去播放页；再点则继续追加。
-                    void (append ? actions.loadMorePersonalFm() : actions.playPersonalFm({ shouldNavigateToPlayer: false }));
-                },
-            }
-            : null
-    ), [online.accountView, online.hasPersonalFm, online.providerLabel, t]);
+    const feedAction = useMemo<BravaisHomeAction | null>(() => {
+        if (!online.hasPersonalFm || online.accountView !== 'authenticated') return null;
+        const busy = homeActionSnapshot.personalFmBusy;
+        const disabled = online.providerId === 'qq' && qqFeedUnavailable;
+        const title = disabled
+            ? t('libraryBravaisHome.recommendFeedUnavailable', '该平台的推荐流暂不可用')
+            : busy
+                ? t('libraryBravaisHome.recommendFeedBusy', '正在加载推荐…')
+                : t('libraryBravaisHome.recommendFeedTitle', { provider: online.providerLabel, defaultValue: `${online.providerLabel} · 推荐流` });
+        return {
+            id: 'recommend-feed',
+            label: t('libraryBravaisHome.recommendFeed', '推荐流'),
+            title,
+            busy,
+            disabled,
+            run: () => {
+                const { homeActions: actions, canAppend: append } = latest.current;
+                // 首次也开始在后台播放，不把用户从书库拉去播放页；再点则继续追加。
+                void (append ? actions.loadMorePersonalFm() : actions.playPersonalFm({ shouldNavigateToPlayer: false }));
+            },
+        };
+    }, [homeActionSnapshot.personalFmBusy, online.accountView, online.hasPersonalFm, online.providerId, online.providerLabel, qqFeedUnavailable, t]);
     const onOpen = useMemo(() => (card: Parameters<LibraryHomeActionsController['openOnlineCard']>[0]) => {
         const { homeActions: actions, providerId, onOpenGridView: open } = latest.current;
         void actions.openOnlineCard(card, providerId, open);

@@ -9,6 +9,10 @@ const { registerQqPersonalFmRoute } = require('./qqRecommendRoute.cjs');
 
 const QQ_API_MODULE = '@yakult-green-tea/qq-music-api';
 
+// The personal-FM route lives on the package's own router and is registered by us. Keep the result
+// so the backend status can tell the renderer whether the recommendation entry is usable.
+let lastPersonalFmRouteStatus = 'unknown';
+
 function getErrorMessage(error) {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -59,9 +63,11 @@ const defaultLoadModule = (moduleId) => {
   const loaded = require(moduleId);
   try {
     registerQqRoutesFromPackage(moduleId);
+    lastPersonalFmRouteStatus = 'registered';
   } catch (error) {
     // A future package layout change must not take the whole QQ backend down; the account and
-    // catalog routes still work, only the recommendation stream reports an empty batch.
+    // catalog routes still work, only the recommendation stream is unavailable.
+    lastPersonalFmRouteStatus = 'unavailable';
     console.warn('[QQ API] recommendation route was not registered:', getErrorMessage(error));
   }
   return loaded;
@@ -113,6 +119,7 @@ async function startQqApi(options = {}) {
     env.QQ_AUTH_STATE_PATH = stateFilePath;
   }
 
+  lastPersonalFmRouteStatus = 'unknown';
   let qqApi;
   try {
     qqApi = loadModule(moduleId);
@@ -161,6 +168,7 @@ async function startQqApi(options = {}) {
     port,
     stateFilePath: stateFilePath || null,
     server,
+    personalFmRoute: lastPersonalFmRouteStatus,
     close: () => closeServer(server),
   };
 }
@@ -169,5 +177,6 @@ module.exports = {
   QQ_API_MODULE,
   getErrorMessage,
   isModuleNotFound,
+  getLastPersonalFmRouteStatus: () => lastPersonalFmRouteStatus,
   startQqApi,
 };

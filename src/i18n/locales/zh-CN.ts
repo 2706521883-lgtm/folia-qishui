@@ -87,6 +87,13 @@ export default {
     "connect": "连接在线平台",
     "recommendFeed": "推荐流",
     "recommendFeedTitle": "{{provider}} · 推荐流",
+    "recommendFeedBusy": "正在加载推荐…",
+    "recommendFeedTimeout": "推荐流请求超时，请稍后重试",
+    "recommendFeedFailed": "推荐流暂时不可用，请稍后重试",
+    "recommendFeedEmpty": "该平台暂时没有更多推荐",
+    "recommendFeedAuthExpired": "登录已过期，请重新登录",
+    "recommendFeedUnavailable": "该平台的推荐流暂不可用",
+    "recommendFeedAppended": "已追加 {{count}} 首推荐",
     "noMatch": "没有匹配的条目",
     "shortcuts": "直达",
     "special": {"liked": "我喜欢的音乐", "cloud": "云盘", "personal-fm": "私人FM", "daily": "每日推荐", "all-songs": "全部歌曲", "local-favorites": "我喜欢", "navidrome-random": "随机音乐", "navidrome-favorites": "收藏"}

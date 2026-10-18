@@ -140,7 +140,7 @@ function createQqBackend({
   let packageVersion = null;
 
   const start = async () => {
-    status.update({ status: 'starting', port: null, error: null });
+    status.update({ status: 'starting', port: null, error: null, personalFmRoute: 'unknown' });
     startup.begin();
     let currentStep = '';
     const step = (id, fn) => {
@@ -173,17 +173,32 @@ function createQqBackend({
         note({ version: packageVersion, installed: hooks.installed, ...(hooks.error ? { error: hooks.error } : {}) });
       });
 
-      status.update({ status: 'running', port, error: null });
+      status.update({
+        status: 'running',
+        port,
+        error: null,
+        personalFmRoute: handle?.personalFmRoute ?? 'unknown',
+      });
       startup.finish('running');
     } catch (error) {
       handle = null;
       // 打包时漏了这个包：永远恢复不了，报 unavailable；其余（端口被抢、包内部抛错）是真正的运行时故障。
       if (isModuleNotFound(error)) {
-        status.update({ status: 'unavailable', port: null, error: describeError(error) });
+        status.update({
+          status: 'unavailable',
+          port: null,
+          error: describeError(error),
+          personalFmRoute: 'unavailable',
+        });
         startup.finish('unavailable');
         return;
       }
-      status.update({ status: 'error', port: null, error: `${currentStep}: ${describeError(error)}` });
+      status.update({
+        status: 'error',
+        port: null,
+        error: `${currentStep}: ${describeError(error)}`,
+        personalFmRoute: 'unavailable',
+      });
       startup.finish('failed');
     }
   };

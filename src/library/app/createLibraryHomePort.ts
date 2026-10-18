@@ -7,6 +7,11 @@ import { getLocalLibraryAvailability } from '../../services/localLibraryAvailabi
 import { importLocalPlaylistFile } from '../../services/localPlaylistFileService';
 import { omni } from '../../services/onlineMusic/omni';
 import {
+    clearRecommendationHistoryForSongs,
+    filterUnseenRecommendations,
+    markRecommendationsSeen,
+} from '../../services/onlineMusic/recommendationHistory';
+import {
     createLocalGridViewCollection,
     createNavidromeGridViewCollection,
     createOnlineGridViewCollection,
@@ -41,6 +46,9 @@ export const createLibraryHomePort = (getSurface: () => HomePortSurface): Librar
     },
     getPersonalFm: () => omni.getPersonalFm(),
     playPersonalFm: (song, queue, options) => getSurface().onPlaySong(song, queue, true, options),
+    filterPersonalFm: songs => filterUnseenRecommendations(songs),
+    markPersonalFmSeen: songs => markRecommendationsSeen(songs),
+    clearPersonalFmHistory: songs => clearRecommendationHistoryForSongs(songs),
     enqueuePersonalFm: songs => {
         const added = getSurface().onAddAllToQueue?.(songs);
         return typeof added === 'number' ? added : 0;

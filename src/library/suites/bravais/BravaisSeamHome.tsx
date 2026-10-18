@@ -10,6 +10,7 @@ import {
     LayoutGrid,
     ListFilter,
     Library,
+    Loader2,
     Maximize2,
     MicVocal,
     Play,
@@ -324,20 +325,34 @@ const BravaisSeamHome: React.FC<{
                             {/* 中段快捷入口（汽水推荐流 / 回到播放页）：竖排；不打开集合、不换层。 */}
                             {home?.actions && home.actions.length > 0 && (
                                 <div className="bravais-seam-home-actions" data-bravais-home-actions={home.actions.length}>
-                                    {home.actions.map(action => (
-                                        <button
-                                            key={action.id}
-                                            type="button"
-                                            className={`bravais-seam-home-action${action.tone === 'neutral' ? ' is-neutral' : ''}`}
-                                            data-bravais-home-action={action.id}
-                                            aria-label={action.title}
-                                            title={action.title}
-                                            onClick={action.run}
-                                        >
-                                            {action.icon === 'play' ? <Play aria-hidden /> : <Sparkles aria-hidden />}
-                                            <span className="is-label" aria-hidden>{action.label}</span>
-                                        </button>
-                                    ))}
+                                    {home.actions.map(action => {
+                                        const unavailable = Boolean(action.disabled);
+                                        return (
+                                            <button
+                                                key={action.id}
+                                                type="button"
+                                                className={`bravais-seam-home-action${action.tone === 'neutral' ? ' is-neutral' : ''}${action.busy ? ' is-busy' : ''}${unavailable ? ' is-disabled' : ''}`}
+                                                data-bravais-home-action={action.id}
+                                                data-bravais-home-action-busy={action.busy ? 'true' : undefined}
+                                                data-bravais-home-action-disabled={unavailable ? 'true' : undefined}
+                                                aria-label={action.title}
+                                                aria-busy={action.busy || undefined}
+                                                aria-disabled={unavailable || undefined}
+                                                disabled={unavailable}
+                                                title={action.title}
+                                                onClick={() => {
+                                                    if (!action.busy && !unavailable) action.run();
+                                                }}
+                                            >
+                                                {action.busy
+                                                    ? <Loader2 className="animate-spin" aria-hidden />
+                                                    : action.icon === 'play'
+                                                        ? <Play aria-hidden />
+                                                        : <Sparkles aria-hidden />}
+                                                <span className="is-label" aria-hidden>{action.label}</span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                             )}
                             {sections && (
