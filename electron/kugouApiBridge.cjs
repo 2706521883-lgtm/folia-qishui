@@ -44,6 +44,28 @@ const OPERATION_MODULES = {
   playlist_tracks_del: ['playlist_tracks_del'],
 };
 
+// 上游网关偶尔会把请求挂到 60 秒后才 ECONNRESET。给曲库读请求设一个上限，让 sync 层的
+// 退避重试能及时接手，而不是让界面一直停在「加载中」。成功的歌曲页通常在 1 秒内返回。
+const OPERATION_TIMEOUT_MS = {
+  playlist_track_all: 8_000,
+  playlist_detail: 20_000,
+};
+const DEFAULT_OPERATION_TIMEOUT_MS = 20_000;
+
+const withOperationTimeout = (promise, operation) => {
+  const timeoutMs = OPERATION_TIMEOUT_MS[operation] ?? DEFAULT_OPERATION_TIMEOUT_MS;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new Error(`KuGouApi[operation=${operation}] timed out after ${timeoutMs}ms`);
+      error.name = 'KuGouApiError';
+      error.operation = operation;
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
 const randomUpperHex = (bytes) => crypto.randomBytes(bytes).toString('hex').toUpperCase();
 
 const isRecord = value => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -353,7 +375,7 @@ function createKugouApiBridge({
     },
     async request(operation, params) {
       try {
-        return await performRequest(operation, params);
+        return await withOperationTimeout(performRequest(operation, params), operation);
       } catch (error) {
         throw normalizeBridgeError(operation, error);
       }

@@ -126,6 +126,27 @@ describe('Electron KuGou API bridge', () => {
         expect(store.get(SESSION_KEY)).toEqual(expect.any(String));
     });
 
+    it('times out a hung playlist page so the collection sync can retry', async () => {
+        vi.useFakeTimers();
+        try {
+            const bridge = createKugouApiBridge({
+                store: createStore(),
+                safeStorage: createSafeStorage(),
+                apiLoader: () => ({
+                    register_dev: async () => ({ body: { status: 1 }, cookie: ['dfid=device'] }),
+                    playlist_track_all: () => new Promise(() => {}),
+                }),
+            });
+
+            const pending = bridge.request('playlist_track_all', { id: 'collection_3_1_1_0', pagesize: 100, page: 1 });
+            const assertion = expect(pending).rejects.toThrow('timed out after 8000ms');
+            await vi.advanceTimersByTimeAsync(8_000);
+            await assertion;
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('rejects operations outside the fixed allowlist', async () => {
         const bridge = createKugouApiBridge({
             store: createStore(), safeStorage: createSafeStorage(), apiLoader: () => ({}),
