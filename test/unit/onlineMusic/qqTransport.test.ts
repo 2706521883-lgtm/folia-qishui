@@ -325,24 +325,34 @@ describe('QQ Music Web transport', () => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    // 实测 QQ 的匿名歌单 CGI 偶尔会让 axios 以 `stream has been aborted` 结束，后端回 500；
-    // 同一个请求隔 500ms 重试通常能拿到完整歌单。没有这层重试，界面只会留下「加载失败」。
-    it('retries a transient 500 on the playlist detail route', async () => {
+    // 曲库读接口的瞬时 5xx 仍然值得重试；歌单详情是例外，它有带凭据的路由兜底。
+    it('retries a transient 500 on a catalog read route', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(Response.json(
                 { error: { name: 'AxiosError', message: 'stream has been aborted' } },
                 { status: 500 },
             ))
-            .mockResolvedValueOnce(Response.json({
-                response: { code: 0, cdlist: [{ dissname: '好听歌单', songlist: [] }] },
-            }));
+            .mockResolvedValueOnce(Response.json({ response: { code: 0, data: {} } }));
         vi.stubGlobal('fetch', fetchMock);
         const { requestQq } = await import('@/services/onlineMusic/qqTransport');
 
-        await expect(requestQq('song_list_detail', { disstid: '7' })).resolves.toMatchObject({
+        await expect(requestQq('album_info', { albummid: '0016l2F430zMux' })).resolves.toMatchObject({
             response: { code: 0 },
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    // 歌单详情不在 transport 的重试表里：provider 会用 `/user/playlist-detail` 兜底，
+    // 在这里重试只会让用户多等两个 13 秒的上游超时。
+    it('leaves playlist detail retries to the provider fallback', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            Response.json({ message: 'stream has been aborted' }, { status: 500 }),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+
+        await expect(requestQq('song_list_detail', { disstid: '7' })).rejects.toMatchObject({ code: 'network' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     it('does not retry a failed login request', async () => {

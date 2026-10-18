@@ -250,8 +250,9 @@ const endpointFor = (operation: QqOperation, params: QqParams): { path: string; 
 // 曲库 CGI 偶尔会在上游把响应流掐断（AxiosError: stream has been aborted），后端据此回 500。
 // 这不是「歌单不存在」，同一个请求隔一会儿重试通常就能拿到；只对幂等的读路由重试，
 // 登录、播放、推荐流等会改变服务端状态或推进游标的操作一律不在此列。
+// 歌单详情不在这里：它有带凭据的 `/user/playlist-detail` 兜底，provider 会在匿名 CGI
+// 失败后立刻改走那条路由，比在 13 秒的超时上再重试两次快得多。
 const QQ_RETRYABLE_OPERATIONS: ReadonlySet<QqOperation> = new Set<QqOperation>([
-    'song_list_detail',
     'song_info',
     'album_info',
     'artist_albums',
