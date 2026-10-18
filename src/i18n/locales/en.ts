@@ -3041,8 +3041,35 @@ export default {
         "description": "When signed in, your own private playlists now load their songs, with real paging. Self-hosted backends must run qq-music-api 3.1.2 or later; older backends fall back automatically, and a playlist that cannot be read now says it is not public instead of silently showing as empty."
       }
     },
+    "v0_3_4": {
+      "intro": "Welcome to folia-qishui 0.3.4. This update brings all five services into one Mix entry and hardens the feed: timeouts, clearer failures and cross-batch dedupe. On desktop, the visualizer and wallpaper capture now pause while the window is hidden. Here is what changed.",
+      "recommendFeed": {
+        "title": "One Mix for Five Services",
+        "description": "SodaMusic, NetEase, KuGou, QQ Music and Bodian share the same Mix entry in the home seam. The first click starts playback and keeps you in the library instead of jumping to the player."
+      },
+      "recommendAppend": {
+        "title": "Tap Again to Append",
+        "description": "While a Mix is playing, tapping again appends the next batch to the queue. Tap several times to build a longer queue without interrupting the current song."
+      },
+      "recommendTimeout": {
+        "title": "Timeouts with Clear Messages",
+        "description": "Mix requests now stop after 12 seconds. Timeouts, network errors, expired sessions and empty batches each explain what happened, and the button never stays stuck loading."
+      },
+      "recommendDedupe": {
+        "title": "Cross-Batch Dedupe",
+        "description": "Folia remembers the last 300 songs per service for seven days, so a track that has played and left the queue is not pushed straight back. Small catalogues reset the ledger automatically when needed."
+      },
+      "qqRoute": {
+        "title": "QQ Mix Route Self-Check",
+        "description": "The QQ backend's personal-FM route is checked at startup. If it is missing, the Mix entry is disabled with an explanation; account, search and other QQ features keep working."
+      },
+      "pauseVisualizer": {
+        "title": "Pause While Hidden",
+        "description": "Minimizing or backgrounding the window pauses Pixi/Canvas visualizers and wallpaper capture, then resumes when the window returns. Wallpaper mode is unaffected and keeps rendering on the desktop."
+      }
+    },
     "v0_3_1": {
-      "intro": "Welcome to folia-qishui 0.3.1, a fan build based on upstream 0.7.17 (the Spica Update). This build adds the SodaMusic online source and a Wallpaper Engine background; the cards below cover the other highlights. The library gets a brand-new interface, Bravais: a poster wall you can drag around. After updating, Folia asks once whether you want Bravais or the classic grid; the view opened by Play gains a \"Stay here\" option, and local songs can now be marked as instrumental.",
+      "intro": "Welcome to folia-qishui 0.3.1, a fan build. This build adds the SodaMusic online source and a Wallpaper Engine background; the cards below cover the other highlights. The library gets a brand-new interface, Bravais: a poster wall you can drag around. After updating, Folia asks once whether you want Bravais or the classic grid; the view opened by Play gains a \"Stay here\" option, and local songs can now be marked as instrumental.",
       "bravais": {
         "title": "Bravais, a New Library Interface",
         "description": "The library becomes a poster wall: opening a playlist, album or artist flips the posters over to the new content, while the page details and actions live in a strip that opens in the wall. Drag to browse, move with the arrow keys, or just type to filter the current page. The classic grid is still available under Options → Interface → Library interface."
