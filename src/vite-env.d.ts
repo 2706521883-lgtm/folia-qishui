@@ -219,6 +219,8 @@ declare global {
     status: 'starting' | 'running' | 'error' | 'unavailable';
     port: number | null;
     error: string | null;
+    /** Whether Folia's extra personal-FM route was registered on the embedded QQ API. */
+    personalFmRoute?: 'registered' | 'unavailable' | 'unknown';
     updatedAt: number;
   }
 

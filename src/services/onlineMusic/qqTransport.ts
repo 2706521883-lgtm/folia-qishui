@@ -71,6 +71,21 @@ export const resetQqTransportRuntimeCache = (): void => {
     electronApiBase = null;
 };
 
+/**
+ * The embedded backend registers Folia's personal-FM route on the package's own router. When that
+ * registration failed the account and catalog still work, but `/getPersonalFm` is a guaranteed 404;
+ * the home feed uses this to disable the entry instead of letting the user click into an error.
+ * `unknown` means "could not tell" (web backend, older status shape) and must not hide the entry.
+ */
+export const getQqPersonalFmRouteStatus = async (): Promise<'registered' | 'unavailable' | 'unknown'> => {
+    try {
+        const status = await window.electron?.getQqApiStatus?.();
+        return status?.personalFmRoute ?? 'unknown';
+    } catch {
+        return 'unknown';
+    }
+};
+
 // 内嵌后端没在监听时，把主进程报的状态与故障原因带进错误：时间线里直接能看到它为什么没起来。
 const describeEmbeddedStatus = async (): Promise<string> => {
     try {

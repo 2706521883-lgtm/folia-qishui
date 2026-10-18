@@ -10,6 +10,7 @@ const { QQ_API_MODULE, isModuleNotFound, startQqApi } = require('../../../electr
         port: number;
         stateFilePath: string | null;
         server: FakeServer;
+        personalFmRoute: 'registered' | 'unavailable' | 'unknown';
         close: () => Promise<void>;
     }>;
 };
@@ -82,6 +83,9 @@ describe('QQ API startup', () => {
         expect(result.port).toBe(45123);
         expect(result.stateFilePath).toBe('/tmp/qq/qq-device.json');
         expect(result.server).toBe(server);
+        // A custom loader did not go through defaultLoadModule, so the route status is unknown
+        // (the renderer treats unknown as available rather than hiding the entry).
+        expect(result.personalFmRoute).toBe('unknown');
         expect(configureAuthSessionRepository).toHaveBeenCalledWith(authSessionRepository);
     });
 
