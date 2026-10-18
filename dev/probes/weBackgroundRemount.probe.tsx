@@ -72,6 +72,7 @@ const WeBackgroundRemountProbe: React.FC = () => {
     useMemo(installStubs, []);
     // 换 key = 卸载再挂载，和切换歌词样式时 visualizer 子树被整体重建是同一条路径。
     const [epoch, setEpoch] = useState(0);
+    const [paused, setPaused] = useState(false);
 
     return (
         <div className="relative h-screen w-screen overflow-hidden">
@@ -79,6 +80,7 @@ const WeBackgroundRemountProbe: React.FC = () => {
                 key={epoch}
                 tuning={DEFAULT_WE_BACKGROUND_TUNING}
                 active
+                paused={paused}
                 posterUrl={POSTER}
             />
             <div className="absolute left-4 top-4 z-10 flex gap-2">
@@ -88,6 +90,13 @@ const WeBackgroundRemountProbe: React.FC = () => {
                     onClick={() => setEpoch(value => value + 1)}
                 >
                     Switch lyric style
+                </button>
+                <button
+                    type="button"
+                    className="rounded-full bg-white px-4 py-2 text-sm text-black"
+                    onClick={() => setPaused(value => !value)}
+                >
+                    {paused ? 'Resume capture' : 'Pause capture'}
                 </button>
             </div>
         </div>
