@@ -1,4 +1,4 @@
-import { BrickWall, Layers, ListMusic, Piano, Server, Signpost } from 'lucide-react';
+import { ListChecks, ListMusic, MonitorOff, ShieldCheck, Sparkles, Timer } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // src/components/modal/newFeaturesRelease.ts
@@ -19,13 +19,13 @@ type NewFeaturesRelease = {
 
 // Defines the current release's cards; their localized text lives under i18nKey in every locale.
 export const NEW_FEATURES_RELEASE: NewFeaturesRelease = {
-    i18nKey: 'releaseNotes.v0_3_1',
+    i18nKey: 'releaseNotes.v0_3_4',
     features: [
-        { id: 'bravais', icon: BrickWall, daylightIconClassName: 'text-violet-600', darkIconClassName: 'text-violet-400' },
-        { id: 'chooseLibrary', icon: Signpost, daylightIconClassName: 'text-sky-600', darkIconClassName: 'text-sky-400' },
-        { id: 'wallLook', icon: Layers, daylightIconClassName: 'text-amber-600', darkIconClassName: 'text-amber-400' },
-        { id: 'pureMusic', icon: Piano, daylightIconClassName: 'text-rose-600', darkIconClassName: 'text-rose-400' },
-        { id: 'navidromePreset', icon: Server, daylightIconClassName: 'text-emerald-600', darkIconClassName: 'text-emerald-400' },
-        { id: 'qqPlaylists', icon: ListMusic, daylightIconClassName: 'text-cyan-600', darkIconClassName: 'text-cyan-400' },
+        { id: 'recommendFeed', icon: Sparkles, daylightIconClassName: 'text-violet-600', darkIconClassName: 'text-violet-400' },
+        { id: 'recommendAppend', icon: ListMusic, daylightIconClassName: 'text-sky-600', darkIconClassName: 'text-sky-400' },
+        { id: 'recommendTimeout', icon: Timer, daylightIconClassName: 'text-amber-600', darkIconClassName: 'text-amber-400' },
+        { id: 'recommendDedupe', icon: ListChecks, daylightIconClassName: 'text-emerald-600', darkIconClassName: 'text-emerald-400' },
+        { id: 'qqRoute', icon: ShieldCheck, daylightIconClassName: 'text-cyan-600', darkIconClassName: 'text-cyan-400' },
+        { id: 'pauseVisualizer', icon: MonitorOff, daylightIconClassName: 'text-rose-600', darkIconClassName: 'text-rose-400' },
     ],
 };

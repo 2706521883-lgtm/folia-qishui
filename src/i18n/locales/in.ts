@@ -2928,8 +2928,35 @@ export default {
         "description": "Setelah masuk, playlist pribadi buatan Anda kini dapat memuat lagu dengan paging sungguhan. Backend yang di-host sendiri harus memakai qq-music-api 3.1.2 atau lebih baru; backend lama beralih otomatis, dan playlist yang tidak dapat dibaca kini menjelaskan bahwa playlist itu tidak publik, alih-alih tampil kosong tanpa keterangan."
       }
     },
+    "v0_3_4": {
+      "intro": "Selamat datang di folia-qishui 0.3.4. Pembaruan ini menyatukan lima layanan ke dalam satu entri Mix dan memperkuat alurnya: timeout, pesan kegagalan yang jelas, dan deduplikasi antar-batch. Di desktop, visualizer dan penangkapan wallpaper kini berhenti saat jendela disembunyikan.",
+      "recommendFeed": {
+        "title": "Satu Mix untuk Lima Layanan",
+        "description": "SodaMusic, NetEase, KuGou, QQ Music, dan Bodian memakai entri Mix yang sama di celah beranda. Klik pertama langsung memutar dan tetap berada di pustaka, tidak melompat ke pemutar."
+      },
+      "recommendAppend": {
+        "title": "Ketuk Lagi untuk Menambah",
+        "description": "Saat Mix sedang diputar, ketuk lagi untuk menambahkan batch berikutnya ke antrean. Ketuk beberapa kali untuk memperpanjang antrean tanpa menghentikan lagu saat ini."
+      },
+      "recommendTimeout": {
+        "title": "Timeout dengan Pesan Jelas",
+        "description": "Permintaan Mix berhenti setelah 12 detik. Timeout, kesalahan jaringan, sesi kedaluwarsa, dan batch kosong masing-masing menjelaskan penyebabnya; tombol tidak tertahan dalam keadaan memuat."
+      },
+      "recommendDedupe": {
+        "title": "Deduplikasi Antar-Batch",
+        "description": "Folia mengingat 300 lagu terakhir per layanan selama tujuh hari, sehingga lagu yang sudah diputar dan keluar dari antrean tidak langsung muncul lagi. Katalog kecil akan mereset riwayat secara otomatis bila perlu."
+      },
+      "qqRoute": {
+        "title": "Pemeriksaan Rute Mix QQ",
+        "description": "Rute personal-FM backend QQ diperiksa saat mulai. Jika tidak ada, entri Mix dinonaktifkan dengan penjelasan; akun, pencarian, dan fitur QQ lain tetap berfungsi."
+      },
+      "pauseVisualizer": {
+        "title": "Jeda Saat Jendela Tersembunyi",
+        "description": "Meminimalkan atau memindahkan jendela ke latar belakang menghentikan visualizer Pixi/Canvas dan penangkapan wallpaper, lalu melanjutkannya saat jendela kembali. Mode wallpaper tidak terpengaruh dan tetap dirender di desktop."
+      }
+    },
     "v0_3_1": {
-      "intro": "Selamat datang di folia-qishui 0.3.1, build turunan berbasis 0.7.17 (Spica Update) dari hulu. Build ini menambahkan sumber daring SodaMusic dan latar Wallpaper Engine; kartu di bawah merangkum sorotan lainnya. Pustaka mendapat antarmuka baru bernama Bravais: dinding poster yang bisa digeser. Setelah pembaruan, Folia menanyakan sekali apakah Anda memakai Bravais atau grid klasik; tampilan yang dibuka Putar mendapat opsi \"Tetap di sini\", dan lagu lokal kini bisa ditandai sebagai instrumental.",
+      "intro": "Selamat datang di folia-qishui 0.3.1, build turunan. Build ini menambahkan sumber daring SodaMusic dan latar Wallpaper Engine; kartu di bawah merangkum sorotan lainnya. Pustaka mendapat antarmuka baru bernama Bravais: dinding poster yang bisa digeser. Setelah pembaruan, Folia menanyakan sekali apakah Anda memakai Bravais atau grid klasik; tampilan yang dibuka Putar mendapat opsi \"Tetap di sini\", dan lagu lokal kini bisa ditandai sebagai instrumental.",
       "bravais": {
         "title": "Bravais, Antarmuka Pustaka Baru",
         "description": "Pustaka menjadi dinding poster: saat membuka playlist, album, atau artis, poster di dinding berbalik menampilkan isi baru, sementara info halaman dan tindakannya ada di sebuah strip yang terbuka di dinding. Geser untuk menjelajah, pakai tombol panah, atau langsung ketik untuk menyaring halaman saat ini. Grid klasik tetap tersedia di Opsi → Antarmuka → Antarmuka pustaka."
