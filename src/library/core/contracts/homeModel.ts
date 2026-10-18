@@ -174,18 +174,19 @@ export type LibraryHomeScanProgress = {
     completedSongs: number;
 };
 
-/** 首页动作控制器的快照：哪个导入在进行、扫描进度。 */
+/** 首页动作控制器的快照：哪个导入在进行、扫描进度、推荐流是否在取歌。 */
 export type LibraryHomeActionsSnapshot = {
     importingFolder: boolean;
     refreshingFolders: boolean;
     importingPlaylist: boolean;
+    personalFmBusy: boolean;
     scan: LibraryHomeScanProgress | null;
 };
 
 /** 首页动作的结果（存判别式；要显示的提示已经经端口发出）。 */
 export type LibraryHomeActionResult =
     | { ok: true }
-    | { ok: false; reason: 'busy' | 'unsupported' | 'failed' };
+    | { ok: false; reason: 'busy' | 'unsupported' | 'failed' | 'timeout' | 'empty' | 'cancelled' | 'auth' };
 
 /** 歌单文件导入的结果（端口把曲库服务的结果压成这几个数）。 */
 export type LibraryHomePlaylistImportResult = {
@@ -222,6 +223,12 @@ export interface LibraryHomePort {
     subscribeScanProgress(listener: (progress: LibraryHomeScanProgress | null) => void): () => void;
     getPersonalFm(): Promise<SongResult[]>;
     playPersonalFm(song: SongResult, queue: SongResult[], options?: { shouldNavigateToPlayer?: boolean }): void;
+    /** Remove songs this provider has already recommended recently; keeps the caller core-only. */
+    filterPersonalFm(songs: SongResult[]): SongResult[];
+    /** Record songs after they have actually been handed to playback/queue. */
+    markPersonalFmSeen(songs: SongResult[]): void;
+    /** Forget recent history for the providers in this batch (used when a batch is exhausted). */
+    clearPersonalFmHistory(songs: SongResult[]): void;
     /** 把下一批推荐接到现有播放队列尾部；返回实际接上的首数。 */
     enqueuePersonalFm(songs: SongResult[]): number;
     describeOnlineCollection(collection: Record<string, unknown>, providerId: string): LibraryCollectionDescriptor;

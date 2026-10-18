@@ -87,6 +87,13 @@ export default {
     "connect": "Connect a streaming service",
     "recommendFeed": "Mix",
     "recommendFeedTitle": "{{provider}} · Mix",
+    "recommendFeedBusy": "Loading recommendations…",
+    "recommendFeedTimeout": "The mix request timed out. Try again shortly.",
+    "recommendFeedFailed": "The mix is unavailable right now. Try again shortly.",
+    "recommendFeedEmpty": "No more recommendations from this service right now.",
+    "recommendFeedAuthExpired": "Your session expired. Please sign in again.",
+    "recommendFeedUnavailable": "The mix is unavailable for this service.",
+    "recommendFeedAppended": "Added {{count}} recommendations",
     "noMatch": "Nothing on this page matches",
     "shortcuts": "Jump to",
     "special": {"liked": "Liked Songs", "cloud": "Cloud Drive", "personal-fm": "Personal FM", "daily": "Daily Picks", "all-songs": "All Songs", "local-favorites": "Favorites", "navidrome-random": "Random", "navidrome-favorites": "Starred"}

@@ -1,6 +1,7 @@
 import type { UnifiedSong } from '../../types';
 import type { OnlineProviderId } from '../../types/onlineMusic';
 import { getPlaybackSongKey } from '../../utils/appPlaybackGuards';
+import { TimeoutError, withTimeout } from '../../utils/withTimeout';
 import { omni } from './omni';
 
 // src/services/onlineMusic/federatedSearch.ts
@@ -47,32 +48,10 @@ export type FederatedSearchPage = {
 const DEFAULT_SEARCH_TIMEOUT_MS = 8000;
 const MIN_PER_PROVIDER_LIMIT = 10;
 
-class FederatedSearchTimeoutError extends Error {
-    constructor() {
-        super('Online source search timed out');
-        this.name = 'FederatedSearchTimeoutError';
-    }
-}
-
-const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-        return promise;
-    }
-
-    return new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new FederatedSearchTimeoutError()), timeoutMs);
-        promise.then(
-            value => {
-                clearTimeout(timer);
-                resolve(value);
-            },
-            error => {
-                clearTimeout(timer);
-                reject(error);
-            },
-        );
-    });
-};
+// Shared with the recommendation-feed path; both need the same "never hang forever" guarantee.
+const withSearchTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => (
+    withTimeout(promise, timeoutMs, 'Online source search')
+);
 
 const toErrorMessage = (error: unknown): string => (
     error instanceof Error ? error.message : 'provider_search_failed'
@@ -215,7 +194,7 @@ export async function searchAllSources(request: FederatedSearchRequest): Promise
         const offset = previousCursor?.nextOffset ?? 0;
 
         try {
-            const page = await withTimeout(
+            const page = await withSearchTimeout(
                 omni.searchProviderSongs(providerId, query, { limit, offset }),
                 timeoutMs,
             );
@@ -258,7 +237,7 @@ export async function searchAllSources(request: FederatedSearchRequest): Promise
             const providerError: FederatedSearchProviderError = {
                 providerId,
                 message: cursor.lastError || 'provider_search_failed',
-                timedOut: error instanceof FederatedSearchTimeoutError,
+                timedOut: error instanceof TimeoutError,
             };
 
             return {

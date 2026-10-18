@@ -100,7 +100,7 @@ describe('local home sections and cards', () => {
 });
 
 describe('resolveLocalHomeActions', () => {
-    const idle = { importingFolder: false, refreshingFolders: false, importingPlaylist: false, scan: null };
+    const idle = { importingFolder: false, refreshingFolders: false, importingPlaylist: false, personalFmBusy: false, scan: null };
 
     it('offers import folder, refresh and import playlist, all enabled when idle', () => {
         expect(resolveLocalHomeActions(idle)).toEqual([

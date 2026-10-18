@@ -218,7 +218,7 @@ describe('online loading and import state', () => {
     });
 
     it('any import in flight or an active scan makes the import buttons busy', () => {
-        const idle = { importingFolder: false, refreshingFolders: false, importingPlaylist: false, scan: null };
+        const idle = { importingFolder: false, refreshingFolders: false, importingPlaylist: false, personalFmBusy: false, scan: null };
         expect(isHomeImportBusy(idle)).toBe(false);
         expect(isHomeImportBusy({ ...idle, importingFolder: true })).toBe(true);
         expect(isHomeImportBusy({ ...idle, refreshingFolders: true })).toBe(true);
