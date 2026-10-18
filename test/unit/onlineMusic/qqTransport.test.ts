@@ -311,15 +311,49 @@ describe('QQ Music Web transport', () => {
 
     // 歌单详情的上游是匿名 CGI，被拒收时同样只在响应体里给码；不检查就会退化成一个空歌单。
     it('surfaces an upstream rejection on the playlist detail route', async () => {
-        vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => Response.json({
+        const fetchMock = vi.fn().mockImplementation(async () => Response.json({
             response: { code: 3, subcode: 3, message: 'no such diss', cdlist: [] },
-        })));
+        }));
+        vi.stubGlobal('fetch', fetchMock);
         const { requestQq } = await import('@/services/onlineMusic/qqTransport');
 
         await expect(requestQq('song_list_detail', { disstid: '7' })).rejects.toMatchObject({
             code: 'invalid-response',
             message: expect.stringContaining('code 3'),
         });
+        // 上游明确拒绝不是瞬时故障，重试只会把同一句错误拖慢一秒再显示。
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    // 实测 QQ 的匿名歌单 CGI 偶尔会让 axios 以 `stream has been aborted` 结束，后端回 500；
+    // 同一个请求隔 500ms 重试通常能拿到完整歌单。没有这层重试，界面只会留下「加载失败」。
+    it('retries a transient 500 on the playlist detail route', async () => {
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(Response.json(
+                { error: { name: 'AxiosError', message: 'stream has been aborted' } },
+                { status: 500 },
+            ))
+            .mockResolvedValueOnce(Response.json({
+                response: { code: 0, cdlist: [{ dissname: '好听歌单', songlist: [] }] },
+            }));
+        vi.stubGlobal('fetch', fetchMock);
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+
+        await expect(requestQq('song_list_detail', { disstid: '7' })).resolves.toMatchObject({
+            response: { code: 0 },
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry a failed login request', async () => {
+        const fetchMock = vi.fn().mockResolvedValue(
+            Response.json({ message: 'upstream unavailable' }, { status: 502 }),
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const { requestQq } = await import('@/services/onlineMusic/qqTransport');
+
+        await expect(requestQq('login_qr_key')).rejects.toMatchObject({ code: 'network' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
     // 登录路由用的是另一套码值（`login_status` 正常就回 200），不能被曲库那条规则误伤。
