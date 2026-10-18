@@ -894,6 +894,34 @@ describe('qqProvider', () => {
         expect(requestMock.mock.calls.map(call => call[0])).toEqual(['song_list_detail']);
     });
 
+    // 匿名 CGI 偶发被上游掐断（刚才真实复现的是 13 秒后回 HTTP 500）。这时不要再等它重试，
+    // 直接用带凭据的 `/user/playlist-detail` 把这一页读出来；实测收藏歌单也能完整读回。
+    it('falls back to the authenticated route when the anonymous playlist CGI returns 500', async () => {
+        requestMock
+            .mockRejectedValueOnce(new OnlineProviderError(
+                'network',
+                'QQMusicApi song_list_detail failed: HTTP 500',
+                'qq',
+                undefined,
+                500,
+            ))
+            .mockResolvedValueOnce({ code: 200, songs: [SEARCH_ITEM], total: 83, more: false });
+        const favourite = normalizeQqCollection({
+            tid: 9622954939, dirId: 1, name: '好听歌单', songnum: 83, dirShow: 1, orderTime: 1789128000, dirType: 0,
+        });
+
+        await expect(qqProvider.catalog!.getPlaylistTracks!(9622954939, 100, 0, favourite)).resolves.toMatchObject({
+            total: 83,
+            hasMore: true,
+            nextOffset: 1,
+            items: [expect.objectContaining({ qqMid: '003rJSwm3TechU' })],
+        });
+        expect(requestMock.mock.calls).toEqual([
+            ['song_list_detail', { disstid: '9622954939' }],
+            ['user_playlist_detail', { tid: '9622954939', dirid: 1, offset: 0, limit: 100 }],
+        ]);
+    });
+
     // 3.1.4 起，后端带会话时用凭据重读匿名 CGI 回 `code: 10` 的官方算法歌单，改写成同样的 `cdlist[0]`；
     // `/user/playlist` 的收藏条目也补上了 `bigpicUrl`（官方歌单是第一首歌的专辑图）。
     it('reads an official algorithmic playlist through the credential-backed song_list_detail', async () => {

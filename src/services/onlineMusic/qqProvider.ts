@@ -225,6 +225,13 @@ const loadRawLikedTracks = async (
     };
 };
 
+// 匿名歌单 CGI 可恢复的失败：上游断流（500）、响应体被拒收、或歌单不公开。
+// 这些情况下带凭据的 `/user/playlist-detail` 通常还能读到，值得在报错前换一条路由。
+const isRecoverablePlaylistFailure = (error: unknown): boolean => (
+    error instanceof OnlineProviderError
+    && (error.code === 'network' || error.code === 'invalid-response' || error.code === 'not-public')
+);
+
 const getPlaylistTracks = async (
     id: MediaId,
     limit: number,
@@ -269,18 +276,35 @@ const getPlaylistTracks = async (
         }
     }
 
-    // 收藏的、分享链接进来的歌单本来就只能走匿名路由；后端太旧时也回落到这里。
-    const { tracks, total } = await loadRawPlaylistTracks(id, collection);
-    const items = tracks
-        .slice(offset, offset + Math.max(0, limit))
-        .map(normalizeQqSong);
-    const nextOffset = offset + items.length;
-    return {
-        items,
-        ...(total === undefined ? {} : { total }),
-        hasMore: nextOffset < tracks.length,
-        nextOffset,
-    };
+    // 收藏的、分享链接进来的歌单优先走匿名路由：带凭据的路由对个别收藏歌单会少一首。
+    // 但匿名 CGI 有时会被上游掐断（HTTP 500 / stream has been aborted），这时改走带凭据的
+    // `/user/playlist-detail`；它支持真正的分页，实测也能完整读回收藏歌单。两条都失败才抛原始错误。
+    try {
+        const { tracks, total } = await loadRawPlaylistTracks(id, collection);
+        const items = tracks
+            .slice(offset, offset + Math.max(0, limit))
+            .map(normalizeQqSong);
+        const nextOffset = offset + items.length;
+        return {
+            items,
+            ...(total === undefined ? {} : { total }),
+            hasMore: nextOffset < tracks.length,
+            nextOffset,
+        };
+    } catch (error) {
+        if (!isRecoverablePlaylistFailure(error) || !Number.isFinite(dirId) || dirId <= 0) throw error;
+        const page = await loadRawOwnedPlaylistTracks(id, dirId, safeLimit, safeOffset).catch(() => null);
+        if (!page) throw error;
+        const items = page.tracks.map(normalizeQqSong);
+        const nextOffset = safeOffset + items.length;
+        return {
+            items,
+            ...(page.total === undefined ? {} : { total: page.total }),
+            // 空页必须停：上游的 total 可能比实际能读到的多，只看 total 会一直翻空页。
+            hasMore: items.length > 0 && (page.more || (page.total !== undefined && nextOffset < page.total)),
+            nextOffset,
+        };
+    }
 };
 
 const getSongDetail = async (id: MediaId) => {
