@@ -5,15 +5,18 @@
 
 /* ---------- 表单态：登录 / 确认 ---------- */
 
-/* 登录态内容多（方式、二维码、状态、按钮、失败帮助、说明）：顶部留白比表单态小，内容超出时缝内滚动。 */
+/* 登录态内容多（方式、二维码、状态、按钮、失败帮助、说明）与切换确认都在缝里竖直居中。
+   safe center：内容比可用高度还高时退回顶部，仍然可以滚动；内容放得下时上下留白自然相等。 */
 .bravais-seam-form.bravais-account-form {
+    justify-content: safe center;
     gap: 12px;
-    padding: 28px 22px 16px;
+    padding: 16px 22px;
     overflow-y: auto;
     outline: none;
 }
 
-.bravais-seam-form.bravais-account-form.is-confirm { padding-top: 76px; }
+/* 切换确认内容短：收紧上下留白（仍然居中）。 */
+.bravais-seam-form.bravais-account-form.is-confirm { padding: 0 22px; }
 
 .bravais-account-head {
     display: flex;

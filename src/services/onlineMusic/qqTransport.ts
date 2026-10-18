@@ -9,6 +9,7 @@ export const QQ_OPERATIONS = [
     'user_detail', 'user_playlist', 'user_albums', 'user_liked_songs', 'user_playlist_detail',
     'music_play', 'song_list_detail', 'song_info',
     'album_info', 'artist_albums', 'artist_songs',
+    'personal_fm',
 ] as const;
 
 export type QqOperation = typeof QQ_OPERATIONS[number];
@@ -38,6 +39,9 @@ const ENDPOINTS: Record<QqOperation, string> = {
     album_info: '/getAlbumInfo',
     artist_albums: '/getSingerAlbum',
     artist_songs: '/getSingerHotsong',
+    // Folia 在 qq-music-api 的 router 上补的推荐流路由（见 electron/qqRecommendRoute.cjs）。
+    // 旧后端 / 自部署后端没有这条路由，requestQq 会把 404 当成 unsupported。
+    personal_fm: '/getPersonalFm',
 };
 
 // qq-music-api translates the native QR states into the Netease codes; 803 is the only one carrying a session.

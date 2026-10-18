@@ -1,7 +1,7 @@
 import React from 'react';
 import { PANEL_SLIDE_CLAMP_PX, PANEL_SLIDE_TRACK_BASE_PX, PANEL_SLIDE_TRACK_FULL_PX, PANEL_SLIDE_TRIGGER_PX } from '../utils/panelSlideGesture';
 import { motion, AnimatePresence, useTransform } from 'framer-motion';
-import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, Command, ChevronLeft, MirrorRectangular, Puzzle } from 'lucide-react';
+import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, Command, ChevronLeft, Palette, Puzzle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, ThemeMode, VisualizerMode } from '../types';
 import type { ProviderUser } from '../types/onlineMusic';
@@ -24,6 +24,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { NARROW_BOTTOM_CHROME_BASE_PX, PLAYER_BOTTOM_BAR_BASE_OFFSET_PX } from '../utils/playerBottomBarLayout';
 import { getSizedCoverUrl } from '../utils/coverUrl';
 import { openAddToPlaylist, useAddToPlaylistStore } from '../stores/useAddToPlaylistStore';
+import { openSettings } from '../stores/useSettingsModalStore';
 import { usePlayerPanelTabShortcut } from '../hooks/usePlayerPanelTabShortcut';
 import { FOLIUM_PANEL_TAB_PREFIX, FoliumPanelTabBody, useFoliumPanelTabs } from '../mods/folium/registries/playerPanelTabs';
 import { countRender } from '../dev/renderCount';
@@ -213,8 +214,6 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         onOpenSettings,
         onOpenCommandPalette,
         isCommandPaletteOpen = false,
-        transparentPlayerBackground,
-        onToggleTransparentPlayerBackground,
     } = playback;
     const { playQueue, onPlaySong, queueScrollRef, onShuffle, onRemoveSong, onMoveSongToEnd, onMoveSongToNext } = queue;
     const {
@@ -696,7 +695,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                         </div>
                                     )}
 
-                                    {/* 右上角：播放页透明。不算高频，所以只占封面的空位，不占面板结构 */}
+                                    {/* 右上角：歌词样式设置（原「播放页透明」快捷入口），直接打开调参台的「背景」页。 */}
                                     <div className={`absolute right-3 top-3 transition-all duration-200 ${
                                         supportsHover
                                             ? 'pointer-events-none group-hover:pointer-events-auto opacity-0 group-hover:opacity-100 translate-x-3 -translate-y-3 group-hover:translate-x-0 group-hover:translate-y-0'
@@ -706,18 +705,15 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                             type="button"
                                             onClick={(event) => {
                                                 event.stopPropagation();
-                                                onToggleTransparentPlayerBackground(!transparentPlayerBackground);
+                                                setIsCoverActionsVisible(false);
+                                                onToggle();
+                                                openSettings('options', 'visualizer', 'background');
                                             }}
-                                            className={`w-11 h-11 rounded-full border backdrop-blur-md flex items-center justify-center transition-all ${
-                                                transparentPlayerBackground
-                                                    ? 'border-white/30 bg-white/85 text-zinc-900 hover:bg-white'
-                                                    : 'border-white/15 bg-black/25 text-white/90 hover:bg-black/40 hover:text-white'
-                                            }`}
-                                            title={t('options.transparentPlayerBackground')}
-                                            aria-label={t('options.transparentPlayerBackground')}
-                                            aria-pressed={transparentPlayerBackground}
+                                            className="w-11 h-11 rounded-full border border-white/15 bg-black/25 text-white/90 backdrop-blur-md flex items-center justify-center transition-all hover:bg-black/40 hover:text-white"
+                                            title={t('options.openLyricsStyleSettings')}
+                                            aria-label={t('options.openLyricsStyleSettings')}
                                         >
-                                            <MirrorRectangular size={18} />
+                                            <Palette size={18} />
                                         </button>
                                     </div>
 

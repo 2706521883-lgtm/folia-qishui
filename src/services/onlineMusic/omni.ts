@@ -444,8 +444,13 @@ export const omni = {
     }> {
         return withActiveProvider(async provider => {
             const recommendations = provider.recommendations;
+            // The home card only needs the next FM track's cover. Prefer a non-consuming peek so
+            // opening or refreshing the radio tab does not burn a whole FM batch.
+            const personalFmPreview = recommendations?.getPersonalFmPreview
+                ? recommendations.getPersonalFmPreview()
+                : recommendations?.getPersonalFm?.() ?? [];
             const [personalFm, dailySongs, recommendedCollections] = await Promise.all([
-                recommendations?.getPersonalFm?.() ?? [],
+                personalFmPreview,
                 recommendations?.getDailySongs?.() ?? [],
                 recommendations?.getRecommendedCollections?.(limit) ?? [],
             ]);

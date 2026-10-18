@@ -166,17 +166,60 @@ describe('qqProvider', () => {
         resetQqProviderRuntimeCache();
     });
 
-    it('declares readable library features without exposing unsupported mutations or recommendations', () => {
+    it('declares readable library features and a personal-FM stream without exposing mutations', () => {
         expect(qqProvider.capabilities).toMatchObject({
             userLibrary: true,
             playlists: true,
             userAlbums: true,
             likes: true,
             recommendations: false,
+            personalFm: true,
             mutations: false,
         });
         expect(qqProvider.mutations).toBeUndefined();
-        expect(qqProvider.recommendations).toBeUndefined();
+        expect(qqProvider.recommendations?.getPersonalFm).toBeTypeOf('function');
+    });
+
+    it('advances the personal-FM cursor and resets it after an empty batch', async () => {
+        requestMock.mockResolvedValueOnce({
+            response: { tracks: [SEARCH_ITEM], source: 'radio', hasMore: true, nextFrom: 20 },
+        });
+        const first = await qqProvider.recommendations!.getPersonalFm!();
+        expect(requestMock).toHaveBeenLastCalledWith('personal_fm', { num: 20, from: 0, page: 1 });
+        expect(first).toHaveLength(1);
+        expect(first[0].sourceRef).toMatchObject({ providerId: 'qq', mediaId: '003rJSwm3TechU' });
+
+        requestMock.mockResolvedValueOnce({
+            response: { tracks: [{ ...SEARCH_ITEM, mid: 'next-mid', id: 2 }], source: 'radio', hasMore: true, nextFrom: 21 },
+        });
+        await qqProvider.recommendations!.getPersonalFm!();
+        expect(requestMock).toHaveBeenLastCalledWith('personal_fm', { num: 20, from: 20, page: 1 });
+
+        // 空批次把游标归零：下一次从第一页重新要一批（队列侧按歌曲 key 去重）。
+        requestMock.mockResolvedValueOnce({ response: { tracks: [], source: 'unavailable', hasMore: false, nextFrom: 21 } });
+        await expect(qqProvider.recommendations!.getPersonalFm!()).resolves.toEqual([]);
+        requestMock.mockResolvedValueOnce({ response: { tracks: [SEARCH_ITEM], source: 'radio', hasMore: true, nextFrom: 20 } });
+        await qqProvider.recommendations!.getPersonalFm!();
+        expect(requestMock).toHaveBeenLastCalledWith('personal_fm', { num: 20, from: 0, page: 1 });
+    });
+
+    it('advances radar pages and starts a fresh batch after the stream is exhausted', async () => {
+        requestMock.mockResolvedValueOnce({
+            response: { tracks: [SEARCH_ITEM], source: 'radar', hasMore: true, nextFrom: 10, nextPage: 2 },
+        });
+        await qqProvider.recommendations!.getPersonalFm!();
+        requestMock.mockResolvedValueOnce({
+            response: { tracks: [{ ...SEARCH_ITEM, mid: 'radar-mid', id: 3 }], source: 'radar', hasMore: false, nextFrom: 20, nextPage: 3 },
+        });
+        await qqProvider.recommendations!.getPersonalFm!();
+        expect(requestMock).toHaveBeenLastCalledWith('personal_fm', { num: 20, from: 0, page: 2 });
+
+        // hasMore=false 后下一批从第一页重新开始。
+        requestMock.mockResolvedValueOnce({
+            response: { tracks: [{ ...SEARCH_ITEM, mid: 'fresh-mid', id: 4 }], source: 'radar', hasMore: true, nextFrom: 10, nextPage: 2 },
+        });
+        await qqProvider.recommendations!.getPersonalFm!();
+        expect(requestMock).toHaveBeenLastCalledWith('personal_fm', { num: 20, from: 0, page: 1 });
     });
 
     it('normalizes a song onto songmid identity and keeps the numeric id in provider data', () => {

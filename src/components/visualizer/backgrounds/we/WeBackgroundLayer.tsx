@@ -109,13 +109,19 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
 
     // Panning a scaled layer needs to stay inside the frame; the sliders are in percent of the
     // layer size and 0 keeps the wallpaper centred.
+    // translateZ(0) 把采集画面固定成自己的合成层；配合外层的 isolation/contain，避免
+    // 硬件视频层在个别 GPU/驱动上盖到歌词 DOM 上（表现为「歌词偶尔消失」）。
     const transform = [
+        'translateZ(0)',
         `scale(${tuning.scale})`,
         `translate(${tuning.offsetX}%, ${tuning.offsetY}%)`,
     ].join(' ');
 
     return (
-        <div className="absolute inset-0 z-0 overflow-hidden" style={{ pointerEvents: 'none' }}>
+        <div
+            className="absolute inset-0 z-0 overflow-hidden"
+            style={{ pointerEvents: 'none', isolation: 'isolate', contain: 'paint' }}
+        >
             {/* The poster sits *behind* the video: while no frames flow the (transparent) video
                 shows it through, and as soon as the capture paints, the live wallpaper covers it. */}
             {posterUrl && !streamReady ? (
@@ -133,7 +139,7 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                 <video
                     ref={videoRef}
                     className="absolute inset-0 h-full w-full object-cover"
-                    style={{ opacity: tuning.opacity, transform }}
+                    style={{ opacity: tuning.opacity, transform, willChange: 'transform' }}
                     muted
                     playsInline
                     autoPlay

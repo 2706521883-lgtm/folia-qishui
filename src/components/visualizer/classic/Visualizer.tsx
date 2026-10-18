@@ -620,7 +620,28 @@ const Visualizer: React.FC<VisualizerProps> = (props) => {
                         </motion.div>
                     )}
 
-                    {showText && !activeLine && (
+                    {/* 行与行之间 / 间奏时不要整块空掉：把刚唱完的那句留在主位，直到下一句进来。
+                        背景层（壁纸/流体）在下面，歌词消失往往就发生在这种没有 activeLine 的缝隙里。 */}
+                    {showText && !activeLine && recentCompletedLine && (
+                        <motion.div
+                            key={`rest-${recentCompletedLine.startTime}`}
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 0.5 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute w-full max-w-6xl px-8 text-center"
+                            style={{
+                                color: theme.primaryColor,
+                                fontFamily: resolveThemeFontStack(theme),
+                                fontWeight: resolveThemeFontWeight(theme, 700),
+                                fontSize: mainFontSize,
+                                lineHeight: 1.2,
+                            }}
+                        >
+                            {recentCompletedLine.fullText}
+                        </motion.div>
+                    )}
+
+                    {showText && !activeLine && !recentCompletedLine && (
                         <motion.div
                             key="empty"
                             initial={{ opacity: 0 }}

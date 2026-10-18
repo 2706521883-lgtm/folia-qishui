@@ -44,7 +44,12 @@ export type LibraryLocalCatalogSnapshot = {
 
 /** 首页模型给出的数据与回调（即原 HomeSurfaceProps）。集合宿主与端口也从这里取来源回调。 */
 export interface LibraryHomeData {
-    onPlaySong: (song: SongResult, playlistCtx?: SongResult[], isFmCall?: boolean) => void;
+    onPlaySong: (
+        song: SongResult,
+        playlistCtx?: SongResult[],
+        isFmCall?: boolean,
+        options?: { shouldNavigateToPlayer?: boolean },
+    ) => void;
     onBackToPlayer: () => void;
     /**
      * fb3：暂停 / 继续正在播放的那首（与播放条、空格同一个开关）。资料库里「正在播放的那张卡」上的播放键用它，

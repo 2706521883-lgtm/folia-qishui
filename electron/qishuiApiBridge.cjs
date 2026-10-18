@@ -120,6 +120,8 @@ const QISHUI_RESULT_FAILURES = {
   'album.collect': result => !!(result && (result.ok === false || result.success === false)),
   'report.play': result => !!(result && (result.ok === false || result.success === false)),
   'comment.create': result => !!(result && (result.ok === false || result.success === false)),
+  // 空列表且没有 error 是合法末页；只有「带 error 且一首歌都没有」才算失败。
+  'feed.recommend': result => !result || (!!result.error && !(Array.isArray(result.songs) && result.songs.length)),
 };
 
 const QISHUI_OPERATIONS = Object.freeze([
@@ -134,6 +136,7 @@ const QISHUI_OPERATIONS = Object.freeze([
   'lyric',
   'song.url',
   'feed',
+  'feed.recommend',
   'user.playlists',
   'playlist.tracks',
   'track.liked',
@@ -177,8 +180,14 @@ function qishuiFailureFromResult(operation, result) {
 function qishuiFailureEnvelope(error, operation) {
   const raw = (error && (error.qishuiCode || error.code)) || '';
   const message = String((error && error.message) || ('Qishui ' + operation + ' failed'));
+  // HTTP / PC 状态码 401、403 一律归到 login-required：即使错误码本身是 QISHUI_PC_API_401，
+  // 渲染层也能走「需要登录」而不是笼统的 unavailable。
+  const status = Number(error && (error.statusCode || error.status) || 0);
+  const statusAuth = status === 401 || status === 403;
   // 登录态缺失是渲染层最常分支的失败；协议的 *_COOKIE_REQUIRED / login 文案统一归到 login-required。
-  const code = qishuiErrorCode(raw) || (/COOKIE_REQUIRED|login|not logged/i.test(message) ? 'login-required' : 'qishui-error');
+  const code = statusAuth
+    ? 'login-required'
+    : (qishuiErrorCode(raw) || (/COOKIE_REQUIRED|login|not logged/i.test(message) ? 'login-required' : 'qishui-error'));
   return { ok: false, error: { code, message } };
 }
 
@@ -571,6 +580,20 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
 
     feed: params => qishuiApi().handleQishuiFeed(qishuiClampInt((params || {}).limit, 8, 4, 12), readQishuiCookie()),
 
+    // 推荐流分页：advance 默认 false，只有 Personal FM 显式传 true 才推进会话；
+    // 首页封面/推荐卡预览永远走 offset 切片，不会消耗 FM 的下一批。
+    'feed.recommend': params => {
+      const p = params || {};
+      // flow 大小写不敏感：避免 'FM' 被静默降级成 playlist 后丢掉 advance。
+      const flow = String(p.flow || '').toLowerCase();
+      return qishuiApi().handleQishuiRecommendFeed({
+        limit: qishuiClampInt(p.limit, 18, 1, 50),
+        ...(p.offset == null ? {} : { offset: qishuiClampInt(p.offset, 0, 0, 1000) }),
+        flow: /^[a-z0-9_-]{1,24}$/.test(flow) ? flow : 'playlist',
+        advance: p.advance === true,
+      }, readQishuiCookie());
+    },
+
     'user.playlists': () => qishuiApi().handleQishuiUserPlaylists(readQishuiCookie()),
 
     'playlist.tracks': params => {
@@ -578,8 +601,11 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
       const id = String(p.id || '') || 'qishui-feed';
       const limit = qishuiClampInt(p.limit, 0, 0, Number.MAX_SAFE_INTEGER);
       const offset = qishuiClampInt(p.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-      // 只有显式给了分页参数才传 opts，否则让协议层走虚拟歌单的默认整包返回。
-      return qishuiApi().handleQishuiPlaylistTracks(id, limit || offset ? { limit: limit || 50, offset } : {}, readQishuiCookie());
+      const hasPage = p.limit != null || p.offset != null;
+      // 虚拟推荐流永远显式传 offset/limit；真实歌单保持原来「只有给了分页参数才传」的行为。
+      const isFeed = id === 'qishui-feed' || id === 'feed';
+      const opts = hasPage || isFeed ? { limit: limit || 50, offset } : {};
+      return qishuiApi().handleQishuiPlaylistTracks(id, opts, readQishuiCookie());
     },
 
     'track.liked': params => {
@@ -673,6 +699,8 @@ module.exports = {
   _test: {
     qishuiErrorCode,
     qishuiClampInt,
+    // 让单测能锁定「空末页不算失败」这条 feed.recommend 契约。
+    QISHUI_RESULT_FAILURES,
     qishuiAudioAuthFromUrl,
     qishuiAudioCacheKey,
     qishuiAudioProxyHeadersFor,

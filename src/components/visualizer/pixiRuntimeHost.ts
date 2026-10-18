@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, type DependencyList, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type DependencyList, type RefObject } from 'react';
 
 // src/components/visualizer/pixiRuntimeHost.ts
 // Mount-once lifecycle for the imperative Pixi directors (tempera, sonnet). Those runtimes used
@@ -51,6 +51,8 @@ export const useVisualizerPixiHost = <TRuntime, TSong>({
     const appliedSongRef = useRef<TSong | null>(null);
     const signalRef = useRef<AbortSignal | null>(null);
     const drainingRef = useRef(false);
+    /** Bumped after a lost WebGL context comes back, so the runtime is rebuilt from scratch. */
+    const [recoveryGeneration, setRecoveryGeneration] = useState(0);
 
     // Callbacks behind refs: they are almost always inline arrow functions at the call site, and
     // listing them as dependencies would rebuild the WebGL context on every parent render.
@@ -95,6 +97,30 @@ export const useVisualizerPixiHost = <TRuntime, TSong>({
         }
     }, [label]);
 
+    // A desktop-capture video or a heavy wallpaper shader can make the driver drop the
+    // renderer's WebGL context. Pixi does not rebuild itself from that: the canvas goes blank
+    // while the song keeps playing, which the user sees as "lyrics disappeared". Show the
+    // mode's text fallback immediately, then rebuild the runtime when the context comes back.
+    useEffect(() => {
+        const host = hostRef.current;
+        if (!host || typeof window === 'undefined') return undefined;
+        const onLost = (event: Event) => {
+            if (!(event.target instanceof HTMLCanvasElement)) return;
+            event.preventDefault();
+            onFailedRef.current?.(true);
+        };
+        const onRestored = (event: Event) => {
+            if (!(event.target instanceof HTMLCanvasElement)) return;
+            setRecoveryGeneration(generation => generation + 1);
+        };
+        host.addEventListener('webglcontextlost', onLost, true);
+        host.addEventListener('webglcontextrestored', onRestored, true);
+        return () => {
+            host.removeEventListener('webglcontextlost', onLost, true);
+            host.removeEventListener('webglcontextrestored', onRestored, true);
+        };
+    }, [hostRef]);
+
     useEffect(() => {
         const host = hostRef.current;
         if (!host) return undefined;
@@ -133,7 +159,7 @@ export const useVisualizerPixiHost = <TRuntime, TSong>({
             host.replaceChildren();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [drainSong, hostRef, label, ...rebuildKey]);
+    }, [drainSong, hostRef, label, recoveryGeneration, ...rebuildKey]);
 
     useEffect(() => {
         void drainSong();

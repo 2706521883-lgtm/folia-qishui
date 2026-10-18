@@ -19,11 +19,13 @@ import { isPersonalFmCard } from '../../core/model/homeCards';
 import { resolveLocalHomeActions, type LocalHomeRow } from '../../core/model/localHomeModel';
 import { isNavidromeHomeSection, resolveNavidromeCollectionType } from '../../core/model/navidromeHomeModel';
 import type { LibraryHomeOnlineList } from '../../core/bindings/useLibraryHomeOnline';
+import { usePlaybackStore } from '../../../stores/usePlaybackStore';
+import { getPlaybackSourceRef } from '../../../utils/appPlaybackGuards';
 import { useLibraryHomeLocal, useLocalDirectoryTrees, useLocalHomeBatchConfig } from '../../core/bindings/useLibraryHomeLocal';
 import { useLibraryHomeNavidrome } from '../../core/bindings/useLibraryHomeNavidrome';
 import { useLibraryHomeActions } from '../../core/bindings/useLibraryHomeActions';
 import { useLibraryHomeListRegistration } from '../../core/bindings/useLibraryHomeSurfaceRegistration';
-import type { BravaisHomeTool } from './bravaisHomeModels';
+import type { BravaisHomeAction, BravaisHomeTool } from './bravaisHomeModels';
 import type { BravaisSeamMenuItem } from './bravaisSeamModels';
 import type { BravaisHomeChrome } from './useBravaisHomeChrome';
 import BravaisHomeDirectory from './BravaisHomeDirectory';
@@ -88,8 +90,37 @@ export const BravaisHomeOnline: React.FC<BravaisHomeSourceCommonProps & {
         : online.accountView === 'resolving' ? t('home.loadingLibrary') : list.emptyMessage;
     // B10：账户位里的平台切换（account-select / account-logout）。
     const account = useBravaisHomeAccount(accountController, online);
-    const latest = useRef({ homeActions, providerId: online.providerId, onOpenGridView });
-    latest.current = { homeActions, providerId: online.providerId, onOpenGridView };
+    // 推荐流已经在播（FM 模式 + 当前队列里有当前平台的歌）时，再点按钮是把下一批接到队尾，
+    // 而不是重新开始一条新队列；其他情况仍然从第一首开始。
+    // 看整个队列而不只看 currentSong：某首歌播放失败被跨音源兜底替换后，currentSong 的
+    // sourceRef 可能已经变成兜底平台（例如 QQ 的歌用了酷狗的音源），但队列仍然是这个平台的推荐流。
+    const isFmMode = usePlaybackStore(state => state.isFmMode);
+    const playQueue = usePlaybackStore(state => state.playQueue);
+    const canAppend = isFmMode && playQueue.some(song => {
+        const source = getPlaybackSourceRef(song);
+        return source.kind === 'online' && source.providerId === online.providerId;
+    });
+    const latest = useRef({ homeActions, providerId: online.providerId, onOpenGridView, canAppend });
+    latest.current = { homeActions, providerId: online.providerId, onOpenGridView, canAppend };
+    // 推荐流：任何实现了连续个性化推荐（getPersonalFm）且已登录的平台，都在缝的中段给同一个入口。
+    // 第一次点直接开始该平台的推荐播放（与私人 FM 同一条路径：getPersonalFm -> playPersonalFm）；
+    // 已经在播时再点，取下一批接到队尾，可以连点几次先把队列垫长。队列快结束时
+    // usePlaybackQueueController 仍会自动续批；各平台自己的叫法（私人FM / 猜你喜欢…）
+    // 不进按钮，只保留统一的「推荐流」。
+    const feedAction = useMemo<BravaisHomeAction | null>(() => (
+        online.hasPersonalFm && online.accountView === 'authenticated'
+            ? {
+                id: 'recommend-feed',
+                label: t('libraryBravaisHome.recommendFeed', '推荐流'),
+                title: t('libraryBravaisHome.recommendFeedTitle', { provider: online.providerLabel, defaultValue: `${online.providerLabel} · 推荐流` }),
+                run: () => {
+                    const { homeActions: actions, canAppend: append } = latest.current;
+                    // 首次也开始在后台播放，不把用户从书库拉去播放页；再点则继续追加。
+                    void (append ? actions.loadMorePersonalFm() : actions.playPersonalFm({ shouldNavigateToPlayer: false }));
+                },
+            }
+            : null
+    ), [online.accountView, online.hasPersonalFm, online.providerLabel, t]);
     const onOpen = useMemo(() => (card: Parameters<LibraryHomeActionsController['openOnlineCard']>[0]) => {
         const { homeActions: actions, providerId, onOpenGridView: open } = latest.current;
         void actions.openOnlineCard(card, providerId, open);
@@ -105,6 +136,7 @@ export const BravaisHomeOnline: React.FC<BravaisHomeSourceCommonProps & {
             emptyMessage={emptyMessage}
             meta={online.providerLabel}
             account={account}
+            action={feedAction}
             panelTitle={list.title}
             onOpen={onOpen}
             isDirect={isPersonalFmCard}

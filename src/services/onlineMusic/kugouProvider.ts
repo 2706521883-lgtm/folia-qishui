@@ -967,6 +967,7 @@ export const kugouProvider: OnlineMusicProvider = {
     capabilities: {
         search: true, playback: true, lyrics: true, auth: true, userLibrary: true,
         playlists: true, albums: true, artists: true, recommendations: true, mutations: true,
+        personalFm: true,
         wordByWordLyrics: true, userCloud: true, historyRecommendations: true,
         playlistSubscription: true, playlistTrackMutations: true, likes: true, userAlbums: true,
     },

@@ -1,4 +1,6 @@
+const path = require('node:path');
 const { keepServerErrorsLogged, waitUntilListening } = require('./backendLifecycle.cjs');
+const { registerQqPersonalFmRoute } = require('./qqRecommendRoute.cjs');
 
 // electron/qqApiStartup.cjs
 //
@@ -38,6 +40,33 @@ function closeServer(server) {
   });
 }
 
+// qq-music-api 3.1.4 does not ship a personal-FM route. Register ours on the package's own Koa
+// router right after the package is required (the server is listening but no request has been
+// dispatched yet, so adding a route here is safe). Internal paths are resolved from the package
+// entry rather than imported through its `exports`, which deliberately exposes only the root.
+const registerQqRoutesFromPackage = (moduleId) => {
+  const packageRoot = path.dirname(require.resolve(moduleId));
+  const routerModule = require(path.join(packageRoot, 'routes', 'router.js'));
+  const servicesModule = require(path.join(packageRoot, 'services', 'index.js'));
+  const router = routerModule && routerModule.default ? routerModule.default : routerModule;
+  const services = servicesModule && servicesModule.default ? servicesModule.default : servicesModule;
+  if (!registerQqPersonalFmRoute({ router, services })) {
+    throw new Error(`QQ API package ${moduleId} did not expose a router`);
+  }
+};
+
+const defaultLoadModule = (moduleId) => {
+  const loaded = require(moduleId);
+  try {
+    registerQqRoutesFromPackage(moduleId);
+  } catch (error) {
+    // A future package layout change must not take the whole QQ backend down; the account and
+    // catalog routes still work, only the recommendation stream reports an empty batch.
+    console.warn('[QQ API] recommendation route was not registered:', getErrorMessage(error));
+  }
+  return loaded;
+};
+
 // The package listens on import and reads PORT at config load, so the environment is prepared first
 // and restored afterwards to keep the main process environment untouched.
 //
@@ -51,7 +80,7 @@ async function startQqApi(options = {}) {
     stateFilePath,
     authSessionRepository,
     moduleId = QQ_API_MODULE,
-    loadModule = (target) => require(target),
+    loadModule = defaultLoadModule,
     env = process.env,
   } = options;
 

@@ -120,8 +120,27 @@ export type BravaisHomeAccount = {
     onLogout: (providerId: string) => void;
 };
 
+/**
+ * 首页窄缝中段的快捷入口（汽水推荐流、回到播放页）：竖排按钮，点了直接执行，
+ * 不打开集合、不换层。推荐流只在对应平台已登录时由来源组件给出；播放页入口只在有当前歌曲时由首页 chrome 给出。
+ */
+export type BravaisHomeAction = {
+    id: string;
+    /** 缝里显示的短名（「刷歌」「播放页」）。 */
+    label: string;
+    /** 读屏名 / title（「汽水推荐流 · 刷歌」「回到播放页」）。 */
+    title: string;
+    /** 图标种类；缺省是推荐流的星芒。 */
+    icon?: 'sparkles' | 'play';
+    /** 强调色底（推荐流）或中性底（回到播放页）；缺省强调色。 */
+    tone?: 'accent' | 'neutral';
+    run: () => void;
+};
+
 /** 首页层在缝里的那一部分（BravaisSeamModel.home）。 */
 export type BravaisHomeSeam = {
+    /** 中段快捷入口（汽水推荐流、回到播放页）；没有时不渲染。 */
+    actions?: readonly BravaisHomeAction[] | null;
     /** 二级切换（在线页签没有）。 */
     sections?: readonly BravaisHomeSection[];
     onSelectSection?: (key: string) => void;

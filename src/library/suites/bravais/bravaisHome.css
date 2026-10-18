@@ -580,6 +580,62 @@
    - 长名字：最多两行，再长截断（-webkit-line-clamp）。 */
 .bravais-seam-home .bravais-seam-home-body { margin-block: auto; }
 
+/* 中段快捷入口（汽水推荐流 / 回到播放页）：竖排一列。推荐流强调色底，回到播放页中性底；
+   图标在上、短名在下；书脊上缩成图标 + 更小的字。它们只负责开始刷歌 / 回播放页，不打开集合、不换层。 */
+.bravais-seam-home .bravais-seam-home-actions {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.bravais-seam-home .bravais-seam-home-action {
+    display: flex;
+    width: 100%;
+    max-width: 96px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 6px;
+    border: 0;
+    border-radius: 12px;
+    color: var(--text-primary, #f7f4ee);
+    background: color-mix(in srgb, var(--text-accent, currentColor) 16%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-accent, currentColor) 36%, transparent);
+    cursor: pointer;
+    transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.bravais-seam-home .bravais-seam-home-action svg { width: 16px; height: 16px; color: var(--text-accent, currentColor); }
+.bravais-seam-home .bravais-seam-home-action .is-label { font-size: 11px; font-weight: 600; line-height: 1.2; letter-spacing: .02em; }
+.bravais-seam-home .bravais-seam-home-action:hover {
+    background: color-mix(in srgb, var(--text-accent, currentColor) 26%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-accent, currentColor) 55%, transparent);
+}
+.bravais-seam-home .bravais-seam-home-action:focus-visible { outline: 2px solid var(--text-accent, currentColor); outline-offset: 2px; }
+
+/* 回到播放页：不做成第二颗强调色按钮，静止时中性、悬停才染上强调色。 */
+.bravais-seam-home .bravais-seam-home-action.is-neutral {
+    color: var(--text-secondary, #c9c5ff);
+    background: color-mix(in srgb, var(--text-primary, #f7f4ee) 6%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary, #f7f4ee) 14%, transparent);
+}
+.bravais-seam-home .bravais-seam-home-action.is-neutral svg { color: var(--text-secondary, currentColor); }
+.bravais-seam-home .bravais-seam-home-action.is-neutral:hover {
+    color: var(--text-primary, #f7f4ee);
+    background: color-mix(in srgb, var(--text-accent, currentColor) 16%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-accent, currentColor) 36%, transparent);
+}
+.bravais-seam-home .bravais-seam-home-action.is-neutral:hover svg { color: var(--text-accent, currentColor); }
+
+.bravais-seam-home.is-compact .bravais-seam-home-actions { gap: 8px; }
+.bravais-seam-home.is-compact .bravais-seam-home-action { max-width: 48px; padding: 8px 2px; gap: 5px; }
+.bravais-seam-home.is-compact .bravais-seam-home-action svg { width: 15px; height: 15px; }
+.bravais-seam-home.is-compact .bravais-seam-home-action .is-label { font-size: 10px; }
+:root[data-reduce-motion~='lattice'] .bravais-seam-home .bravais-seam-home-action { transition: none; }
+
 .bravais-seam-home-jumps { display: flex; width: 100%; flex: none; flex-direction: column; align-items: center; }
 
 /* 上内边距 = 段间距：中段内层到页签、到入口的留白相等（中段的上内边距也是它），书脊上是 12px。 */

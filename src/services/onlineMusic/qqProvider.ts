@@ -106,9 +106,58 @@ const loadRawPlaylistTracks = async (
 // 就记下来，不再为每一页重试。刷新页面自然会重新探测。
 let ownedPlaylistRouteMissing = false;
 
+// 推荐流的游标。后端 /getPersonalFm 先走猜你喜欢（from 偏移），拿不到再退回雷达（Page 页码）；
+// 返回的 nextFrom 由后端算好，这里只负责把它带到下一次调用。hasMore=false 时先标记耗尽，
+// 下一次调用再从 0 开始要一批新的（队列侧会按歌曲 key 去重）。
+const QQ_PERSONAL_FM_BATCH = 20;
+let qqPersonalFmOffset = 0;
+let qqPersonalFmPage = 1;
+let qqPersonalFmExhausted = false;
+
+const getPersonalFm = async (): Promise<UnifiedSong[]> => {
+    if (qqPersonalFmExhausted) {
+        qqPersonalFmOffset = 0;
+        qqPersonalFmPage = 1;
+        qqPersonalFmExhausted = false;
+    }
+    const response = await requestQq<any>('personal_fm', {
+        num: QQ_PERSONAL_FM_BATCH,
+        from: qqPersonalFmOffset,
+        page: qqPersonalFmPage,
+    });
+    const payload = response?.response ?? response;
+    const tracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
+    const normalized: UnifiedSong[] = (tracks as unknown[]).map(raw => normalizeQqSong(raw));
+    const songs = normalized.filter(song => song.sourceRef?.kind === 'online'
+        && song.sourceRef.providerId === 'qq'
+        && Boolean(song.sourceRef.mediaId));
+    if (songs.length === 0) {
+        qqPersonalFmOffset = 0;
+        qqPersonalFmPage = 1;
+        qqPersonalFmExhausted = false;
+        return [];
+    }
+    // 猜你喜欢按 from 偏移；雷达推荐按 Page 翻页（上游一页约 10 首）。后端把 source 与两个游标
+    // 都回给这里，前端只负责把下一次请求的游标带上，不猜上游的分页方式。
+    if (payload?.source === 'radar') {
+        const nextPage = Number(payload?.nextPage);
+        qqPersonalFmPage = Number.isFinite(nextPage) && nextPage > 0 ? nextPage : qqPersonalFmPage + 1;
+    } else {
+        const nextFrom = Number(payload?.nextFrom);
+        qqPersonalFmOffset = Number.isFinite(nextFrom) && nextFrom >= 0
+            ? nextFrom
+            : qqPersonalFmOffset + tracks.length;
+    }
+    if (payload?.hasMore === false) qqPersonalFmExhausted = true;
+    return songs;
+};
+
 export const resetQqProviderRuntimeCache = (): void => {
     ownedPlaylistRouteMissing = false;
     lastLoginStatusCheck = null;
+    qqPersonalFmOffset = 0;
+    qqPersonalFmPage = 1;
+    qqPersonalFmExhausted = false;
 };
 
 /**
@@ -753,7 +802,9 @@ export const qqProvider: OnlineMusicProvider = {
         playlists: true,
         albums: true,
         artists: true,
+        // QQ 还没有可列的推荐歌单 / 电台页签；首页缝里的「推荐流」走 personalFm（见下面 recommendations）。
         recommendations: false,
+        personalFm: true,
         mutations: false,
         wordByWordLyrics: true,
         likes: true,
@@ -809,6 +860,7 @@ export const qqProvider: OnlineMusicProvider = {
         },
     },
     library: { getUserPlaylists, getUserAlbums, getLikedSongIds },
+    recommendations: { getPersonalFm },
     catalog: {
         // 只要拿得到 songmid 就补得回 mid，所以能否导航等同于这首歌是不是 QQ 的歌。
         canResolveSongCatalogRefs: song => Boolean(getQqSongMid(song)),

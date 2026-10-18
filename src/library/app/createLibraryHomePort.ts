@@ -17,7 +17,7 @@ import {
 // 的做法）。core 的 libraryHomeActions 只说「导入文件夹、刷新曲库、播放私人 FM、打开这张卡」；调哪个服务、
 // 提示怎么翻译与显示（alert 仍是 window.alert，状态消息走 onStatusMessage），都在这里。surface 按调用现读。
 
-type HomePortSurface = Pick<HomeSurfaceProps, 'localSongs' | 'onRefreshLocalSongs' | 'onStatusMessage' | 'onPlaySong'>;
+type HomePortSurface = Pick<HomeSurfaceProps, 'localSongs' | 'onRefreshLocalSongs' | 'onStatusMessage' | 'onPlaySong' | 'onAddAllToQueue'>;
 
 export const createLibraryHomePort = (getSurface: () => HomePortSurface): LibraryHomePort => ({
     localAvailability: () => getLocalLibraryAvailability(),
@@ -40,7 +40,11 @@ export const createLibraryHomePort = (getSurface: () => HomePortSurface): Librar
         return () => window.removeEventListener(LOCAL_MUSIC_SCAN_PROGRESS_EVENT, handleScanProgress);
     },
     getPersonalFm: () => omni.getPersonalFm(),
-    playPersonalFm: (song, queue) => getSurface().onPlaySong(song, queue, true),
+    playPersonalFm: (song, queue, options) => getSurface().onPlaySong(song, queue, true, options),
+    enqueuePersonalFm: songs => {
+        const added = getSurface().onAddAllToQueue?.(songs);
+        return typeof added === 'number' ? added : 0;
+    },
     describeOnlineCollection: (collection, providerId) => createOnlineGridViewCollection(collection, providerId),
     describeLocalGroup: group => createLocalGridViewCollection(group),
     describeNavidromeCard: (card, type) => createNavidromeGridViewCollection(card, type),

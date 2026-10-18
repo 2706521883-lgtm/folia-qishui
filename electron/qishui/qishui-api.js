@@ -9,6 +9,22 @@ const path = require('path');
 const QISHUI_API_BASE = (process.env.QISHUI_API_BASE || 'https://open.douyin.com').replace(/\/+$/, '');
 const QISHUI_RELATED_MEDIA_PATH = '/api/luna/v1/platform/feed/related-media/';
 const QISHUI_FEED_SONG_TAB_PATH = '/api/luna/v1/platform/feed/song-tab/';
+// PC 端推荐流：与 .tmp-qishui-api 里由 HAR 得出的参考实现保持一致
+// （POST /luna/pc/feed/song-tab，body 用 played_media 续页）。
+const QISHUI_PC_FEED_SONG_TAB_PATH = '/luna/pc/feed/song-tab';
+// 签名层的 UA/HAR 参考都是 LunaPC 3.5.2；现有其它接口仍用 3.3.0，feed 单独对齐。
+const QISHUI_FEED_PC_PARAMS = { version_name: '3.5.2', version_code: '30050200' };
+// 推荐流每个上游批次取多少；桥接层对 feed.recommend 的上限是 50。
+const QISHUI_FEED_PAGE_SIZE = 20;
+// 虚拟推荐歌单在 Folia 里的可见上限：Folia 首屏 150、后台每页 1000，
+// 必须给一个有限 total，否则后台 sync 会一路翻到 MAX_PAGES=1000。
+const QISHUI_FEED_TOTAL_CAP = 200;
+const QISHUI_FEED_SESSION_TTL_MS = 30 * 60 * 1000;
+const QISHUI_FEED_MAX_SESSIONS = 12;
+// 单次 RPC 最多推进几个上游页；避免 Folia 的 150/1000 请求被放大成请求风暴。
+const QISHUI_FEED_MAX_PAGES_PER_CALL = 2;
+// 跨页去重的 seen 环：超过后丢最旧的，Personal FM 才能长期滚动而不永久卡死。
+const QISHUI_FEED_SEEN_LIMIT = 500;
 const QISHUI_SCOPE = 'luna.openapi.platform.play_core';
 // 移植自 Mineradio X（GPL-3.0-only）。凭据文件不再落在模块目录，改由 Folia 主进程
 // 通过 QISHUI_TOKEN_FILE 注入到 app.getPath('userData')；未注入时回退到模块目录以保持可独立调试。
@@ -180,6 +196,9 @@ const qishuiSearchCache = createTtlCache(80, 2 * 60 * 1000);
 const qishuiLyricCache = createTtlCache(240, 30 * 60 * 1000);
 const qishuiPublicDetailCache = createTtlCache(240, 30 * 60 * 1000);
 const qishuiFeedCache = createTtlCache(16, 90 * 1000);
+// 推荐流自己的会话缓冲：key = 账号标识 | flow | transport。
+// 不复用 qishuiFeedCache —— 它按 limit 做 key，正是「永远第一页」的来源。
+const qishuiRecommendFeedSessions = new Map();
 const qishuiWebLibraryCache = createTtlCache(24, 90 * 1000);
 const qishuiWebPlaylistCache = createTtlCache(48, 90 * 1000);
 const qishuiWebPlaylistCursorCache = new Map();
@@ -431,6 +450,7 @@ function clearQishuiRuntimeCaches() {
   qishuiWebLibraryCache.clear && qishuiWebLibraryCache.clear();
   qishuiWebPlaylistCache.clear && qishuiWebPlaylistCache.clear();
   qishuiWebPlaylistCursorCache.clear();
+  qishuiRecommendFeedSessions.clear();
   qishuiMembershipCache.clear && qishuiMembershipCache.clear();
   qishuiMembershipPositiveHistory.clear();
   qishuiTrackMetadataCache.clear && qishuiTrackMetadataCache.clear();
@@ -1620,11 +1640,24 @@ function mapQishuiMedia(raw, index, query, opts) {
   const base = pickObject(track.base_info, media.base_info, raw.base_info, track);
   const display = pickObject(track.display_info, media.display_info, raw.display_info);
   const related = pickObject(track.related_info, media.related_info, raw.related_info);
-  const id = normalizeText(
-    base.id || track.id || media.id || raw.id || raw.media_id || raw.item_id || raw.song_id || raw.vid || ('qishui-' + index + '-' + query)
+  // feed 路径不允许合成 id：同一首歌在不同页的 index 不同，合成 id 会让跨页去重失效，
+  // 播放时还会拿一个不存在的 media id 去调 song.url。非 feed 路径保持原行为。
+  const realId = normalizeText(
+    base.id || base.track_id || base.trackId ||
+    track.id || track.track_id || track.trackId ||
+    media.id || media.track_id || media.trackId ||
+    raw.id || raw.track_id || raw.trackId || raw.media_id || raw.item_id || raw.song_id || raw.vid
   );
+  const id = realId || ('qishui-' + index + '-' + query);
   const name = normalizeText(base.name || base.title || track.name || track.title || media.name || raw.name || raw.title);
   if (!id || !name) return null;
+  if (opts.requireRealId && !realId) return null;
+  if (opts.requireTrack) {
+    const trackWrapper = pickObject(entity.track_wrapper, media.track_wrapper, entity.track_entity, raw.track_entity, media.track, raw.track);
+    const rawType = normalizeText(raw.type || entity.type || media.type || '').toLowerCase();
+    // discover/mix、歌单卡片、视频容器等不是可直接播放的 track；只有确实带 track entity 的才收。
+    if (!trackWrapper.id && /^(playlist|album|mix|radio|video|chart|artist|user|comment)$/.test(rawType)) return null;
+  }
   const artists = qishuiArtists(related, base, display, track, media);
   const artist = artists.map(a => a.name).filter(Boolean).join(' / ') || normalizeText(base.author || raw.author || '');
   const albumLink = pickObject(related.album_link, related.album, base.album, display.album, track.album, media.album);
@@ -1739,6 +1772,7 @@ async function qishuiWebRequestJson(apiPath, params, cookieText, opts) {
     try {
       const officialBridge = opts.signed === false ? null : getQishuiOfficialBridge();
       let json;
+      let usedSigned = false;
       if (opts.pcApp && officialBridge) {
         let signedResponseBody = '';
         let signedResponseStatus = null;
@@ -1752,6 +1786,7 @@ async function qishuiWebRequestJson(apiPath, params, cookieText, opts) {
           signedResponseStatus = response && response.status;
           try {
             json = JSON.parse(String(response && response.body || ''));
+            usedSigned = true;
           } catch (parseError) {
             const error = new Error('Invalid JSON from Qishui official signed API');
             error.code = 'QISHUI_OFFICIAL_INVALID_JSON';
@@ -1781,6 +1816,7 @@ async function qishuiWebRequestJson(apiPath, params, cookieText, opts) {
       }
       const err = qishuiPcStatusError(json, 'QISHUI_WEB_REQUEST_FAILED');
       if (err) throw err;
+      if (typeof opts.onTransport === 'function') opts.onTransport(usedSigned ? 'signed' : 'unsigned');
       return json;
     } catch (err) {
       lastErr = err;
@@ -1937,6 +1973,7 @@ async function qishuiPcPostJson(apiPath, payload, cookieText, opts) {
     body,
     referer: 'https://www.qishui.com/',
     timeoutMs: opts.timeoutMs || 9000,
+    onTransport: opts.onTransport,
   });
   const statusError = qishuiPcStatusError(json, opts.errorCode || 'QISHUI_PC_WRITE_FAILED');
   if (statusError) throw statusError;
@@ -2788,12 +2825,614 @@ async function handleQishuiArtistDetail(opts, cookieText) {
   return output;
 }
 
+// ===== 推荐流分页会话 =====
+// 契约：feed.recommend({ limit, offset?, flow?: 'fm'|'playlist'|'peek', advance? })
+// 返回 { songs, total?, nextOffset, hasMore, source, rawCount }。
+// offset 永远是「本 flow 已服务的唯一歌曲数」；上游不透明游标只存在会话内部，
+// 不写进 ProviderPage.nextOffset（Folia 会把它当可见列表下标用）。
+
+function qishuiRecommendFlow(value) {
+  const flow = normalizeText(value).toLowerCase();
+  return /^(fm|playlist|peek)$/.test(flow) ? flow : 'playlist';
+}
+
+function qishuiRecommendAccountKey(cookieText) {
+  const cookie = normalizeQishuiCookieInput(cookieText);
+  const userId = qishuiCookieUserId(cookie);
+  if (userId) return userId;
+  const fingerprint = qishuiCookieFingerprint(cookie);
+  // sha1('') 是所有空 cookie 的共同指纹，不能当成账号。
+  if (fingerprint && fingerprint !== 'da39a3ee5e6b4b0d') return 'cookie:' + fingerprint;
+  const token = qishuiAccessToken();
+  if (token) return 'token:' + crypto.createHash('sha1').update(token).digest('hex').slice(0, 12);
+  return 'anon';
+}
+
+function qishuiRecommendSessionKey(cookieText, flow, transport) {
+  return qishuiRecommendAccountKey(cookieText) + '|' + flow + '|' + transport;
+}
+
+function getQishuiRecommendSession(key, flow, transport) {
+  const now = Date.now();
+  let session = qishuiRecommendFeedSessions.get(key);
+  if (session && now - session.updatedAt > QISHUI_FEED_SESSION_TTL_MS) {
+    qishuiRecommendFeedSessions.delete(key);
+    session = null;
+  }
+  if (!session) {
+    session = {
+      key,
+      flow,
+      transport,
+      songs: [],
+      seen: new Set(),
+      playedMedia: [],
+      cursor: '',
+      cursorKey: '',
+      hasMore: true,
+      // served 是缓冲下标（裁剪后会回退）；totalServed 是累计已服务数，对外 nextOffset 只增不减。
+      served: 0,
+      totalServed: 0,
+      pages: 0,
+      dryPages: 0,
+      resetAttempts: 0,
+      rawCount: 0,
+      source: '',
+      candidateExhausted: false,
+      cooldownUntil: 0,
+      updatedAt: now,
+      inFlight: null,
+      inFlightToken: 0,
+      // advance 的「读 served → 抓页 → 切片 → 推进 served」必须是一个事务，
+      // 否则两个并发 getPersonalFm 会拿到同一批、并跳过下一批。
+      advanceLock: null,
+    };
+    qishuiRecommendFeedSessions.set(key, session);
+    while (qishuiRecommendFeedSessions.size > QISHUI_FEED_MAX_SESSIONS) {
+      let oldestKey = '';
+      let oldestAt = Infinity;
+      for (const [candidateKey, candidate] of qishuiRecommendFeedSessions) {
+        if (candidate.updatedAt < oldestAt) {
+          oldestAt = candidate.updatedAt;
+          oldestKey = candidateKey;
+        }
+      }
+      if (!oldestKey) break;
+      qishuiRecommendFeedSessions.delete(oldestKey);
+    }
+  }
+  session.updatedAt = now;
+  return session;
+}
+
+function qishuiFeedPlaybackKey(song) {
+  return normalizeText(song && (song.providerSongId || song.id));
+}
+
+function qishuiAppendFeedSongs(session, songs) {
+  let added = 0;
+  (songs || []).forEach(song => {
+    const key = qishuiFeedPlaybackKey(song);
+    if (!key) return;
+    if (session.seen.has(key)) return;
+    session.seen.add(key);
+    // 有界 seen 环：超过上限丢最旧的，Personal FM 才能长期滚动而不永久卡死。
+    while (session.seen.size > QISHUI_FEED_SEEN_LIMIT) {
+      const oldest = session.seen.values().next().value;
+      if (oldest === undefined) break;
+      session.seen.delete(oldest);
+    }
+    session.songs.push(song);
+    added += 1;
+  });
+  // played_media 只能由本轮真正新增的歌曲生成。整页都是旧歌时若仍用旧缓冲回填，
+  // FM 重置后的第一次请求会立刻又带上旧歌，形成「每次重置都空转」的活锁。
+  if (added > 0) {
+    session.playedMedia = session.songs.slice(-30).map(song => ({
+      id: String(song.providerSongId || song.id),
+      type: 'track',
+    }));
+  }
+  return added;
+}
+
+function extractQishuiFeedPageMeta(payload) {
+  const root = payload && typeof payload === 'object' ? payload : {};
+  const data = pickObject(root.data, root.result, root);
+  const bags = [
+    data,
+    root,
+    pickObject(data.page_info, data.pagination, root.page_info, root.pagination),
+  ];
+  // 同时记住游标来自哪个字段：不同上游版本叫 next_cursor / load_mark / cursor，
+  // 回传时按实际见过的字段名发，避免把未验证的字段名硬编码进请求体。
+  let nextCursor = '';
+  let nextCursorKey = '';
+  for (const bag of bags) {
+    if (!bag || typeof bag !== 'object') continue;
+    for (const key of ['next_cursor', 'nextCursor', 'load_mark', 'loadMark', 'max_cursor', 'maxCursor', 'cursor']) {
+      const value = bag[key];
+      if (typeof value === 'string' && value.trim()) {
+        nextCursor = value.trim();
+        nextCursorKey = key;
+        break;
+      }
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        nextCursor = String(value);
+        nextCursorKey = key;
+        break;
+      }
+    }
+    if (nextCursor) break;
+  }
+  let hasMore;
+  for (const bag of bags) {
+    if (!bag || typeof bag !== 'object') continue;
+    for (const key of ['has_more', 'hasMore']) {
+      if (typeof bag[key] === 'boolean') {
+        hasMore = bag[key];
+        break;
+      }
+    }
+    if (hasMore !== undefined) break;
+  }
+  return { nextCursor, nextCursorKey, hasMore };
+}
+
+function qishuiFeedStatusError(payload, fallback) {
+  const top = qishuiPcStatusError(payload, fallback);
+  if (top) return top;
+  const data = payload && typeof payload === 'object' ? payload.data : null;
+  if (!data || typeof data !== 'object') return null;
+  const nested = qishuiPcStatusError(data, fallback);
+  if (nested) return nested;
+  const info = data.status_info && typeof data.status_info === 'object' ? data.status_info : null;
+  const infoCode = Number(info && (info.status_code == null ? info.error_code : info.status_code));
+  if (Number.isFinite(infoCode) && infoCode !== 0) {
+    const err = new Error(normalizeText(info.status_msg || info.message || fallback || 'QISHUI_FEED_REQUEST_FAILED'));
+    err.code = 'QISHUI_PC_API_' + infoCode;
+    err.statusCode = infoCode;
+    return err;
+  }
+  return null;
+}
+
+function qishuiFeedShouldFallback(error) {
+  if (!error) return true;
+  const code = String(error.code || '').toUpperCase();
+  const status = Number(error.statusCode || 0);
+  // 登录/权限/风控错误回退到其它端点只会加重风控。
+  if (status === 401 || status === 403 || status === 429) return false;
+  if (/401|403|429|COOKIE_REQUIRED|TOKEN_REQUIRED|LOGIN_REQUIRED|FORBIDDEN|RATE_LIMIT|RISK/.test(code)) return false;
+  return true;
+}
+
+async function fetchQishuiWebFeedGetJson(session, cookieText, limit) {
+  const candidates = [
+    { path: '/luna/feed/song-tab', params: { cursor: session.cursor || 0, cnt: limit, count: limit } },
+    { path: '/luna/pc/feed/song-tab', params: { cursor: session.cursor || 0, cnt: limit, count: limit } },
+  ];
+  let lastError = null;
+  for (const item of candidates) {
+    try {
+      const json = await qishuiWebRequestJson(item.path, item.params, cookieText, { timeoutMs: 9000 });
+      const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_REQUEST_FAILED');
+      if (statusError) throw statusError;
+      if (extractQishuiMediaList(json).length) return json;
+      const empty = new Error('QISHUI_FEED_EMPTY');
+      empty.code = 'QISHUI_FEED_EMPTY';
+      lastError = lastError || empty;
+    } catch (error) {
+      lastError = error;
+      if (!qishuiFeedShouldFallback(error)) break;
+    }
+  }
+  // 200 + 空列表是合法末页，不是传输失败：交给上层返回空页并尝试候选接口。
+  if (!lastError || lastError.code === 'QISHUI_FEED_EMPTY') return null;
+  throw lastError;
+}
+
+// 主接口返回空结果时才试的候选端点（任务里给出的 listen/video、playlist/feed/media、discover/mix）。
+// 只有能映射出真实 track 的候选才算命中；discover/mix 通常只给歌单卡片，会被 requireTrack 过滤掉。
+async function fetchQishuiWebFeedCandidate(session, cookieText, limit) {
+  if (session.candidateExhausted) return null;
+  const attempts = [
+    {
+      path: '/luna/pc/feed/listen/video',
+      payload: {
+        is_first_request: session.pages === 0,
+        played_media: session.playedMedia.slice(-30),
+        is_did_first_request: false,
+        feed_counts: { mix_session_count: 1 },
+        count: limit,
+      },
+    },
+    {
+      path: '/luna/pc/playlist/feed/media',
+      payload: { cursor: session.cursor || 0, offset: session.songs.length, limit, count: limit },
+    },
+    {
+      path: '/luna/pc/discover/mix',
+      payload: { block_type: 'discover_playlist_mix', sub_channel_id: -2, exposure_radio_list: [] },
+    },
+  ];
+  for (const attempt of attempts) {
+    try {
+      const json = await qishuiPcPostJson(attempt.path, attempt.payload, cookieText, {
+        params: QISHUI_FEED_PC_PARAMS,
+        timeoutMs: 9000,
+      });
+      const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_REQUEST_FAILED');
+      if (statusError) {
+        // 登录/权限/风控错误不能继续打下一个候选，否则只会加重风控。
+        if (!qishuiFeedShouldFallback(statusError)) throw statusError;
+        continue;
+      }
+      const rawItems = extractQishuiMediaList(json);
+      const songs = mapQishuiMediaList(rawItems, 'recommend-candidate', {
+        directPlayable: true,
+        requireRealId: true,
+        requireTrack: true,
+      });
+      if (!songs.length) continue;
+      return Object.assign({ songs, rawCount: rawItems.length, source: 'candidate:' + attempt.path }, extractQishuiFeedPageMeta(json));
+    } catch (error) {
+      if (!qishuiFeedShouldFallback(error)) throw error;
+    }
+  }
+  session.candidateExhausted = true;
+  return null;
+}
+
+function buildQishuiFeedWebPayload(session) {
+  const payload = {
+    // 参考实现（.tmp-qishui-api/.../discovery.js）用 played_media 续页：
+    // 首呼 is_first_request=true，后续 false；is_did_first_request 保持 false。
+    is_first_request: session.pages === 0,
+    played_media: session.playedMedia.slice(-30),
+    is_did_first_request: false,
+    feed_counts: { mix_session_count: 1 },
+  };
+  if (session.cursor) payload[session.cursorKey || 'cursor'] = session.cursor;
+  return payload;
+}
+
+async function fetchQishuiWebRecommendPage(session, cookieText, limit) {
+  const count = Math.max(1, Math.min(50, Number(limit) || QISHUI_FEED_PAGE_SIZE));
+  const payload = buildQishuiFeedWebPayload(session);
+
+  let json;
+  let source = 'unsigned-post';
+  try {
+    json = await qishuiPcPostJson(QISHUI_PC_FEED_SONG_TAB_PATH, payload, cookieText, {
+      params: QISHUI_FEED_PC_PARAMS,
+      timeoutMs: 12000,
+      onTransport: transport => {
+        // 实际签名通道由 qishuiWebRequestJson 在成功返回时告知；
+        // 官方桥缺失或签名失败后静默降级时这里会报 unsigned。
+        source = transport === 'signed' ? 'signed-post' : 'unsigned-post';
+      },
+    });
+  } catch (error) {
+    if (!qishuiFeedShouldFallback(error)) throw error;
+    // 已证实的 GET 作为显式回退；它本身是单页源，除非响应真的给出新游标。
+    json = await fetchQishuiWebFeedGetJson(session, cookieText, count);
+    source = 'unsigned-get';
+  }
+  const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_REQUEST_FAILED');
+  if (statusError) throw statusError;
+  const rawItems = extractQishuiMediaList(json);
+  let songs = mapQishuiMediaList(rawItems, 'recommend-web', {
+    directPlayable: true,
+    requireRealId: true,
+    requireTrack: true,
+  });
+  let rawCount = rawItems.length;
+  let meta = extractQishuiFeedPageMeta(json);
+  if (!songs.length) {
+    const candidate = await fetchQishuiWebFeedCandidate(session, cookieText, count);
+    if (candidate && candidate.songs.length) {
+      songs = candidate.songs;
+      rawCount = candidate.rawCount;
+      meta = {
+        nextCursor: candidate.nextCursor,
+        nextCursorKey: candidate.nextCursorKey,
+        hasMore: candidate.hasMore,
+      };
+      source = candidate.source;
+    }
+  }
+  return {
+    songs,
+    rawCount,
+    nextCursor: meta.nextCursor,
+    nextCursorKey: meta.nextCursorKey,
+    hasMore: typeof meta.hasMore === 'boolean' ? meta.hasMore : songs.length > 0,
+    source,
+  };
+}
+
+async function fetchQishuiTokenRecommendPage(session, limit) {
+  const count = Math.max(1, Math.min(50, Number(limit) || QISHUI_FEED_PAGE_SIZE));
+  const payload = {
+    count,
+    played_media: session.playedMedia.slice(-30),
+    common_params: { trigger_name: 'mineradio_feed', scene: 'feed', source: 'mineradio' },
+  };
+  if (session.cursor) payload[session.cursorKey || 'cursor'] = session.cursor;
+  const json = await qishuiPost(QISHUI_FEED_SONG_TAB_PATH, payload);
+  const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_REQUEST_FAILED');
+  if (statusError) throw statusError;
+  const rawItems = extractQishuiMediaList(json);
+  // 纯 OAuth token 没有 web session，song.url 会回 login_required，不能标 directPlayable。
+  const songs = mapQishuiMediaList(rawItems, 'recommend-token', {
+    directPlayable: false,
+    requireRealId: true,
+    requireTrack: true,
+  });
+  const meta = extractQishuiFeedPageMeta(json);
+  return {
+    songs,
+    rawCount: rawItems.length,
+    nextCursor: meta.nextCursor,
+    nextCursorKey: meta.nextCursorKey,
+    hasMore: typeof meta.hasMore === 'boolean' ? meta.hasMore : songs.length > 0,
+    source: 'token',
+  };
+}
+
+// 把整个 advance 事务串行化（不只是上游抓取）：后一个调用必须等前一个把 served 推进完，
+// 否则两者会从同一个起始位置切片，返回同一批歌并跳过下一批。
+function qishuiWithFeedAdvanceLock(session, task) {
+  const previous = session.advanceLock || Promise.resolve();
+  const current = previous.catch(() => {}).then(task);
+  session.advanceLock = current.then(() => {}, () => {});
+  return current;
+}
+
+// 同一会话的抓取串行化：两个并发调用不会读到同一个游标再各抓一遍。
+function qishuiFeedNextBatch(session, cookieText, limit, fetchPage) {
+  const previous = session.inFlight || Promise.resolve();
+  const token = (session.inFlightToken || 0) + 1;
+  session.inFlightToken = token;
+  const run = async () => {
+    const page = typeof fetchPage === 'function'
+      ? await fetchPage(session, limit)
+      : (session.transport === 'web'
+        ? await fetchQishuiWebRecommendPage(session, cookieText, limit)
+        : await fetchQishuiTokenRecommendPage(session, limit));
+    const songs = Array.isArray(page && page.songs) ? page.songs : [];
+    const added = qishuiAppendFeedSongs(session, songs);
+    session.pages += 1;
+    session.updatedAt = Date.now();
+    if (page && page.source) session.source = page.source;
+    if (page && page.rawCount != null) session.rawCount = page.rawCount;
+    if (page && page.nextCursorKey) session.cursorKey = page.nextCursorKey;
+    if (page && page.nextCursor && page.nextCursor !== session.cursor) {
+      session.cursor = page.nextCursor;
+    }
+    if (page && typeof page.hasMore === 'boolean') session.hasMore = page.hasMore;
+    else session.hasMore = songs.length > 0;
+    session.dryPages = added > 0 ? 0 : session.dryPages + 1;
+    if (added > 0) session.resetAttempts = 0;
+    return { added, page, songs };
+  };
+  const current = previous.catch(() => {}).then(run);
+  const settle = current.then(() => {}, () => {}).then(() => {
+    if (session.inFlightToken === token) session.inFlight = null;
+  });
+  session.inFlight = settle;
+  return current;
+}
+
+async function ensureQishuiFeedBuffer(session, cookieText, target, maxPages, fetchPage) {
+  let pages = 0;
+  let resetTried = false;
+  // playlist 每次 RPC 重新获得一次重试预算：一次重复页不应让会话永久卡在当前位置。
+  // FM 不做这个重置，否则会在已耗尽的游标上无限重试。
+  if (session.flow === 'playlist' && session.dryPages >= 2) session.dryPages = 0;
+  const pageBudget = Math.max(1, Number(maxPages) || 1);
+  while (session.songs.length < target && pages < pageBudget) {
+    if (!session.hasMore || session.dryPages >= 2) {
+      // Personal FM 是无限流：上游说没歌或连续重复时，重置上游游标再开一段。
+      if (session.flow !== 'fm' || resetTried || Date.now() < session.cooldownUntil) break;
+      // 没有未消费缓冲时整段重开：清掉本段缓冲与 seen，让新一段的第一页重新算「新歌」。
+      // 如果还有未消费歌曲，保留缓冲，只重置上游游标，避免丢掉已抓到的歌。
+      if (session.served >= session.songs.length) {
+        session.songs = [];
+        session.served = 0;
+        session.seen = new Set();
+      }
+      session.cursor = '';
+      session.hasMore = true;
+      session.pages = 0;
+      session.dryPages = 0;
+      session.playedMedia = [];
+      session.candidateExhausted = false;
+      // 上游持续无可返回内容时指数退避，避免每 15 秒打一轮请求。
+      session.resetAttempts = (session.resetAttempts || 0) + 1;
+      const backoff = Math.min(5 * 60 * 1000, 15 * 1000 * Math.pow(2, Math.min(5, session.resetAttempts - 1)));
+      session.cooldownUntil = Date.now() + backoff;
+      resetTried = true;
+      continue;
+    }
+    const want = Math.max(1, Math.min(50, target - session.songs.length));
+    const before = session.songs.length;
+    await qishuiFeedNextBatch(session, cookieText, want, fetchPage);
+    pages += 1;
+    if (!session.hasMore && session.songs.length === before) break;
+  }
+  return pages;
+}
+
+function qishuiFeedPageEmpty(base, limit, session, status) {
+  return {
+    provider: 'qishui',
+    configured: true,
+    loggedIn: Boolean(status && status.loggedIn),
+    webSession: Boolean(status && status.webSession),
+    source: session.source,
+    songs: [],
+    tracks: [],
+    total: QISHUI_FEED_TOTAL_CAP,
+    offset: base,
+    limit,
+    nextOffset: base,
+    hasMore: false,
+    rawCount: 0,
+  };
+}
+
+async function handleQishuiRecommendFeed(opts, cookieText, deps) {
+  opts = opts || {};
+  deps = deps || {};
+  const status = deps.status || getQishuiStatus(cookieText);
+  const configured = Boolean(status.webSession || status.tokenConfigured);
+  if (!configured) {
+    return {
+      provider: 'qishui',
+      configured: false,
+      loggedIn: false,
+      webSession: false,
+      source: '',
+      songs: [],
+      tracks: [],
+      total: 0,
+      offset: 0,
+      limit: 0,
+      nextOffset: 0,
+      hasMore: false,
+      rawCount: 0,
+      error: 'QISHUI_TOKEN_REQUIRED',
+      message: status.message,
+    };
+  }
+  const flow = qishuiRecommendFlow(opts.flow);
+  const transport = status.webSession ? 'web' : 'token';
+  const key = qishuiRecommendSessionKey(cookieText, flow, transport);
+  const session = getQishuiRecommendSession(key, flow, transport);
+  const limit = Math.max(1, Math.min(50, Number(opts.limit) || QISHUI_FEED_PAGE_SIZE));
+  // 推进只属于 Personal FM：peek/playlist 即使误传 advance 也绝不消费会话。
+  const advance = opts.advance === true && flow === 'fm';
+  const rawOffset = opts.offset == null ? null : Number(opts.offset);
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : null;
+  const fetchPage = typeof deps.fetchPage === 'function' ? deps.fetchPage : null;
+
+  if (advance) {
+    return qishuiWithFeedAdvanceLock(session, async () => {
+      let start = session.served;
+      const totalStart = session.totalServed;
+      // 允许最多两个上游页：单页恰好全是已出现歌曲时，还能在同一次调用里补到新歌。
+      await ensureQishuiFeedBuffer(session, cookieText, start + limit, QISHUI_FEED_MAX_PAGES_PER_CALL, fetchPage);
+      if (session.served < start) {
+        // ensure 在本次调用里重置了耗尽的 FM 段（缓冲被清空、served 回到 0），
+        // 之前捕获的 start 已经失效；从新段的起点重新取这一批。
+        start = session.served;
+        await ensureQishuiFeedBuffer(session, cookieText, start + limit, QISHUI_FEED_MAX_PAGES_PER_CALL, fetchPage);
+      }
+      const items = session.songs.slice(start, start + limit);
+      session.served += items.length;
+      session.totalServed += items.length;
+      // FM 缓冲只保留未消费窗口，避免长时间刷歌时数组无限增长。
+      // 裁剪只动缓冲下标 served；对外 nextOffset 用 totalServed，保持单调递增。
+      if (flow === 'fm' && session.served > 300) {
+        const drop = session.served - 100;
+        session.songs = session.songs.slice(drop);
+        session.served -= drop;
+      }
+      return {
+        provider: 'qishui',
+        configured: true,
+        loggedIn: Boolean(status.loggedIn),
+        webSession: Boolean(status.webSession),
+        source: session.source,
+        songs: items,
+        tracks: items,
+        total: flow === 'playlist' ? QISHUI_FEED_TOTAL_CAP : undefined,
+        offset: totalStart,
+        limit,
+        nextOffset: session.totalServed,
+        hasMore: session.hasMore || session.songs.length > session.served,
+        rawCount: session.rawCount,
+      };
+    });
+  }
+
+  if (flow === 'playlist' || offset != null) {
+    const base = offset == null ? 0 : offset;
+    if (base >= QISHUI_FEED_TOTAL_CAP) return qishuiFeedPageEmpty(base, limit, session, status);
+    // 会话已过期/被淘汰后收到 offset>0：从 0 重建缓冲到目标位置再切片。
+    // 这是一条罕见的恢复路径，允许比平时多抓几页；上限仍是有限 total，
+    // 不能像之前那样直接返回 hasMore:false 的空页，否则后台同步会静默停在半截。
+    if (base > 0 && session.pages === 0 && !session.songs.length) {
+      const rebuildBudget = Math.min(10, Math.ceil((base + limit) / QISHUI_FEED_PAGE_SIZE) + 2);
+      await ensureQishuiFeedBuffer(
+        session, cookieText,
+        Math.min(base + limit, QISHUI_FEED_TOTAL_CAP),
+        rebuildBudget, fetchPage,
+      );
+    }
+    const target = Math.min(base + limit, QISHUI_FEED_TOTAL_CAP);
+    await ensureQishuiFeedBuffer(session, cookieText, target, QISHUI_FEED_MAX_PAGES_PER_CALL, fetchPage);
+    const items = session.songs.slice(base, target);
+    const nextOffset = base + items.length;
+    return {
+      provider: 'qishui',
+      configured: true,
+      loggedIn: Boolean(status.loggedIn),
+      webSession: Boolean(status.webSession),
+      source: session.source,
+      songs: items,
+      tracks: items,
+      total: QISHUI_FEED_TOTAL_CAP,
+      offset: base,
+      limit,
+      nextOffset,
+      // 本页没有歌时 hasMore 必须为 false：否则直接消费者会按 nextOffset 反复请求同一个空页。
+      hasMore: items.length > 0 && nextOffset < QISHUI_FEED_TOTAL_CAP && (session.hasMore || session.songs.length > nextOffset),
+      rawCount: session.rawCount,
+    };
+  }
+
+  // peek：给首页封面/Personal FM 预览读下一批，但不推进 served。
+  await ensureQishuiFeedBuffer(session, cookieText, session.served + limit, 1, fetchPage);
+  const items = session.songs.slice(session.served, session.served + limit);
+  return {
+    provider: 'qishui',
+    configured: true,
+    loggedIn: Boolean(status.loggedIn),
+    webSession: Boolean(status.webSession),
+    source: session.source,
+    songs: items,
+    tracks: items,
+    offset: session.totalServed,
+    limit,
+    nextOffset: session.totalServed,
+    hasMore: session.hasMore || session.songs.length > session.served + items.length,
+    rawCount: session.rawCount,
+  };
+}
+
+function mapQishuiFeedItems(rawItems, query, directPlayable) {
+  return mapQishuiMediaList(rawItems, query, {
+    directPlayable: Boolean(directPlayable),
+    requireRealId: true,
+    requireTrack: true,
+  });
+}
+
 async function fetchQishuiFeedSongs(limit, cookieText) {
   limit = Math.max(1, Math.min(50, Number(limit) || 8));
   const status = getQishuiStatus(cookieText);
-  if (!status.tokenConfigured && status.webSession) return fetchQishuiWebFeedSongs(cookieText, limit);
+  // 与 feed.recommend 保持一致：有 web session 时优先网页路径，OAuth token 只做兜底。
+  if (status.webSession) {
+    const webFeed = await fetchQishuiWebFeedSongs(cookieText, limit);
+    if ((webFeed && Array.isArray(webFeed.songs) && webFeed.songs.length) || !status.tokenConfigured) return webFeed;
+    // 网页 feed 空手而归时继续走 token；否则「我的歌单」里的推荐卡会只剩空封面。
+  }
   if (!status.tokenConfigured) return { provider: 'qishui', configured: false, songs: [], error: 'QISHUI_TOKEN_REQUIRED', message: status.message };
-  const cacheKey = 'feed|' + limit;
+  // 旧缓存 key 只有 limit，切号后会复活上一个账号的第一页；至少带上账号标识。
+  const cacheKey = 'feed|' + qishuiRecommendAccountKey(cookieText) + '|' + limit;
   return qishuiFeedCache.wrap(cacheKey, 90 * 1000, async () => {
     const json = await qishuiPost(QISHUI_FEED_SONG_TAB_PATH, {
       count: limit,
@@ -2822,13 +3461,16 @@ function buildQishuiFeedPlaylist(songs) {
     source: 'qishui',
     type: 'playlist',
     id: QISHUI_VIRTUAL_FEED_PLAYLIST_ID,
-    name: '汽水推荐',
+    name: '汽水推荐流',
     cover: firstCover,
-    trackCount: songs.length,
+    // 与分页上限一致：既让入口有一个真实可加载的总数，又给 Folia 的后台补页一个终点。
+    trackCount: QISHUI_FEED_TOTAL_CAP,
     playCount: 0,
     creator: '汽水音乐',
     subscribed: false,
     virtual: true,
+    // 显式 false：normalizeQishuiCollection 会用 owned ?? virtual 推导，缺省会变成可编辑歌单。
+    owned: false,
     playbackMode: 'recommend-match',
   };
 }
@@ -2924,7 +3566,7 @@ async function handleQishuiUserPlaylists(cookieText) {
       configured: true,
       playlists: [],
       error: err && err.message || 'QISHUI_FEED_FAILED',
-      message: '汽水推荐歌单暂时同步失败，请稍后重试。',
+      message: '汽水推荐流暂时同步失败，请稍后重试。',
     };
   }
 }
@@ -3018,6 +3660,37 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
       return fetchQishuiWebPlaylistTracks(id, cookieText, opts);
     }
   }
+  // 虚拟推荐流：web session 与 token 都走同一套会话分页。
+  if (!id || id === QISHUI_VIRTUAL_FEED_PLAYLIST_ID || id === 'feed') {
+    const page = await handleQishuiRecommendFeed({ limit, offset, flow: 'playlist', advance: false }, cookieText);
+    if (!page.configured) {
+      return {
+        provider: 'qishui',
+        loggedIn: false,
+        configured: false,
+        playlist: buildQishuiFeedPlaylist([]),
+        tracks: [],
+        total: 0,
+        error: page.error || 'QISHUI_TOKEN_REQUIRED',
+        message: page.message || status.message,
+      };
+    }
+    return {
+      provider: 'qishui',
+      loggedIn: Boolean(page.loggedIn),
+      configured: true,
+      webSession: Boolean(page.webSession),
+      playlist: buildQishuiFeedPlaylist(page.songs || []),
+      tracks: page.songs || [],
+      total: page.total,
+      offset,
+      limit,
+      nextOffset: page.nextOffset,
+      hasMore: Boolean(page.hasMore),
+      rawCount: page.rawCount,
+      source: page.source,
+    };
+  }
   if (!status.configured) {
     return {
       provider: 'qishui',
@@ -3030,35 +3703,15 @@ async function handleQishuiPlaylistTracks(playlistId, opts, cookieText) {
       message: status.message,
     };
   }
-  if (id && id !== QISHUI_VIRTUAL_FEED_PLAYLIST_ID && id !== 'feed') {
-    return {
-      provider: 'qishui',
-      loggedIn: true,
-      configured: true,
-      playlist: buildQishuiFeedPlaylist([]),
-      tracks: [],
-      total: 0,
-      error: 'QISHUI_PLAYLIST_NOT_FOUND',
-      message: '当前汽水接入只支持官方推荐歌单。',
-    };
-  }
-  const fetchCount = Math.max(limit, Math.min(50, offset + limit));
-  const feed = await fetchQishuiFeedSongs(fetchCount, cookieText);
-  const allSongs = feed.songs || [];
-  const tracks = allSongs.slice(offset, offset + limit);
-  const playlist = buildQishuiFeedPlaylist(allSongs);
   return {
     provider: 'qishui',
     loggedIn: true,
     configured: true,
-    playlist,
-    tracks,
-    total: allSongs.length,
-    offset,
-    limit,
-    nextOffset: offset + tracks.length,
-    hasMore: false,
-    rawCount: feed.rawCount || allSongs.length,
+    playlist: buildQishuiFeedPlaylist([]),
+    tracks: [],
+    total: 0,
+    error: 'QISHUI_PLAYLIST_NOT_FOUND',
+    message: '当前汽水接入只支持官方推荐歌单。',
   };
 }
 
@@ -4117,6 +4770,7 @@ module.exports = {
   handleQishuiSongDetail,
   handleQishuiAlbumDetail,
   handleQishuiFeed,
+  handleQishuiRecommendFeed,
   handleQishuiUserPlaylists,
   handleQishuiPlaylistTracks,
   handleQishuiCheckTracksLiked,
@@ -4154,5 +4808,17 @@ module.exports = {
     qishuiBestStreamCandidateForMembership,
     qishuiAudioEffectKeysFromV2,
     clearQishuiRuntimeCaches,
+    // 推荐流分页：纯函数/会话工厂，供协议层单测直接驱动，不经过真实签名请求。
+    handleQishuiRecommendFeed,
+    QISHUI_FEED_TOTAL_CAP,
+    QISHUI_FEED_PAGE_SIZE,
+    qishuiRecommendFeedSessions,
+    qishuiRecommendFlow,
+    extractQishuiFeedPageMeta,
+    mapQishuiFeedItems,
+    buildQishuiFeedPlaylist,
+    buildQishuiFeedWebPayload,
+    qishuiAppendFeedSongs,
+    getQishuiRecommendSession,
   },
 };

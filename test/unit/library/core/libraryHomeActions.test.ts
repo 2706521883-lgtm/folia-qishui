@@ -35,6 +35,7 @@ const createPort = (patch: Partial<LibraryHomePort> = {}) => {
         }),
         getPersonalFm: vi.fn(async () => [{ id: 'fm-1' }, { id: 'fm-2' }] as unknown as SongResult[]),
         playPersonalFm: vi.fn(),
+        enqueuePersonalFm: vi.fn(() => 2),
         describeOnlineCollection: vi.fn((collection, providerId) => ({ ...collection, source: 'online', providerId }) as unknown as LibraryCollectionDescriptor),
         describeLocalGroup: vi.fn(group => ({ source: 'local', id: group.id }) as unknown as LibraryCollectionDescriptor),
         describeNavidromeCard: vi.fn((card, type) => ({ source: 'navidrome', id: String(card.id), type }) as unknown as LibraryCollectionDescriptor),
@@ -194,6 +195,46 @@ describe('createLibraryHomeActions — opening cards', () => {
         expect(await createLibraryHomeActions(failing.port).playPersonalFm()).toEqual({ ok: false, reason: 'failed' });
         expect(error).toHaveBeenCalledTimes(1);
         error.mockRestore();
+    });
+
+    it('can start FM without leaving the library', async () => {
+        const { port } = createPort();
+        await createLibraryHomeActions(port).playPersonalFm({ shouldNavigateToPlayer: false });
+        expect(port.playPersonalFm).toHaveBeenCalledWith(
+            { id: 'fm-1' },
+            [{ id: 'fm-1' }, { id: 'fm-2' }],
+            { shouldNavigateToPlayer: false },
+        );
+    });
+
+    it('loads more FM into the existing queue without restarting playback', async () => {
+        const { port } = createPort();
+        const result = await createLibraryHomeActions(port).loadMorePersonalFm();
+        expect(result).toEqual({ ok: true });
+        expect(port.enqueuePersonalFm).toHaveBeenCalledWith([{ id: 'fm-1' }, { id: 'fm-2' }]);
+        expect(port.playPersonalFm).not.toHaveBeenCalled();
+    });
+
+    it('does not enqueue an empty next batch', async () => {
+        const { port } = createPort({ getPersonalFm: vi.fn(async () => []) });
+        expect(await createLibraryHomeActions(port).loadMorePersonalFm()).toEqual({ ok: true });
+        expect(port.enqueuePersonalFm).not.toHaveBeenCalled();
+    });
+
+    it('serialises start and load-more so rapid clicks cannot race two requests', async () => {
+        const pending = deferred<SongResult[]>();
+        const enqueuePersonalFm = vi.fn(() => 1);
+        const { port } = createPort({
+            getPersonalFm: vi.fn(() => pending.promise),
+            enqueuePersonalFm,
+        });
+        const actions = createLibraryHomeActions(port);
+        const first = actions.loadMorePersonalFm();
+        expect(await actions.playPersonalFm()).toEqual({ ok: false, reason: 'busy' });
+        pending.resolve([{ id: 'fm-3' }] as unknown as SongResult[]);
+        expect(await first).toEqual({ ok: true });
+        expect(enqueuePersonalFm).toHaveBeenCalledWith([{ id: 'fm-3' }]);
+        expect(port.playPersonalFm).not.toHaveBeenCalled();
     });
 
     it('other online cards open their source object with the card type, under the provider', async () => {

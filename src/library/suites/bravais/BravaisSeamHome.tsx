@@ -12,6 +12,8 @@ import {
     Library,
     Maximize2,
     MicVocal,
+    Play,
+    Sparkles,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BravaisLayer, BravaisSeamTab } from './bravaisLayer';
@@ -319,6 +321,25 @@ const BravaisSeamHome: React.FC<{
                     <div ref={middleRef} className="bravais-seam-home-middle">
                         <div ref={bodyRef} className="bravais-seam-home-body" data-bravais-home-body>
                             <AnimatePresence initial={false}>{meta}</AnimatePresence>
+                            {/* 中段快捷入口（汽水推荐流 / 回到播放页）：竖排；不打开集合、不换层。 */}
+                            {home?.actions && home.actions.length > 0 && (
+                                <div className="bravais-seam-home-actions" data-bravais-home-actions={home.actions.length}>
+                                    {home.actions.map(action => (
+                                        <button
+                                            key={action.id}
+                                            type="button"
+                                            className={`bravais-seam-home-action${action.tone === 'neutral' ? ' is-neutral' : ''}`}
+                                            data-bravais-home-action={action.id}
+                                            aria-label={action.title}
+                                            title={action.title}
+                                            onClick={action.run}
+                                        >
+                                            {action.icon === 'play' ? <Play aria-hidden /> : <Sparkles aria-hidden />}
+                                            <span className="is-label" aria-hidden>{action.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {sections && (
                                 <div ref={slotRef} className="bravais-seam-sections-slot">
                                     <HomeSeamSections sections={sections} label={seam.meta} short={short} onSelect={home?.onSelectSection} />

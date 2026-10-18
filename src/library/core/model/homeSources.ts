@@ -110,6 +110,7 @@ export const resolveHomeOnlineSource = ({
         canUsePlaylists: canUseActivePlaylists || otherPlaylistProviders.length > 0,
         canUseAlbums: capabilities.userLibrary && Boolean(capabilities.userAlbums),
         canUseRadio: capabilities.recommendations,
+        hasPersonalFm: Boolean(capabilities.personalFm),
         hasPersonalFmModes: Boolean(capabilities.personalFmModes),
     };
 };

@@ -1,17 +1,20 @@
+import type { UnifiedSong } from '../../types';
 import type { OnlineMusicProvider, ProviderAudioSource, ProviderCollection } from '../../types/onlineMusic';
 import { OnlineProviderError } from '../../types/onlineMusic';
 import { createProviderSongMetadata } from '../../utils/songMetadata';
 import { parseQishuiLyrics } from '../../utils/lyrics/qishuiLyrics';
 import { getQishuiTransportAvailability, requestQishui, throwQishuiDataError } from './qishuiTransport';
 import { normalizeQishuiCollection, normalizeQishuiSong, normalizeQishuiUser, qishuiPage, qishuiText } from './qishuiNormalize';
-import { QISHUI_FEED_PLAYLIST_ID, qishuiCatalog } from './qishuiCatalog';
+import { QISHUI_FEED_PLAYLIST_ID, QISHUI_FEED_TOTAL_CAP, qishuiCatalog } from './qishuiCatalog';
 import { clearQishuiLibraryCache, qishuiLibrary } from './qishuiLibrary';
 import { qishuiMutations } from './qishuiMutations';
 
 // src/services/onlineMusic/qishuiProvider.ts
 
-// 协议层的搜索与推荐流都把 limit 收在 18 以内，请求再大也只拿得到这么多。
+// 搜索接口把 limit 收在 18 以内，请求再大也只拿得到这么多。
 const QISHUI_PAGE_MAX = 18;
+// Personal FM 每批补多少首；桥接层 feed.recommend 的上限是 50。
+const QISHUI_FEED_PAGE_SIZE = 20;
 // 主进程没给二维码有效期时的兜底：汽水二维码按 5 分钟算。
 const QISHUI_QR_TTL_MS = 5 * 60 * 1000;
 
@@ -29,7 +32,7 @@ export const qishuiProvider: OnlineMusicProvider = {
     getAvailability: getQishuiTransportAvailability,
     capabilities: {
         search: true, playback: true, lyrics: true, wordByWordLyrics: true, auth: true,
-        playlists: true, albums: true, artists: true, recommendations: true,
+        playlists: true, albums: true, artists: true, recommendations: true, personalFm: true,
         userLibrary: true, likes: true, mutations: true, playlistTrackMutations: true,
     },
     normalizeSong: normalizeQishuiSong, normalizeUser: normalizeQishuiUser, normalizeCollection: normalizeQishuiCollection,
@@ -164,20 +167,49 @@ export const qishuiProvider: OnlineMusicProvider = {
     mutations: qishuiMutations,
     recommendations: {
         async getRecommendedCollections(limit) {
-            const data = await requestQishui<any>('feed', { limit: Math.min(limit, QISHUI_PAGE_MAX) }).catch(() => null);
-            const songs = Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
-            if (!songs.length) return [];
+            // 预览只读 playlist 会话，不推进 Personal FM；临时失败也保留入口，
+            // 只有明确未登录时才隐藏（否则一次 feed 抖动就会让「汽水推荐流」消失）。
+            let songs: UnifiedSong[] = [];
+            let available = true;
+            try {
+                const data = await requestQishui<any>('feed.recommend', {
+                    limit: Math.max(1, Math.min(limit, 8)), offset: 0, flow: 'playlist', advance: false,
+                });
+                songs = Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
+            } catch (error) {
+                if (error instanceof OnlineProviderError && error.code === 'auth-required') available = false;
+                else console.warn('[Qishui] Recommendation preview failed:', error);
+            }
+            if (!available) return [];
             const collection: ProviderCollection = {
-                providerId: 'qishui', id: QISHUI_FEED_PLAYLIST_ID, type: 'playlist', name: '汽水推荐',
-                coverUrl: songs[0].album.coverUrl, trackCount: songs.length,
+                providerId: 'qishui', id: QISHUI_FEED_PLAYLIST_ID, type: 'playlist', name: '汽水推荐流',
+                coverUrl: songs[0]?.album.coverUrl, trackCount: QISHUI_FEED_TOTAL_CAP, isOwned: false,
                 providerData: { virtual: true, playbackMode: 'recommend-match' },
             };
             return [collection].slice(0, limit);
         },
         async getPersonalFm() {
-            return requestQishui<any>('feed', { limit: QISHUI_PAGE_MAX })
-                .then(data => (Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : []))
-                .catch(() => []);
+            // 每次调用推进 FM 会话的一批；播放队列剩两首时会自动用新批次续歌。
+            try {
+                const data = await requestQishui<any>('feed.recommend', {
+                    limit: QISHUI_FEED_PAGE_SIZE, flow: 'fm', advance: true,
+                });
+                return Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
+            } catch (error) {
+                console.warn('[Qishui] Personal FM fetch failed:', error);
+                return [];
+            }
+        },
+        async getPersonalFmPreview() {
+            // 首页封面用的只读 peek：不消费 FM 的下一批，避免进一次电台页就少一批歌。
+            try {
+                const data = await requestQishui<any>('feed.recommend', {
+                    limit: 1, flow: 'fm', advance: false,
+                });
+                return Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
+            } catch {
+                return [];
+            }
         },
     },
 };

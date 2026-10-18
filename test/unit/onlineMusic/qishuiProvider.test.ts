@@ -307,6 +307,30 @@ describe('Qishui catalog', () => {
         await expect(qishuiProvider.catalog!.getAlbumDetail!('456'))
             .resolves.toMatchObject({ providerId: 'qishui', id: '456', type: 'album', name: '测试专辑' });
     });
+
+    it('pages the virtual feed through feed.recommend and stops at the finite cap', async () => {
+        request.mockResolvedValueOnce({ songs: [track], total: 200, nextOffset: 1, hasMore: true });
+        const page = await qishuiProvider.catalog!.getPlaylistTracks!(QISHUI_FEED_PLAYLIST_ID, 50, 0);
+        expect(request).toHaveBeenLastCalledWith('feed.recommend', {
+            limit: 50, offset: 0, flow: 'playlist', advance: false,
+        });
+        expect(page).toMatchObject({ total: 200, nextOffset: 1, hasMore: true });
+
+        request.mockClear();
+        await expect(qishuiProvider.catalog!.getPlaylistTracks!(QISHUI_FEED_PLAYLIST_ID, 50, 200))
+            .resolves.toEqual({ items: [], total: 200, hasMore: false, nextOffset: 200 });
+        expect(request).not.toHaveBeenCalled();
+    });
+
+    it('returns the virtual feed detail card without probing playlist.tracks for one track', async () => {
+        request.mockClear();
+        await expect(qishuiProvider.catalog!.getPlaylistDetail!(QISHUI_FEED_PLAYLIST_ID))
+            .resolves.toMatchObject({
+                providerId: 'qishui', id: QISHUI_FEED_PLAYLIST_ID, name: '汽水推荐流',
+                trackCount: 200, isOwned: false,
+            });
+        expect(request).not.toHaveBeenCalled();
+    });
 });
 
 describe('Qishui library', () => {
@@ -367,18 +391,42 @@ describe('Qishui mutations', () => {
 });
 
 describe('Qishui recommendations', () => {
-    it('exposes the feed as one virtual collection and keeps failures empty', async () => {
-        request.mockResolvedValueOnce({ songs: [track] });
+    it('exposes the paginated feed as one virtual collection with a finite total', async () => {
+        request.mockResolvedValueOnce({ songs: [track], total: 200, hasMore: true });
         const collections = await qishuiProvider.recommendations!.getRecommendedCollections!(5);
-        expect(request).toHaveBeenCalledWith('feed', { limit: 5 });
+        expect(request).toHaveBeenCalledWith('feed.recommend', {
+            limit: 5, offset: 0, flow: 'playlist', advance: false,
+        });
         expect(collections).toHaveLength(1);
         expect(collections[0]).toMatchObject({
-            providerId: 'qishui', id: QISHUI_FEED_PLAYLIST_ID, type: 'playlist', name: '汽水推荐',
-            trackCount: 1, coverUrl: track.cover, providerData: { virtual: true, playbackMode: 'recommend-match' },
+            providerId: 'qishui', id: QISHUI_FEED_PLAYLIST_ID, type: 'playlist', name: '汽水推荐流',
+            trackCount: 200, coverUrl: track.cover, isOwned: false,
+            providerData: { virtual: true, playbackMode: 'recommend-match' },
+        });
+    });
+
+    it('keeps the entry visible on a transient failure and hides it only when signed out', async () => {
+        request.mockRejectedValueOnce(new Error('feed unavailable'));
+        await expect(qishuiProvider.recommendations!.getRecommendedCollections!(5))
+            .resolves.toHaveLength(1);
+
+        request.mockRejectedValueOnce(new OnlineProviderError('auth-required', '请登录', 'qishui'));
+        await expect(qishuiProvider.recommendations!.getRecommendedCollections!(5)).resolves.toEqual([]);
+    });
+
+    it('advances a separate FM session and exposes a non-consuming preview', async () => {
+        request.mockResolvedValueOnce({ songs: [track] });
+        await expect(qishuiProvider.recommendations!.getPersonalFm!()).resolves.toHaveLength(1);
+        expect(request).toHaveBeenLastCalledWith('feed.recommend', {
+            limit: 20, flow: 'fm', advance: true,
         });
 
-        request.mockRejectedValueOnce(new Error('feed unavailable'));
-        await expect(qishuiProvider.recommendations!.getRecommendedCollections!(5)).resolves.toEqual([]);
+        request.mockResolvedValueOnce({ songs: [track] });
+        await expect(qishuiProvider.recommendations!.getPersonalFmPreview!()).resolves.toHaveLength(1);
+        expect(request).toHaveBeenLastCalledWith('feed.recommend', {
+            limit: 1, flow: 'fm', advance: false,
+        });
+
         request.mockRejectedValueOnce(new Error('feed unavailable'));
         await expect(qishuiProvider.recommendations!.getPersonalFm!()).resolves.toEqual([]);
     });

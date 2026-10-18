@@ -1,5 +1,5 @@
 import type { UnifiedSong } from '../../types';
-import type { MediaId, OnlineCatalogProvider, ProviderPage } from '../../types/onlineMusic';
+import type { MediaId, OnlineCatalogProvider, ProviderCollection, ProviderPage } from '../../types/onlineMusic';
 import { OnlineProviderError } from '../../types/onlineMusic';
 import { normalizeQishuiCollection, normalizeQishuiSong, qishuiArtistName, qishuiPage } from './qishuiNormalize';
 import { requestQishui, throwQishuiDataError } from './qishuiTransport';
@@ -9,6 +9,9 @@ import { requestQishui, throwQishuiDataError } from './qishuiTransport';
 // 协议层的虚拟歌单 id：我的喜欢 / 最近播放 / 推荐流。
 export const QISHUI_LIKED_PLAYLIST_ID = 'qishui-liked';
 export const QISHUI_FEED_PLAYLIST_ID = 'qishui-feed';
+// 与 electron/qishui/qishui-api.js 的 QISHUI_FEED_TOTAL_CAP 保持一致。
+// Folia 首屏取 150、后台每页取 1000；必须给一个有限 total，后台补页才会自然停止。
+export const QISHUI_FEED_TOTAL_CAP = 200;
 
 // `artist` 与 `album` 两个操作每次都从第一页开始搜（协议层不接受 offset），
 // 所以它们的结果一次取满、在内存里分页，已经取完就不能再声称 hasMore。
@@ -30,11 +33,50 @@ async function fetchQishuiPlaylistCard(id: MediaId) {
     return data.playlist ?? null;
 }
 
+const qishuiFeedCollection = (id: MediaId): ProviderCollection => ({
+    providerId: 'qishui', id, type: 'playlist', name: '汽水推荐流',
+    trackCount: QISHUI_FEED_TOTAL_CAP, isOwned: false,
+    providerData: { virtual: true, playbackMode: 'recommend-match' },
+});
+
+// 虚拟推荐流按 offset 切片：协议层维护会话缓冲与跨页去重，
+// 返回的 nextOffset 是「本 flow 已服务的唯一歌曲数」，不是上游游标。
+async function qishuiFeedPage(limit: number, offset: number): Promise<ProviderPage<UnifiedSong>> {
+    if (offset >= QISHUI_FEED_TOTAL_CAP) {
+        return { items: [], total: QISHUI_FEED_TOTAL_CAP, hasMore: false, nextOffset: offset };
+    }
+    const data = await requestQishui<any>('feed.recommend', {
+        limit, offset, flow: 'playlist', advance: false,
+    });
+    throwQishuiDataError(data);
+    const raw = Array.isArray(data?.tracks) ? data.tracks : (Array.isArray(data?.songs) ? data.songs : null);
+    if (!raw) throw new OnlineProviderError('invalid-response', 'Qishui feed page is missing its list', 'qishui');
+    const total = Number(data.total);
+    return qishuiPage(raw.map(normalizeQishuiSong), Number.isFinite(total) && total > 0 ? total : QISHUI_FEED_TOTAL_CAP, offset, limit, {
+        nextOffset: data.nextOffset,
+        hasMore: data.hasMore,
+    });
+}
+
 export const qishuiCatalog: OnlineCatalogProvider = {
     canResolveSongCatalogRefs: song => song.sourceRef?.kind === 'online' && song.sourceRef.providerId === 'qishui',
     resolveSongCatalogRefs: async song => song,
-    getPlaylistTracks: (id, limit, offset) => qishuiTrackPage(id, limit, offset),
+    getPlaylistTracks: (id, limit, offset) => (
+        String(id) === QISHUI_FEED_PLAYLIST_ID
+            ? qishuiFeedPage(limit, offset)
+            : qishuiTrackPage(id, limit, offset)
+    ),
     async getPlaylistDetail(id, collection) {
+        // 虚拟推荐流没有真实歌单卡：不要去发 limit=1 的 playlist.tracks，否则会得到「只有 1 首」。
+        // 即使调用方拿的是旧缓存卡片，也用规范字段覆盖名称/上限/只读标记。
+        if (String(id) === QISHUI_FEED_PLAYLIST_ID) {
+            return collection?.providerId === 'qishui'
+                ? {
+                    ...collection, name: '汽水推荐流', trackCount: QISHUI_FEED_TOTAL_CAP, isOwned: false,
+                    providerData: { ...collection.providerData, virtual: true, playbackMode: 'recommend-match' },
+                }
+                : qishuiFeedCollection(id);
+        }
         if (collection?.providerId === 'qishui') return collection;
         const card = await fetchQishuiPlaylistCard(id);
         return card ? normalizeQishuiCollection(card) : null;

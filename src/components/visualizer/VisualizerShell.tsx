@@ -131,6 +131,9 @@ const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
                 fontFamily: resolveThemeFontStack(theme),
                 fontWeight: resolveThemeFontWeight(theme, 400),
                 opacity: resolvedVisualizerOpacity,
+                // 背景层（z-0）与歌词内容（z-10）各自分层；isolate 让它们的合成顺序稳定，
+                // 避免背景 canvas/video 被提升成硬件层后偶尔盖到歌词上。
+                isolation: 'isolate',
             }}
             onMouseMove={(event) => {
                 // Back button is intentionally hidden most of the time.

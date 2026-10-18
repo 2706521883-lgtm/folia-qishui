@@ -39,6 +39,8 @@ export interface ProviderCapabilities {
     artists: boolean;
     recommendations: boolean;
     mutations: boolean;
+    /** Provider implements the continuous personalized stream (`recommendations.getPersonalFm`). */
+    personalFm?: boolean;
     /** Personal FM can be steered by mode/scene, i.e. `getPersonalFm` honours PersonalFmRequestOptions. */
     personalFmModes?: boolean;
     wordByWordLyrics: boolean;
@@ -407,6 +409,11 @@ export interface PersonalFmRequestOptions {
 export interface OnlineRecommendationProvider {
     getDailySongs?(refresh?: boolean): Promise<UnifiedSong[]>;
     getPersonalFm?(options?: PersonalFmRequestOptions): Promise<UnifiedSong[]>;
+    /**
+     * Read the next Personal FM batch without consuming it (home-card cover, previews).
+     * Providers without a consumable feed can omit this; callers fall back to getPersonalFm.
+     */
+    getPersonalFmPreview?(): Promise<UnifiedSong[]>;
     getRecommendedCollections?(limit: number): Promise<ProviderCollection[]>;
     getHistoryEntries?(): Promise<ProviderHistoryEntry[]>;
     getHistoryDates?(): Promise<string[]>;

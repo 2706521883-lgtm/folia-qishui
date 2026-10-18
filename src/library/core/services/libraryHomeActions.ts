@@ -37,6 +37,8 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
     let snapshot = IDLE;
     const listeners = new Set<() => void>();
     let stopScanProgress: (() => void) | null = null;
+    // 启动 / 追加共用一把锁：连点推荐流时，第二次点击不会再发一个并行的取歌请求。
+    let personalFmInFlight = false;
 
     const patch = (next: Partial<LibraryHomeActionsSnapshot>) => {
         snapshot = { ...snapshot, ...next };
@@ -47,14 +49,37 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
         patch({ scan: progress?.active ? progress : null });
     };
 
-    const playPersonalFm = async (): Promise<LibraryHomeActionResult> => {
+    const playPersonalFm = async (options?: { shouldNavigateToPlayer?: boolean }): Promise<LibraryHomeActionResult> => {
+        if (personalFmInFlight) return BUSY;
+        personalFmInFlight = true;
         try {
             const songs = await port.getPersonalFm();
-            if (songs.length > 0) port.playPersonalFm(songs[0], songs);
+            if (songs.length > 0) {
+                if (options) port.playPersonalFm(songs[0], songs, options);
+                else port.playPersonalFm(songs[0], songs);
+            }
             return OK;
         } catch (error) {
             console.error('[LibraryHome] Failed to fetch and play Personal FM:', error);
             return FAILED;
+        } finally {
+            personalFmInFlight = false;
+        }
+    };
+
+    const loadMorePersonalFm = async (): Promise<LibraryHomeActionResult> => {
+        if (personalFmInFlight) return BUSY;
+        personalFmInFlight = true;
+        try {
+            const songs = await port.getPersonalFm();
+            // 队列侧会按歌曲 key 去重；这里只负责把下一批交过去，不打断当前播放。
+            if (songs.length > 0) port.enqueuePersonalFm(songs);
+            return OK;
+        } catch (error) {
+            console.error('[LibraryHome] Failed to load more Personal FM:', error);
+            return FAILED;
+        } finally {
+            personalFmInFlight = false;
         }
     };
 
@@ -133,6 +158,7 @@ export const createLibraryHomeActions = (port: LibraryHomePort): LibraryHomeActi
         },
 
         playPersonalFm,
+        loadMorePersonalFm,
 
         openOnlineCard: async (card: LibraryHomeCard, providerId: string, open: LibraryHomeOpenCollection) => {
             if (isPersonalFmCard(card)) return playPersonalFm();

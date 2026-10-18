@@ -289,6 +289,7 @@ export const neteaseProvider: OnlineMusicProvider = {
         artists: true,
         recommendations: true,
         mutations: true,
+        personalFm: true,
         personalFmModes: true,
         wordByWordLyrics: true,
         userCloud: true,

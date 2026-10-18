@@ -69,6 +69,8 @@ export type LibraryHomeOnlineSource = {
     canUsePlaylists: boolean;
     canUseAlbums: boolean;
     canUseRadio: boolean;
+    /** provider 实现了连续个性化推荐流（`recommendations.getPersonalFm`）：首页缝里的「推荐流」入口按它显示。 */
+    hasPersonalFm: boolean;
     /** provider 支持私人 FM 模式（FM 卡的描述显示当前模式）。 */
     hasPersonalFmModes: boolean;
 };
@@ -219,7 +221,9 @@ export interface LibraryHomePort {
     /** 订阅扫描进度；返回退订函数。 */
     subscribeScanProgress(listener: (progress: LibraryHomeScanProgress | null) => void): () => void;
     getPersonalFm(): Promise<SongResult[]>;
-    playPersonalFm(song: SongResult, queue: SongResult[]): void;
+    playPersonalFm(song: SongResult, queue: SongResult[], options?: { shouldNavigateToPlayer?: boolean }): void;
+    /** 把下一批推荐接到现有播放队列尾部；返回实际接上的首数。 */
+    enqueuePersonalFm(songs: SongResult[]): number;
     describeOnlineCollection(collection: Record<string, unknown>, providerId: string): LibraryCollectionDescriptor;
     describeLocalGroup(group: LocalLibraryGroup): LibraryCollectionDescriptor;
     describeNavidromeCard(card: LibraryHomeCard, type: NavidromeGridViewCollectionType): LibraryCollectionDescriptor;
@@ -237,8 +241,10 @@ export interface LibraryHomeActionsController {
     importFolder(): Promise<LibraryHomeActionResult>;
     refreshFolders(): Promise<LibraryHomeActionResult>;
     importPlaylistFile(file: File): Promise<LibraryHomeActionResult>;
-    /** 取私人 FM 并从第一首开始播放（取不到歌时什么都不做）。 */
-    playPersonalFm(): Promise<LibraryHomeActionResult>;
+    /** 取私人 FM 并从第一首开始播放（取不到歌时什么都不做）；keepCurrentView 时留在资料库。 */
+    playPersonalFm(options?: { shouldNavigateToPlayer?: boolean }): Promise<LibraryHomeActionResult>;
+    /** 推荐流已经在播时再点一次：取下一批并接到当前队列尾部，不打断正在播放的歌。 */
+    loadMorePersonalFm(): Promise<LibraryHomeActionResult>;
     /** 打开在线卡片：私人 FM 直接播放，其余交给宿主打开集合。 */
     openOnlineCard(card: LibraryHomeCard, providerId: string, open: LibraryHomeOpenCollection): Promise<LibraryHomeActionResult>;
     openLocalGroup(group: LocalLibraryGroup, open: LibraryHomeOpenCollection): void;

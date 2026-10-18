@@ -13,7 +13,7 @@ import { useLibraryDirectoryScope } from '../../core/bindings/useLibraryDirector
 import { useLibraryDirectoryActions } from '../../core/bindings/useLibraryDirectoryActions';
 import { useHiddenCollections } from '../../core/bindings/useHiddenCollections';
 import type { BravaisItemKind, BravaisLayer, BravaisSeamModel } from './bravaisLayer';
-import type { BravaisHomeAccount, BravaisHomeSection, BravaisHomeShortcut, BravaisHomeTool } from './bravaisHomeModels';
+import type { BravaisHomeAccount, BravaisHomeAction, BravaisHomeSection, BravaisHomeShortcut, BravaisHomeTool } from './bravaisHomeModels';
 import type { BravaisLayerEntries, BravaisSeamFilter, BravaisSeamMenuItem } from './bravaisSeamModels';
 import { createHomeItemCache, projectHomeShortcuts, projectHomeWallItems, resolveHomeWallMode, toHomeEntry } from './bravaisHomeProjection';
 import type { BravaisHomeChrome } from './useBravaisHomeChrome';
@@ -75,6 +75,8 @@ export type BravaisHomeDirectoryProps = {
     /** 来源自己的按钮（Navidrome 的刷新），插在搜索之后、app 入口之前。 */
     sourceTools?: readonly BravaisHomeTool[];
     account?: BravaisHomeAccount | null;
+    /** 来源自己的中段快捷入口（汽水推荐流）；没有时不渲染。「播放页」由目录从 chrome 的 app 工具补在后面。 */
+    action?: BravaisHomeAction | null;
     /** 本地 folders / albums / artists 的批量配置（有它才有目录树面板）。 */
     batchConfig?: LibraryDirectoryBatchConfig;
     /** 面板标题（section 名）。 */
@@ -108,6 +110,7 @@ const BravaisHomeDirectory: React.FC<BravaisHomeDirectoryProps> = ({
     menu,
     sourceTools,
     account,
+    action,
     batchConfig,
     panelTitle,
     declaredActions,
@@ -118,6 +121,24 @@ const BravaisHomeDirectory: React.FC<BravaisHomeDirectoryProps> = ({
     openShortcut,
 }) => {
     const { t } = useTranslation();
+    // 中段快捷入口竖排：来源给的推荐流在前，有当前歌曲时再接一个「播放页」。
+    // 播放页入口复用 chrome 的 app 级工具（id 'player'，与「⋯」菜单里那项、左上角隐藏式返回同一个回调），
+    // 所以没有当前歌曲时不会出现，也不会去空的播放页。
+    const seamActions = useMemo<BravaisHomeAction[]>(() => {
+        const actions: BravaisHomeAction[] = action ? [action] : [];
+        const playerTool = chrome.appTools.find(tool => tool.id === 'player');
+        if (playerTool) {
+            actions.push({
+                id: 'player',
+                label: t('libraryBravaisHome.playerShort'),
+                title: playerTool.label,
+                icon: 'play',
+                tone: 'neutral',
+                run: playerTool.run,
+            });
+        }
+        return actions;
+    }, [action, chrome.appTools, t]);
 
     // 墙显示的就是打开着的目录（与 TUI 一样；已经打开着——例如刚从网格的 GridMap 切过来——就接着用它的会话）。
     useEffect(() => {
@@ -314,6 +335,7 @@ const BravaisHomeDirectory: React.FC<BravaisHomeDirectoryProps> = ({
         tabs: chrome.tabs,
         onSelectTab: chrome.onSelectTab,
         home: {
+            actions: seamActions,
             sections,
             onSelectSection,
             shortcuts,
@@ -326,7 +348,7 @@ const BravaisHomeDirectory: React.FC<BravaisHomeDirectoryProps> = ({
             search: chrome.search,
             account,
         },
-    }), [account, chrome.onSelectTab, chrome.scan, chrome.search, chrome.tabs, chrome.title, filter, manage, menu, meta, onSelectSection, sections, shortcuts, status, t, tools]);
+    }), [account, chrome.onSelectTab, chrome.scan, chrome.search, chrome.tabs, chrome.title, filter, manage, menu, meta, onSelectSection, seamActions, sections, shortcuts, status, t, tools]);
 
     const entriesModel = useMemo<BravaisLayerEntries>(() => ({
         hasPanel: Boolean(batchConfig),

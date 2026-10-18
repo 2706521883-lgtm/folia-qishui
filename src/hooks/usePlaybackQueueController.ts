@@ -214,6 +214,9 @@ export function usePlaybackQueueController({
     const searchReturnView = useSearchNavigationStore(state => state.searchReturnView);
 
     const [pendingUnavailableReplacement, setPendingUnavailableReplacement] = useState<UnavailableReplacementRequest | null>(null);
+    // One FM refill at a time: two overlapping handleNextTrack calls would otherwise race
+    // their setPlayQueue writes against the same stale queue snapshot.
+    const fmRefillInFlightRef = useRef(false);
     const crossSourceFallbackInFlightRef = useRef(false);
     const crossSourceFallbackAttemptCountRef = useRef(0);
     const crossSourceFallbackExcludedProviderIdsRef = useRef<OnlineProviderId[]>([]);
@@ -1074,11 +1077,22 @@ export function usePlaybackQueueController({
         const currentSongKey = getPlaybackSongKey(heldSong ?? options?.fromSong ?? currentSong);
         const currentIndex = playQueue.findIndex(song => getPlaybackSongKey(song) === currentSongKey);
 
-        if (isFmMode && currentIndex >= playQueue.length - 2) {
+        if (isFmMode && currentIndex >= playQueue.length - 2 && !fmRefillInFlightRef.current) {
+            fmRefillInFlightRef.current = true;
             try {
                 const fmSongs = await omni.getPersonalFm();
-                if (fmSongs.length > 0) {
-                    const nextQueue = [...playQueue, ...fmSongs];
+                // Repeated ids make findIndex resolve to an older entry, which dilutes the
+                // currentIndex >= length - 2 refill threshold and grows the queue forever.
+                const queuedKeys = new Set(playQueue.map(song => getPlaybackSongKey(song)));
+                const freshSongs = fmSongs.filter(song => {
+                    const key = getPlaybackSongKey(song);
+                    if (queuedKeys.has(key)) return false;
+                    // Also dedupe within the incoming batch itself.
+                    queuedKeys.add(key);
+                    return true;
+                });
+                if (freshSongs.length > 0) {
+                    const nextQueue = [...playQueue, ...freshSongs];
                     setPlayQueue(nextQueue);
                     void playSong(nextQueue[currentIndex + 1], nextQueue, true, {
                         shouldNavigateToPlayer,
@@ -1089,6 +1103,8 @@ export function usePlaybackQueueController({
                 }
             } catch (error) {
                 console.error('Failed to fetch FM tracks', error);
+            } finally {
+                fmRefillInFlightRef.current = false;
             }
         }
 
