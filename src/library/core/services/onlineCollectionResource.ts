@@ -15,6 +15,7 @@ import {
     type OnlineTracksCacheProgress,
 } from './onlineCollectionCache';
 import {
+    COLLECTION_SYNC_RETRY_DELAYS_MS,
     ONLINE_COLLECTION_BACKGROUND_PAGE_SIZE,
     ONLINE_COLLECTION_FIRST_PAGE_SIZE,
     syncRemainingCollectionPages,
@@ -42,6 +43,16 @@ const toLoadError = (error: unknown): CollectionLoadError => (
         ? { kind: 'not-public' }
         : { kind: 'generic', message: error instanceof Error ? error.message : String(error) }
 );
+
+// 首页和补页走同一套退避重试。之前只有补页重试，上游偶尔让首页超时一次就直接把整个
+// 集合判成失败；酷狗的大歌单最容易撞上这种瞬时超时。
+const FIRST_PAGE_NON_RETRYABLE_CODES = new Set(['not-public', 'auth-required', 'unsupported']);
+const shouldRetryFirstPage = (error: unknown): boolean => {
+    const code = (error as { code?: unknown } | null)?.code;
+    return typeof code !== 'string' || !FIRST_PAGE_NON_RETRYABLE_CODES.has(code);
+};
+
+const defaultWait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 const isPersonalFm = (collection: OnlineGridViewCollectionDescriptor) => collection.type === 'radio' && collection.id === 'personal_fm';
 const isDailyRecommendations = (collection: OnlineGridViewCollectionDescriptor) => collection.type === 'daily_recommendations';
@@ -177,7 +188,25 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             } else if (isDailyRecommendations(collection)) {
                 responseTracks = await deps.getDailySongs();
             } else {
-                const page = await deps.getCollectionTracks(collection, { limit: ONLINE_COLLECTION_FIRST_PAGE_SIZE, offset: 0 });
+                const page = await (async () => {
+                    for (let attempt = 0; ; attempt += 1) {
+                        try {
+                            return await deps.getCollectionTracks(collection, { limit: ONLINE_COLLECTION_FIRST_PAGE_SIZE, offset: 0 });
+                        } catch (error) {
+                            const delay = COLLECTION_SYNC_RETRY_DELAYS_MS[attempt];
+                            if (
+                                stale()
+                                || !shouldRetryFirstPage(error)
+                                || delay === undefined
+                            ) {
+                                throw error;
+                            }
+                            console.warn(`[LibraryUi] First collection page failed, retrying (${attempt + 1}/${COLLECTION_SYNC_RETRY_DELAYS_MS.length})`, error);
+                            await (deps.wait ?? defaultWait)(delay);
+                            if (stale()) throw error;
+                        }
+                    }
+                })();
                 responseTracks = page.items;
                 hasMore = page.hasMore;
                 total = page.total;

@@ -175,12 +175,33 @@ describe('online collection resource: loading', () => {
         expect(h.writes).toEqual([]);
     });
 
+    it('retries a transient first-page failure instead of failing the whole collection', async () => {
+        const all = songs(10);
+        let calls = 0;
+        const h = harness(all, {
+            getCollectionTracks: vi.fn(async (_c, page) => {
+                calls += 1;
+                if (calls === 1) throw new Error('timeout');
+                return pageOf(all, page.limit, page.offset);
+            }),
+        });
+        const resource = createOnlineCollectionResource('k', h.deps);
+        resource.ensure(playlist({ trackCount: 10 }), {});
+        await settle();
+
+        expect(calls).toBe(2);
+        expect(resource.getSnapshot()).toMatchObject({ status: 'ready' });
+        expect(ids(resource.getSnapshot().tracks)).toEqual(ids(all));
+    });
+
     it('maps a not-public error separately from other failures, and keeps old tracks on a failed reload', async () => {
         const notPublic = harness([], { getCollectionTracks: vi.fn(async () => { throw new OmniError('not-public', 'private', 'p'); }) });
         const privateList = createOnlineCollectionResource('a', notPublic.deps);
         privateList.ensure(playlist(), {});
         await settle();
         expect(privateList.getSnapshot()).toMatchObject({ status: 'error', error: { kind: 'not-public' } });
+        // A private playlist will not become public on a retry; do not delay the error.
+        expect(notPublic.deps.getCollectionTracks).toHaveBeenCalledTimes(1);
 
         let fail = false;
         const flaky = harness(songs(10), {
