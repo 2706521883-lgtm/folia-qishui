@@ -7,7 +7,7 @@
 ## 一、原理链路
 
 ```
-设置卡/命令面板
+歌词样式 → 壁纸模式页签 / 命令面板
    └─ 背景模式 'we'（src/components/visualizer/backgrounds/we/entry.tsx）
         ├─ 识别：IPC wallpaper-engine-scan → wallpaperEngineLibrary.cjs 扫描 Steam 库
         │        └─ 只列 type=scene 且带合法 PKGV 包的工程（视频/Web 壁纸不参与）
@@ -68,7 +68,8 @@
 ## 三、渲染端
 
 - **背景注册**：`src/components/visualizer/backgrounds/we/entry.tsx`（`mode:'we'`, `order:60`），`registry.tsx` 的 `import.meta.glob` 自动发现；`src/types/visualizerModes.ts` 的 id 列表必须同步（启动时 `assertBuiltinModeList` 会对账，漏改直接抛错）。
-- **入口回归锁定**：`test/unit/visualizer/backgroundRegistry.test.ts`（内置背景 id 列表含 `we`）与 `test/ui/wallpaperEngineBackground.spec.ts`（「背景类型」一行能看到「壁纸引擎」chip，选中后渲染设置卡）。若在已安装的 App 里看不到该 chip，先确认那份 App 是不是由本源码构建的：安装目录 `resources/app` 里搜不到 `wallpaperEngine` 就是旧构建，本功能不在其中。
+- **入口**：播放器面板的快速背景选择器故意不列「壁纸引擎」（`AppearanceSection` 的 `hiddenValues`），「歌词样式」里的普通背景类型行也不再列它。壁纸引擎是独立页签「壁纸模式」，紧跟在通用/背景/歌词动画/字幕之后；进入该页签即切到 `we`，壁纸库、会话控制和采集参数都在这一页，壁纸库紧跟在当前壁纸预览之后。播放器面板右上角的调色盘按钮打开的就是这个设置窗口。
+- **入口回归锁定**：`test/unit/visualizer/backgroundRegistry.test.ts`（内置背景 id 列表含 `we`）与 `test/ui/wallpaperEngineBackground.spec.ts`（「歌词样式」页签行有独立的「壁纸模式」，普通背景类型行不含「壁纸引擎」）。若在已安装的 App 里看不到这个页签，先确认那份 App 是不是由本源码构建的：安装目录 `resources/app` 里搜不到 `wallpaperEngine` 就是旧构建，本功能不在其中。
 - **采集**（`src/services/wallpaperEngineCapture.ts`）：`getUserMedia({video:{mandatory:{chromeMediaSource:'desktop', chromeMediaSourceId, minFrameRate:10, maxFrameRate}}})`。**没有** `setDisplayMediaRequestHandler`——`desktopCapturer` + mandatory 约束这条老路径在 Windows 上不需要用户授权弹窗。
 - **图层**（`we/WeBackgroundLayer.tsx`）：`<video muted playsInline autoPlay>` + `object-cover`，透明度/缩放/位移走 CSS `transform`/`opacity`。**采集流只在会话/帧率变化时重建**，所以拖滑杆不会重启采集、不会闪黑；采集失败（例如窗口被 WE 本体抢走）自动退回 `folia-we://preview/<itemId>` 静态预览图，且失败会重试（3 次）而不是一次就永久停在预览图上。
 - **切歌词样式不模糊**：背景层挂在 visualizer 子树里，换样式时它会不会跟着重建取决于走哪条渲染路径——模式分块懒加载、首访时整棵子树经 `Suspense`（`fallback={null}`）重建；播放页的舞台外壳是稳定的，2026-10-17 实测连切 4 个样式只换掉模式自己的内容 div（`player-visual-surface` 内 2 处 DOM 变更）、背景层原地保留。所以采集流不赌路径：`src/services/wallpaperEngineCapture.ts` 把活着的流放在模块级 `liveCapture` 里留 2.5s **宽限期**：重挂载直接认养同一条流（不重开 `getUserMedia`，`video.srcObject` 立刻接回原流），`WeBackgroundLayer` 的 `streamReady` 初值也取自缓存，因此连一帧低清预览图都不会出现。宽限期到点且没有消费者时才真正 `track.stop()`；换成别的背景类型、停会话仍然是立刻（宽限期后）关掉采集。回归锁：`test/component/weBackgroundRemount.spec.ts` + 探针 `dev/probes/weBackgroundRemount.probe.tsx`（`canvas.captureStream` 造假采集，数预览图出现次数与 `getUserMedia` 调用次数）。
@@ -109,7 +110,7 @@
 | `dev/we-mute-probe.cjs` | 开一个窗口后对比 `applyProperties` 的几种调用方式（默认编码 / 逐字 / cmd.exe）的退出码 | 是（开一个 parked 窗口，结束即关） |
 | `dev/we-e2e.cjs` | 全链路验收：扫描 → 开窗 → park → 采集出真帧 → 静音被确认 → 关窗消失；任一环失败即非零退出 | 是（同上） |
 | `dev/we-diag.cjs` | 窗口身份诊断：列出含标题的窗口（class/pid/rect）+ FindWindow 探针 | 是（同上） |
-| `dev/we-dev-ui-check.cjs` | 桌面开发态入口自检：连 CDP 打开「歌词样式 → 背景」，断言选择器里有「壁纸引擎」、设置卡渲染、无浏览器平台提示，并截图到 `%TEMP%` | 否 |
+| `dev/we-dev-ui-check.cjs` | 桌面开发态入口自检：连 CDP 打开「歌词样式 → 壁纸模式」，断言独立页签存在、设置卡渲染、无浏览器平台提示，并截图到 `%TEMP%` | 否 |
 | `dev/we-pick-wallpaper.cjs` | 装机版免手挑：走真 UI（背景类型行 → 更多设置 → 识别壁纸 → 点条目）选一张壁纸，让会话有东西可放；`node dev/we-pick-wallpaper.cjs 9222 "标题子串"` | 是（切换当前壁纸与会话） |
 | `dev/we-live-session-stop-check.cjs` | 会话生命周期实测：点面板真控件，断言「切走背景类型 → 宽限期后才停」「切回来自动重启并接上采集」「切歌词样式不停会话」，结束时还原背景类型与歌词样式；失败即非零退出。开发态与**装机版**通用（见下） | 是（切走背景类型再切回，会短暂换掉画面） |
 

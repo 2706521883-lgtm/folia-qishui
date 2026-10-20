@@ -13,6 +13,8 @@ interface QuickEffectPickerProps<Value extends string> {
     value: Value;
     options: QuickEffectPickerOption<Value>[];
     onChange: (value: Value) => void;
+    /** Values that stay selectable as the current value but are not listed (e.g. a mode with its own settings entry). */
+    hiddenValues?: readonly Value[];
     isDaylight: boolean;
     primaryColor: string;
     ariaLabel: string;
@@ -28,6 +30,7 @@ const QuickEffectPicker = <Value extends string>({
     value,
     options,
     onChange,
+    hiddenValues,
     isDaylight,
     primaryColor,
     ariaLabel,
@@ -38,6 +41,9 @@ const QuickEffectPicker = <Value extends string>({
     const [isOpen, setIsOpen] = useState(false);
     const pickerRef = useRef<HTMLDivElement>(null);
     const selectedOption = options.find(option => option.value === value) ?? options[0];
+    const visibleOptions = hiddenValues?.length
+        ? options.filter(option => !hiddenValues.includes(option.value))
+        : options;
 
     useEffect(() => {
         if (!isOpen) return undefined;
@@ -104,7 +110,7 @@ const QuickEffectPicker = <Value extends string>({
                             aria-label={ariaLabel}
                         >
                             <div className="relative space-y-0.5">
-                                {options.map(option => {
+                                {visibleOptions.map(option => {
                                     const isActive = option.value === value;
                                     const prefix = renderOptionPrefix?.(option.value);
                                     return (

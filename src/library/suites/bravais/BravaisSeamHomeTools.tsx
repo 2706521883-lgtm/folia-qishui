@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import {
     Disc3,
     EyeOff,
@@ -13,6 +14,7 @@ import {
     Settings,
 } from 'lucide-react';
 import type { BravaisHomeSeam, BravaisHomeShortcut, BravaisHomeTool, BravaisHomeToolId } from './bravaisHomeModels';
+import { QUEUE_TILE_DRAG_THRESHOLD_PX, resolveQueueTileDragAction } from './bravaisSeamQueueDrag';
 import { BRAVAIS_SPECIAL_ICONS } from './bravaisSpecialIcons';
 import { closeBravaisHomePopover, setBravaisHomeOpenRequest, setBravaisHomePopover, useBravaisHomeUiStore } from './bravaisHomeUiStore';
 import { useBravaisReducedTransitions } from './bravaisMotion';
@@ -73,6 +75,7 @@ const BravaisSeamHomeTools: React.FC<{
     menuShortcuts?: readonly BravaisHomeShortcut[] | null;
     onOpenShortcut?: (shortcut: BravaisHomeShortcut) => void;
 }> = ({ home, compact, onExpand, menuShortcuts, onOpenShortcut }) => {
+    const { t } = useTranslation();
     const menuOpen = useBravaisHomeUiStore(state => state.popover === 'menu');
     const dockRef = useRef<HTMLDivElement>(null);
     const moreRef = useRef<HTMLButtonElement>(null);
@@ -80,6 +83,58 @@ const BravaisSeamHomeTools: React.FC<{
     const { dock, page, app } = splitHomeTools(home.tools);
     const local = home.menu ?? [];
     const jumps = menuShortcuts ?? [];
+    const searchTool = home.tools.find(tool => tool.id === 'search');
+    const queueDragRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        moved: boolean;
+        dx: number;
+        dy: number;
+    } | null>(null);
+    const suppressQueueClickRef = useRef(false);
+
+    const beginQueueDrag = (event: React.PointerEvent<HTMLButtonElement>, tool: BravaisHomeTool) => {
+        if (event.button !== 0 || tool.disabled) return;
+        queueDragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false,
+            dx: 0,
+            dy: 0,
+        };
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+    };
+
+    const moveQueueDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = queueDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        const dx = event.clientX - drag.startX;
+        const dy = event.clientY - drag.startY;
+        drag.dx = dx;
+        drag.dy = dy;
+        if (!drag.moved && Math.hypot(dx, dy) < QUEUE_TILE_DRAG_THRESHOLD_PX) return;
+        drag.moved = true;
+    };
+
+    const endQueueDrag = (event: React.PointerEvent<HTMLButtonElement>, tool: BravaisHomeTool) => {
+        const drag = queueDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        queueDragRef.current = null;
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        if (!drag.moved) return;
+        // The browser still sends a click after a drag; eat that one so releasing the tile does
+        // not also run the plain click action.
+        suppressQueueClickRef.current = true;
+        window.setTimeout(() => { suppressQueueClickRef.current = false; }, 350);
+        const action = resolveQueueTileDragAction(drag.dx, drag.dy);
+        if (action === 'lattice') {
+            tool.run();
+        } else if (action === 'search' && searchTool && !searchTool.pressed) {
+            searchTool.run();
+        }
+    };
     const hasMenu = jumps.length > 0 || page.length > 0 || local.length > 0 || app.length > 0;
     const open = menuOpen && hasMenu && !compact;
     const pop = bravaisPopMotion('above', useBravaisReducedTransitions());
@@ -177,18 +232,33 @@ const BravaisSeamHomeTools: React.FC<{
                 {dock.map((tool) => {
                     const Icon = TOOL_ICONS[tool.id];
                     const wide = tool.id === 'stage';
+                    const queueTile = tool.id === 'queue';
                     return (
                         <button
                             key={tool.id}
                             type="button"
-                            className={`bravais-seam-icon${tool.pressed ? ' is-pressed' : ''}${wide ? ' is-wide' : ''}`}
+                            className={`bravais-seam-icon${tool.pressed ? ' is-pressed' : ''}${wide ? ' is-wide' : ''}${queueTile ? ' is-queue-drag' : ''}`}
                             data-bravais-seam-action={tool.id}
                             data-stage-active={wide ? String(Boolean(tool.active)) : undefined}
                             aria-label={tool.label}
                             aria-pressed={tool.pressed}
-                            title={tool.label}
+                            title={queueTile ? `${tool.label} · ${t('libraryBravaisHome.queueDragHint')}` : tool.label}
                             disabled={tool.disabled}
-                            onClick={tool.run}
+                            onPointerDown={queueTile ? event => beginQueueDrag(event, tool) : undefined}
+                            onPointerMove={queueTile ? moveQueueDrag : undefined}
+                            onPointerUp={queueTile ? event => endQueueDrag(event, tool) : undefined}
+                            onPointerCancel={queueTile ? () => { queueDragRef.current = null; } : undefined}
+                            onClick={queueTile
+                                ? (event) => {
+                                    if (suppressQueueClickRef.current) {
+                                        suppressQueueClickRef.current = false;
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        return;
+                                    }
+                                    tool.run();
+                                }
+                                : tool.run}
                         >
                             <Icon aria-hidden className={tool.busy ? 'animate-spin' : undefined} />
                             {wide && !compact && tool.shortLabel && <span className="is-label" aria-hidden>{tool.shortLabel}</span>}

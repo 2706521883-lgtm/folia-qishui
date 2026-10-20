@@ -17,6 +17,8 @@ const STEP_TRANSITION = { duration: 0.18, ease: 'easeOut' } as const;
 interface ModeStepperRowProps<Value extends string> {
     value: Value;
     options: { value: Value; label: string; }[];
+    /** Values kept as the current value but hidden from the picker list. */
+    hiddenValues?: readonly Value[];
     onSelect: (value: Value) => void;
     onStep: (direction: -1 | 1) => void;
     renderGlyph: (value: Value) => React.ReactNode;
@@ -32,6 +34,7 @@ interface ModeStepperRowProps<Value extends string> {
 const ModeStepperRow = <Value extends string>({
     value,
     options,
+    hiddenValues,
     onSelect,
     onStep,
     renderGlyph,
@@ -80,6 +83,7 @@ const ModeStepperRow = <Value extends string>({
                 <QuickEffectPicker<Value>
                     value={value}
                     options={options}
+                    hiddenValues={hiddenValues}
                     onChange={handleSelect}
                     isDaylight={isDaylight}
                     primaryColor={primaryColor}
