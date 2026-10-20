@@ -819,6 +819,7 @@ export default {
       "settings-toggle-subtitle-background": { "title": "Alihkan latar subtitle", "description": "Tampilkan atau sembunyikan latar belakang subtitle untuk keterbacaan" },
       "settings-language-system": { "title": "Ikuti bahasa sistem", "description": "Gunakan bahasa browser atau sistem" },
       "settings-language-zh-CN": { "title": "Ganti bahasa ke Tionghoa", "description": "Gunakan Bahasa Tionghoa Sederhana di antarmuka" },
+      "settings-language-zh-TW": { "title": "Ganti bahasa ke Tionghoa Tradisional", "description": "Gunakan Bahasa Tionghoa Tradisional di antarmuka" },
       "settings-language-en": { "title": "Ganti bahasa ke Inggris", "description": "Gunakan Bahasa Inggris di antarmuka" },
       "settings-language-in": { "title": "Ganti bahasa ke Indonesia", "description": "Gunakan Bahasa Indonesia di antarmuka" }
     }
@@ -1718,6 +1719,7 @@ export default {
     "appLanguageDesc": "Atur manual bahasa antarmuka Folia, atau kembali mengikuti sistem.",
     "appLanguageSystem": "Ikuti sistem",
     "appLanguageZhCN": "Tionghoa Sederhana",
+    "appLanguageZhTW": "Tionghoa Tradisional",
     "appLanguageEnUS": "Inggris",
     "appLanguageInID": "Indonesia",
     "appLanguageSystemHint": "Ikuti bahasa browser atau sistem. Saat ini: {{language}}",

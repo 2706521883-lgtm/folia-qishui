@@ -1701,6 +1701,28 @@ const mainLocale = {
     crashOpenFolder: '打开日志所在文件夹',
     crashClose: '关闭',
   },
+  'zh-TW': {
+    trayShowWindow: '顯示視窗',
+    trayHideWindow: '隱藏視窗',
+    trayOpenRemote: '遙控視窗',
+    trayUnlockRemote: '解鎖遙控視窗',
+    trayTransparentBackground: '透明背景',
+    trayToggleClickThrough: '點選穿透',
+    trayAlwaysOnTop: '視窗置頂',
+    trayHideTaskbar: '隱藏工作列圖示',
+    trayDesktopLyricMode: '桌面歌詞',
+    trayToggleWallpaperMode: '桌布模式',
+    trayResetWindow: '重置視窗',
+    trayQuit: '退出',
+    dialogImportTitle: '無法匯入此資料夾',
+    dialogImportMessage: '不能直接匯入系統目錄或常用使用者目錄。\n請選擇一個專門存放音樂的資料夾。',
+    dialogChooseOther: '選擇其他資料夾',
+    dialogCancel: '取消',
+    crashTitle: 'Folia 遇到了問題',
+    crashMessage: '程式發生了一次崩潰，日誌已儲存。把它發給開發者能幫助定位問題。',
+    crashOpenFolder: '開啟日誌所在資料夾',
+    crashClose: '關閉',
+  },
   en: {
     trayShowWindow: 'Show Window',
     trayHideWindow: 'Hide Window',
@@ -1759,7 +1781,10 @@ function normalizeMainLocaleKey(value) {
     return 'in';
   }
   if (lowered.startsWith('zh')) {
-    return 'zh-CN';
+    const subtags = lowered.split('-').slice(1);
+    return subtags.some(tag => tag === 'hant' || tag === 'tw' || tag === 'hk' || tag === 'mo')
+      ? 'zh-TW'
+      : 'zh-CN';
   }
   if (lowered.startsWith('en')) {
     return 'en';
@@ -1802,7 +1827,7 @@ function detectSystemLocaleKey() {
 // modules with their own dialog copy (the mod loader) can ask for the key.
 function getMainLocaleKey() {
   const stored = store.get(APP_LOCALE_KEY);
-  if (stored === 'zh-CN' || stored === 'en' || stored === 'in') {
+  if (stored === 'zh-CN' || stored === 'zh-TW' || stored === 'en' || stored === 'in') {
     return stored;
   }
   return detectSystemLocaleKey();
@@ -5612,7 +5637,7 @@ ipcMain.handle('playback-display-sleep-set-active', (event, active) => {
 });
 
 ipcMain.handle('set-app-locale', (event, localeKey) => {
-  if (localeKey === 'zh-CN' || localeKey === 'en' || localeKey === 'in') {
+  if (localeKey === 'zh-CN' || localeKey === 'zh-TW' || localeKey === 'en' || localeKey === 'in') {
     store.set(APP_LOCALE_KEY, localeKey);
     refreshTrayMenu();
   }
