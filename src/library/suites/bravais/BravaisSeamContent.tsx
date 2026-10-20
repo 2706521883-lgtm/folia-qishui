@@ -16,6 +16,7 @@ import BravaisSeamSearch from './BravaisSeamSearch';
 import BravaisDirectoryPanel from './BravaisDirectoryPanel';
 import BravaisSeamArtist from './BravaisSeamArtist';
 import BravaisSeamPoster from './BravaisSeamPoster';
+import BravaisSeamAlbumPoster from './BravaisSeamAlbumPoster';
 import BravaisSeamAbout from './BravaisSeamAbout';
 import BravaisSeamCrumbs from './BravaisSeamCrumbs';
 import BravaisSeamAccount from './BravaisSeamAccount';
@@ -43,6 +44,8 @@ export type BravaisSeamActions = {
     panel?: BravaisPanelActions;
     /** 首页窄缝的直达入口（特殊集合）：墙上找得到那张卡就以它为起点磁贴（useBravaisInteractions 的 openShortcut）。 */
     openShortcut?: (shortcut: BravaisHomeShortcut) => void;
+    /** 此刻导航到的层（缝里显示的层在换层时会晚一拍）：专辑海报卸载时据此分辨是真的离开还是只换形态。 */
+    currentLayerKey?: () => string | null;
 };
 
 type BravaisSeamContentProps = {
@@ -167,9 +170,11 @@ const BravaisSeamContent: React.FC<BravaisSeamContentProps> = ({ variant, layer,
         case 'home-spine': return <BravaisSeamHome layer={layer} compact setLevel={actions.setLevel} openShortcut={actions.openShortcut} />;
         case 'search': return <BravaisSeamSearch layer={layer} />;
         case 'full': return <FullSeam layer={layer} depth={depth} actions={actions} />;
-        case 'poster': return layer.seam.artist
-            ? <BravaisSeamPoster layer={layer} actions={actions} />
-            : <FullSeam layer={layer} depth={depth} actions={actions} />;
+        case 'poster': return layer.seam.album
+            ? <BravaisSeamAlbumPoster key={layer.key} layer={layer} actions={actions} />
+            : layer.seam.artist
+                ? <BravaisSeamPoster layer={layer} actions={actions} />
+                : <FullSeam layer={layer} depth={depth} actions={actions} />;
         case 'spine': return <SpineSeam layer={layer} actions={actions} />;
         case 'panel':
             if (!actions.panel) return null;
