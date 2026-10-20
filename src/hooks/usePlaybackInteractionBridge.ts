@@ -39,6 +39,35 @@ export const resolvePlayerEscapeAction = ({
     return isPanelOpen ? 'close-panel' : 'navigate-back';
 };
 
+type PlayerTrackKeyAction = 'prev' | 'next';
+
+/**
+ * Up/Down are transport keys on the player page, mirroring the bare Left/Right seek keys.
+ * They stay out of the library views, where the arrow keys move the grid selection instead.
+ * A held key is refused rather than skipped: one press changes one track, and auto-repeat would
+ * otherwise jump through the queue before the listener can let go.
+ */
+export const resolvePlayerTrackKeyAction = ({
+    keyCode,
+    currentView,
+    hasCurrentSong,
+    isNowPlayingStageActive,
+    hasBlockingWindow,
+    isRepeat,
+}: {
+    keyCode: string;
+    currentView: string;
+    hasCurrentSong: boolean;
+    isNowPlayingStageActive: boolean;
+    hasBlockingWindow: boolean;
+    isRepeat: boolean;
+}): PlayerTrackKeyAction | null => {
+    if (keyCode !== 'ArrowUp' && keyCode !== 'ArrowDown') return null;
+    if (!hasCurrentSong || currentView !== 'player' || isNowPlayingStageActive) return null;
+    if (hasBlockingWindow || isRepeat) return null;
+    return keyCode === 'ArrowUp' ? 'prev' : 'next';
+};
+
 type UsePlaybackInteractionBridgeParams = {
     stageActiveEntryKind: string | null;
     isNowPlayingStageActive: boolean;
@@ -331,6 +360,25 @@ export function usePlaybackInteractionBridge({
                         }
                     }
                     break;
+                case 'ArrowUp':
+                case 'ArrowDown': {
+                    const trackKeyAction = resolvePlayerTrackKeyAction({
+                        keyCode: effectiveKeyCode(event),
+                        currentView,
+                        hasCurrentSong: Boolean(currentSong),
+                        isNowPlayingStageActive,
+                        hasBlockingWindow: hasBlockingWindow(),
+                        isRepeat: event.repeat,
+                    });
+                    if (!trackKeyAction) return;
+                    event.preventDefault();
+                    if (trackKeyAction === 'prev') {
+                        handlePrevTrack();
+                    } else {
+                        void handleNextTrack();
+                    }
+                    break;
+                }
                 case 'KeyH':
                     if (currentView !== 'player' || isPanelOpen || hasBlockingWindow()) return;
                     if (event.ctrlKey || event.altKey || event.metaKey) return;

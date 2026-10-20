@@ -188,7 +188,7 @@ jobs:
       - name: Build Web App for Electron
         env:
           ELECTRON: "true"
-          APP_VERSION_LABEL: Internal
+          APP_VERSION_LABEL: Folia Internal
           APP_RELEASE_CHANNEL: internal
         run: npm run build
 

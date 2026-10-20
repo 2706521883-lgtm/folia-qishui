@@ -139,7 +139,7 @@ jobs:
       - name: Build web app for Electron
         env:
           ELECTRON: 'true'
-          APP_VERSION_LABEL: Cielo
+          APP_VERSION_LABEL: Folia Canary
           APP_RELEASE_CHANNEL: cielo
         run: npm run build
 

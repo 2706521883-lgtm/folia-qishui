@@ -197,7 +197,7 @@ jobs:
       - name: Build web app for Electron
         env:
           ELECTRON: 'true'
-          APP_VERSION_LABEL: Realeco
+          APP_VERSION_LABEL: Folia
           APP_RELEASE_CHANNEL: realeco
         run: npm run build
 

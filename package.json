@@ -7,7 +7,7 @@
     "name": "2706521883-lgtm"
   },
   "private": true,
-  "version": "0.3.8",
+  "version": "0.3.9",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "electron/main.cjs",
@@ -79,7 +79,7 @@
       {
         "provider": "github",
         "owner": "2706521883-lgtm",
-        "repo": "folia-qishui"
+        "repo": "folia-updates"
       }
     ],
     "files": [

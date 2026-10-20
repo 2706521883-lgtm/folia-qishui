@@ -1930,10 +1930,10 @@ const DEFAULT_OBS_BROWSER_SOURCE_PORT = 32108;
 const DEFAULT_LYRIC_API_PORT = 32109;
 // 本二创版的发布/更新源。这里是 owner/repo 的唯一真源：安装包里 app-update.yml 由
 // package.json 的 build.publish 生成，改一处必须同时改另一处，否则自动更新会走回上游。
-const FOLIA_RELEASES_URL = 'https://github.com/2706521883-lgtm/folia-qishui/releases';
+const FOLIA_RELEASES_URL = 'https://github.com/2706521883-lgtm/folia-updates/releases';
 const FOLIA_GITHUB_REPOSITORY = {
   owner: '2706521883-lgtm',
-  repo: 'folia-qishui',
+  repo: 'folia-updates',
 };
 const WINDOWS_APP_USER_MODEL_ID = 'top.izuna.foliamajor';
 const REMOTE_CONTROL_WINDOW_TITLE = 'Folia Remote';
