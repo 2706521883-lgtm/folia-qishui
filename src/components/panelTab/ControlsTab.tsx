@@ -9,6 +9,7 @@ import { useThemeSyncAction } from '../../hooks/useThemeSyncAction';
 import AudioEqualizerDialog from './AudioEqualizerDialog';
 import AppearanceSection from './controls/AppearanceSection';
 import SongActionRow from './controls/SongActionRow';
+import SoundTiles from './controls/SoundTiles';
 import VolumeRow from './controls/VolumeRow';
 
 // src/components/panelTab/ControlsTab.tsx
@@ -124,7 +125,11 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
                     isDaylight={isDaylight}
                 />
 
-                <div className="pt-2 border-t border-white/5 space-y-3">
+                <SoundTiles isDaylight={isDaylight} />
+
+                <div className={`mx-1 my-3 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
+
+                <div className="space-y-3">
                     <VolumeRow
                         volume={volume}
                         isMuted={isMuted}
@@ -152,7 +157,9 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
                     />
                 </div>
 
-                <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                <div className={`mx-1 my-3 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
+
+                <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
