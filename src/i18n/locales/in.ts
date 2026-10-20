@@ -78,6 +78,8 @@ export default {
     "searchSubmit": "Cari",
     "searchClose": "Tutup pencarian",
     "queueDragHint": "Geser ke kanan untuk kolase antrean, ke kiri untuk mencari musik",
+    "queueDragLeft": "Lepas: cari musik",
+    "queueDragRight": "Lepas: kolase antrean",
     "backToPlayer": "Kembali ke pemutar",
     "playerShort": "Pemutar",
     "stagePlayer": "Pemutar panggung",

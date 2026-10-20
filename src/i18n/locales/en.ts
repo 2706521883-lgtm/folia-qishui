@@ -78,6 +78,8 @@ export default {
     "searchSubmit": "Search",
     "searchClose": "Close search",
     "queueDragHint": "Drag right for the queue collage, left to search music",
+    "queueDragLeft": "Release: search music",
+    "queueDragRight": "Release: queue collage",
     "backToPlayer": "Back to the player",
     "playerShort": "Player",
     "stagePlayer": "Stage player",

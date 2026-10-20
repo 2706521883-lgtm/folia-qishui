@@ -78,6 +78,8 @@ export default {
     "searchSubmit": "搜索",
     "searchClose": "关闭搜索",
     "queueDragHint": "向右拖动打开队列拼贴，向左拖动搜索音乐",
+    "queueDragLeft": "松开：搜索音乐",
+    "queueDragRight": "松开：队列拼贴",
     "backToPlayer": "回到播放页",
     "playerShort": "播放页",
     "stagePlayer": "舞台播放器",

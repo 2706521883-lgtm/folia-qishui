@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, type KeyboardEvent } from 'react';
+import React, { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import {
@@ -93,6 +93,7 @@ const BravaisSeamHomeTools: React.FC<{
         dy: number;
     } | null>(null);
     const suppressQueueClickRef = useRef(false);
+    const [queueDrag, setQueueDrag] = useState<{ dx: number; action: 'lattice' | 'search' | null } | null>(null);
 
     const beginQueueDrag = (event: React.PointerEvent<HTMLButtonElement>, tool: BravaisHomeTool) => {
         if (event.button !== 0 || tool.disabled) return;
@@ -104,6 +105,7 @@ const BravaisSeamHomeTools: React.FC<{
             dx: 0,
             dy: 0,
         };
+        setQueueDrag({ dx: 0, action: null });
         event.currentTarget.setPointerCapture?.(event.pointerId);
     };
 
@@ -116,12 +118,14 @@ const BravaisSeamHomeTools: React.FC<{
         drag.dy = dy;
         if (!drag.moved && Math.hypot(dx, dy) < QUEUE_TILE_DRAG_THRESHOLD_PX) return;
         drag.moved = true;
+        setQueueDrag({ dx, action: resolveQueueTileDragAction(dx, dy) });
     };
 
     const endQueueDrag = (event: React.PointerEvent<HTMLButtonElement>, tool: BravaisHomeTool) => {
         const drag = queueDragRef.current;
         if (!drag || drag.pointerId !== event.pointerId) return;
         queueDragRef.current = null;
+        setQueueDrag(null);
         event.currentTarget.releasePointerCapture?.(event.pointerId);
         if (!drag.moved) return;
         // The browser still sends a click after a drag; eat that one so releasing the tile does
@@ -237,9 +241,15 @@ const BravaisSeamHomeTools: React.FC<{
                         <button
                             key={tool.id}
                             type="button"
-                            className={`bravais-seam-icon${tool.pressed ? ' is-pressed' : ''}${wide ? ' is-wide' : ''}${queueTile ? ' is-queue-drag' : ''}`}
+                            className={`bravais-seam-icon${tool.pressed ? ' is-pressed' : ''}${wide ? ' is-wide' : ''}${queueTile ? ' is-queue-drag' : ''}${queueTile && queueDrag?.action ? ' is-queue-drag-armed' : ''}`}
                             data-bravais-seam-action={tool.id}
+                            data-bravais-queue-hint={queueTile && queueDrag?.action
+                                ? (queueDrag.action === 'search' ? t('libraryBravaisHome.queueDragLeft') : t('libraryBravaisHome.queueDragRight'))
+                                : undefined}
                             data-stage-active={wide ? String(Boolean(tool.active)) : undefined}
+                            style={queueTile && queueDrag
+                                ? { transform: `translateX(${Math.max(-14, Math.min(14, queueDrag.dx * 0.25))}px)` }
+                                : undefined}
                             aria-label={tool.label}
                             aria-pressed={tool.pressed}
                             title={queueTile ? `${tool.label} · ${t('libraryBravaisHome.queueDragHint')}` : tool.label}
@@ -247,7 +257,7 @@ const BravaisSeamHomeTools: React.FC<{
                             onPointerDown={queueTile ? event => beginQueueDrag(event, tool) : undefined}
                             onPointerMove={queueTile ? moveQueueDrag : undefined}
                             onPointerUp={queueTile ? event => endQueueDrag(event, tool) : undefined}
-                            onPointerCancel={queueTile ? () => { queueDragRef.current = null; } : undefined}
+                            onPointerCancel={queueTile ? () => { queueDragRef.current = null; setQueueDrag(null); } : undefined}
                             onClick={queueTile
                                 ? (event) => {
                                     if (suppressQueueClickRef.current) {
