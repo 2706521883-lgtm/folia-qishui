@@ -1,5 +1,7 @@
 import { AlertTriangle, Check, Loader2, RotateCcw, ServerCog, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
+import type { ProviderAccountSummary } from '../../../../types/onlineMusic';
 import QrLoginFailureHelp, { type QrLoginFailureHelpProps } from './QrLoginFailureHelp';
 
 // src/library/suites/grid/account/OnlineProviderLoginModal.tsx
@@ -44,6 +46,10 @@ type OnlineProviderLoginModalProps = {
     backendFailure?: BackendFailureProps;
     // 只在扫码登录失败时传入（含后端没拉起来），显示在二维码旁边。
     failureHelp?: QrLoginFailureHelpProps;
+    /** 统一登录窗的平台列表；不传就维持原来的单平台弹窗。 */
+    providers?: readonly ProviderAccountSummary[];
+    activeProviderId?: string;
+    onSelectProvider?: (providerId: string) => void;
     onRetry: () => void;
     onClose: () => void;
 };
@@ -60,9 +66,13 @@ const OnlineProviderLoginModal = ({
     loginMethods,
     backendFailure,
     failureHelp,
+    providers,
+    activeProviderId,
+    onSelectProvider,
     onRetry,
     onClose,
 }: OnlineProviderLoginModalProps) => {
+    const { t } = useTranslation();
     // 步骤一：还没选登录方式，二维码区显示占位框，且不会向后端发出任何请求。
     const awaitingMethod = Boolean(loginMethods) && loginMethods?.selectedId == null;
     // 后端故障优先于其余所有状态：这时候刷新二维码没有意义。
@@ -97,6 +107,42 @@ const OnlineProviderLoginModal = ({
                     <X size={16} />
                 </button>
                 <h3 className="text-lg font-bold mb-6" style={{ color: 'var(--text-primary)' }}>{title}</h3>
+                {providers && providers.length > 1 && onSelectProvider && (
+                    <div className="mb-6">
+                        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] opacity-45" style={{ color: 'var(--text-secondary)' }}>
+                            {t('loginSelectPlatform')}
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-1.5">
+                            {providers.map(provider => {
+                                const active = provider.providerId === activeProviderId;
+                                const configured = provider.availability.configured;
+                                const unavailable = provider.availability.reason === 'runtime-unavailable';
+                                const label = provider.shortName || provider.displayName || provider.providerId;
+                                return (
+                                    <button
+                                        key={provider.providerId}
+                                        type="button"
+                                        aria-pressed={active}
+                                        disabled={unavailable || active}
+                                        onClick={() => onSelectProvider(provider.providerId)}
+                                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${active
+                                            ? 'border-white/25 bg-white/15 text-white'
+                                            : unavailable
+                                                ? 'cursor-not-allowed border-white/5 bg-white/[0.02] text-white/25'
+                                                : 'cursor-pointer border-white/10 bg-white/5 text-white/65 hover:bg-white/10 hover:text-white'}`}
+                                        style={active ? undefined : { color: 'var(--text-secondary)' }}
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className={`h-1.5 w-1.5 rounded-full ${configured ? 'bg-green-400' : unavailable ? 'bg-white/15' : 'bg-white/30'}`}
+                                        />
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
                 {loginMethods && (
                     <div className="mb-5">
                         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] opacity-45 mb-1.5" style={{ color: 'var(--text-secondary)' }}>

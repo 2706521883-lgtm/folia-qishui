@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { X } from 'lucide-react';
@@ -21,6 +21,19 @@ type ReleaseNotesDialogProps = {
 const ReleaseNotesDialog: React.FC<ReleaseNotesDialogProps> = ({ isOpen, isDaylight, theme, onClose }) => {
     const { t } = useTranslation();
     const calm = useMotionSettingsStore(state => resolveReducedMotion(state, 'uiMicroMotion'));
+
+    // data-folia-keyboard-window 让全局热键（包括它们的 Esc）让路，所以 Esc 关闭得自己接。
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.repeat || event.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onClose();
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     const classes = {
         textPrimary: isDaylight ? 'text-zinc-900' : 'text-zinc-50',

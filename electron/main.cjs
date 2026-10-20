@@ -1,4 +1,8 @@
 const { app, BrowserWindow, ipcMain, session, screen, dialog, shell, nativeImage, desktopCapturer, Menu, Tray, nativeTheme, powerSaveBlocker, safeStorage, protocol, crashReporter, net: electronNet } = require('electron');
+// 必须先于其它模块加载：TEMP / TMP 里没展开的 %USERPROFILE% 会让 os.tmpdir() 变成相对路径（#690）。
+for (const repair of require('./tempDirEnvironment.cjs').repairTempDirEnvironment()) {
+  console.warn(`[TempDir] expanded ${repair.key}: ${repair.from} -> ${repair.to}`);
+}
 const fs = require('fs');
 const http = require('http');
 const path = require('path');

@@ -174,6 +174,9 @@ export const buildSettingsCommandContext = (
         toggleAutoHideCursorWithPlayerChrome: () => chrome.handleToggleAutoHideCursorWithPlayerChrome(
             !usePlayerChromeSettingsStore.getState().autoHideCursorWithPlayerChrome,
         ),
+        toggleHideCursorWhenIdle: () => chrome.handleToggleHideCursorWhenIdle(
+            !usePlayerChromeSettingsStore.getState().hideCursorWhenIdle,
+        ),
         toggleAutoPlayOnLaunch: () => audio.handleToggleAutoPlayOnLaunch(
             !useAudioSettingsStore.getState().autoPlayOnLaunch,
         ),

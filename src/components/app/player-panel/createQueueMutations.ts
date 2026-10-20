@@ -4,6 +4,7 @@ import { applyQueueAddBehavior } from '../../../utils/queueAddBehavior';
 import type { NavidromeSong } from '../../../types/navidrome';
 import type { QueueAddBehavior, SongResult, StatusMessage } from '../../../types';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
+import { moveQueueItemToNext } from '../../../utils/queueReorder';
 import { applyQueueBatchOperation as transformQueueBatch } from '../../../utils/queueBatchOperations';
 import type { QueueBatchAction } from '../../command-palette/queueQuery';
 import { setStatusMessage as setStatusMsg } from '../../../stores/useStatusMessageStore';
@@ -76,12 +77,8 @@ export const createQueueMutations = ({
         const currentIndex = currentSongKey
             ? playQueue.findIndex(song => getPlaybackSongKey(song) === currentSongKey)
             : -1;
-        const targetIndex = Math.min(currentIndex + 1, playQueue.length - 1);
-        if (index < 0 || index >= playQueue.length || index === targetIndex || index === currentIndex) return;
-        const nextQueue = [...playQueue];
-        const [song] = nextQueue.splice(index, 1);
-        const adjustedTargetIndex = index < targetIndex ? targetIndex - 1 : targetIndex;
-        nextQueue.splice(adjustedTargetIndex, 0, song);
+        const nextQueue = moveQueueItemToNext(playQueue, index, currentIndex);
+        if (nextQueue === playQueue) return;
         updateQueueOrder(nextQueue);
     };
 

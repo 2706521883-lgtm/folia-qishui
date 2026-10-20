@@ -13,8 +13,10 @@ import {
     useLibraryAccountLayerElement,
     useLibraryAccountLogin,
     useLibraryAccountPendingSwitch,
+    useLibraryAccountProviders,
     type LibraryLoginView,
 } from '../../../core/bindings/useLibraryAccount';
+import type { ProviderAccountSummary } from '../../../../types/onlineMusic';
 import OnlineProviderLoginModal from './OnlineProviderLoginModal';
 import { buildQrLoginFailureHelpProps } from './buildQrLoginFailureHelpProps';
 import ConfirmDialog from '../../../../components/shared/ConfirmDialog';
@@ -53,6 +55,7 @@ const buildLoginModalProps = (
     account: LibraryAccountController,
     t: TFunction,
     features: GridLoginFeatures,
+    providers: readonly ProviderAccountSummary[],
 ): LoginModalProps => {
     const { session } = view;
     return {
@@ -61,6 +64,13 @@ const buildLoginModalProps = (
         qrCodeImg: session.qrImageUrl,
         statusText: view.status ?? '',
         state: toModalState(session.phase),
+        // 统一登录窗：同一个弹窗里直接换平台，不必关掉再回首页。当前弹窗对应的平台高亮；
+        // 已登录的平台带绿点，未登录的带灰点，运行期不可用的置灰。
+        providers,
+        activeProviderId: session.providerId,
+        onSelectProvider: providerId => {
+            if (providerId !== session.providerId) void account.startLogin(providerId);
+        },
         retryLabel: view.retryLabel,
         closeLabel: view.closeLabel,
         retryDisabled: session.retryCooldownSeconds !== null,
@@ -113,6 +123,7 @@ const hasAction = (actions: readonly LibraryAccountActionId[], action: LibraryAc
 const GridAccountSurface: React.FC<LibraryAccountSurfaceProps> = ({ account, isDaylight, declaredActions, layer }) => {
     const { t } = useTranslation();
     const login = useLibraryAccountLogin(account);
+    const { providers } = useLibraryAccountProviders(account);
     const pendingSwitch = useLibraryAccountPendingSwitch(account);
     const layerElement = useLibraryAccountLayerElement(layer);
     const features: GridLoginFeatures = {
@@ -122,7 +133,7 @@ const GridAccountSurface: React.FC<LibraryAccountSurfaceProps> = ({ account, isD
 
     const loginModal = (
         <AnimatePresence>
-            {login?.visible && <OnlineProviderLoginModal {...buildLoginModalProps(login, account, t, features)} />}
+            {login?.visible && <OnlineProviderLoginModal {...buildLoginModalProps(login, account, t, features, providers)} />}
         </AnimatePresence>
     );
     const canPortal = typeof document !== 'undefined';
