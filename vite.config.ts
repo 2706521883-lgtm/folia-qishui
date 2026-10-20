@@ -4,6 +4,7 @@ import { type ConfigEnv, type HtmlTagDescriptor, type UserConfig, type ViteDevSe
 import react from '@vitejs/plugin-react';
 import { commandPinyinPlugin } from './dev/pinyin/commandPinyinPlugin.mjs';
 import { traditionalLocalePlugin } from './dev/i18n/traditionalLocalePlugin.mjs';
+import { icuFoliaDataPlugin } from './dev/icuFolia/icuFoliaDataPlugin.mjs';
 import { normalizeBuildCommit, resolveBuildRepo } from './dev/build/buildIdentity.mjs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'child_process';
@@ -327,6 +328,7 @@ export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig
       devErudaPlugin(),
       commandPinyinPlugin(),
       traditionalLocalePlugin(),
+      icuFoliaDataPlugin(),
       react(),
       // 移动端壳构建不装 PWA 插件（见上方 isCapacitorBuild 注释）。
       ...(isCapacitorBuild ? [] : [VitePWA({

@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Blend, SlidersHorizontal, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Volume1, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { Theme } from '../../../types';
-import { useAutomixSettingsStore } from '../../../stores/useAutomixSettingsStore';
-import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 
 // src/components/panelTab/controls/VolumeRow.tsx
-// 单行音量：静音、滑杆、百分比、均衡器入口挤在同一行，省掉原来单独占一行的标题。
+// 单行音量：静音、滑杆、百分比。拖动时只预听，松手才把音量记下来。
+// 均衡器与智能过渡在同一排的快捷块里，不在这里重复。
 
 interface VolumeRowProps {
     volume: number;
@@ -28,14 +27,10 @@ const VolumeRow: React.FC<VolumeRowProps> = ({
     isDaylight,
 }) => {
     const { t } = useTranslation();
-    const audioEqualizerSettings = useAudioSettingsStore(state => state.audioEqualizerSettings);
-    const openAudioEqualizer = useAudioSettingsStore(state => state.openAudioEqualizer);
-    const automixEnabled = useAutomixSettingsStore(state => state.automixEnabled);
-    const toggleAutomix = useAutomixSettingsStore(state => state.handleToggleAutomix);
     const [sliderVolume, setSliderVolume] = useState(isMuted ? 0 : volume);
     const isDraggingRef = useRef(false);
     const pendingVolumeRef = useRef(sliderVolume);
-    const wellBg = isDaylight ? 'bg-black/5' : 'bg-black/20';
+    const wellBg = isDaylight ? 'bg-black/5' : 'bg-white/5';
 
     useEffect(() => {
         if (!isDraggingRef.current) {
@@ -59,6 +54,17 @@ const VolumeRow: React.FC<VolumeRowProps> = ({
         isDraggingRef.current = false;
         onVolumeChange(pendingVolumeRef.current);
     };
+
+    // 拖到一半这一页就没了（面板关掉、换了标签页）：把正在试听的音量记下来，不然下次调音量会跳回去。
+    const onVolumeChangeRef = useRef(onVolumeChange);
+    useEffect(() => {
+        onVolumeChangeRef.current = onVolumeChange;
+    }, [onVolumeChange]);
+    useEffect(() => () => {
+        if (isDraggingRef.current) {
+            onVolumeChangeRef.current(pendingVolumeRef.current);
+        }
+    }, []);
 
     return (
         <div className={`flex items-center gap-2.5 ${wellBg} px-2.5 py-2 rounded-xl`}>
@@ -94,30 +100,6 @@ const VolumeRow: React.FC<VolumeRowProps> = ({
             <span className="w-8 shrink-0 text-right text-[10px] font-bold opacity-60 tabular-nums">
                 {Math.round(sliderVolume * 100)}%
             </span>
-
-            <button
-                type="button"
-                data-ponder="audio-equalizer"
-                onClick={openAudioEqualizer}
-                className={`shrink-0 rounded-md transition-opacity hover:opacity-100 ${audioEqualizerSettings.enabled ? 'opacity-100' : 'opacity-40'}`}
-                style={audioEqualizerSettings.enabled ? { color: theme.accentColor } : undefined}
-                title={t('ui.openEqualizer')}
-                aria-label={t('ui.openEqualizer')}
-            >
-                <SlidersHorizontal size={14} />
-            </button>
-
-            <button
-                type="button"
-                onClick={() => toggleAutomix(!automixEnabled)}
-                className={`shrink-0 rounded-md transition-opacity hover:opacity-100 ${automixEnabled ? 'opacity-100' : 'opacity-40'}`}
-                style={automixEnabled ? { color: theme.accentColor } : undefined}
-                title={t('ui.automix')}
-                aria-label={t('ui.automix')}
-                aria-pressed={automixEnabled}
-            >
-                <Blend size={14} />
-            </button>
         </div>
     );
 };

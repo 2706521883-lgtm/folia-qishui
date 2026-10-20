@@ -16,6 +16,8 @@ import type { LyricFilterDraft } from './LyricFilterSettingsModal';
 import GlobalLyricOffsetModal from './settings/GlobalLyricOffsetModal';
 import { settingsCardClassFor, settingsToggleOffClassFor } from './settings/settingsCardClasses';
 import { settingsTokens } from './settings/settingsTheme';
+import { kitMotionTokens } from './settings/kit/motion';
+import './settings/kit/kit.css';
 import AppearanceSettingsSubview from './settings/AppearanceSettingsSubview';
 import DesktopSettingsSubview from './settings/DesktopSettingsSubview';
 import GeneralSettingsSubview from './settings/GeneralSettingsSubview';
@@ -214,6 +216,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         hideRemoteControlTaskbarIcon,
         hideRemoteControlTitlebar,
         remoteControlClickThrough,
+        remoteControlExpandCover,
         wallpaperMode,
         handleToggleWallpaperMode: onToggleWallpaperMode,
         wallpaperMacAutohideDock,
@@ -226,6 +229,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         handleToggleHideRemoteControlTaskbarIcon: onToggleHideRemoteControlTaskbarIcon,
         handleToggleHideRemoteControlTitlebar: onToggleHideRemoteControlTitlebar,
         handleToggleRemoteControlClickThrough: onToggleRemoteControlClickThrough,
+        handleToggleRemoteControlExpandCover: onToggleRemoteControlExpandCover,
         handleToggleOpenPlayerOnLaunch: onToggleOpenPlayerOnLaunch,
     } = useDesktopSettingsStore(useShallow(selectDesktopSettingsSnapshot));
     const {
@@ -1292,6 +1296,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     );
     const activeSettingsNavItem = findSettingsNavItem(settingsNavGroups, activeSettingsSection);
     const prefersReducedMotion = useReducedMotionFor('settingsScroll');
+    const prefersReducedUiMotion = useReducedMotionFor('uiMicroMotion');
     const { activeAnchorId, scrollToAnchor } = useSettingsScrollSpy({
         containerRef: contentScrollRef,
         anchors: settingsAnchors,
@@ -1330,8 +1335,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
             <motion.div
                 {...panelMotion}
                 transition={shellTransition}
-                style={settingsTokens(isDaylight, theme)}
-                className={`${glassBg} border ${borderColor} p-6 md:p-8 rounded-3xl ${activeTab === 'options' ? 'w-full md:max-w-4xl md:w-[900px] h-[90vh] md:h-[85vh]' : 'w-full md:max-w-lg'} relative shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300`}
+                style={{ ...settingsTokens(isDaylight, theme), ...kitMotionTokens(prefersReducedUiMotion) }}
+                className={`st-window ${glassBg} border ${borderColor} p-6 md:p-8 rounded-3xl ${activeTab === 'options' ? 'w-full md:max-w-4xl md:w-[900px] h-[90vh] md:h-[85vh]' : 'w-full md:max-w-lg'} relative shadow-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300`}
                 onClick={(event) => event.stopPropagation()}
             >
                 {/* Decorative background blobs */}
@@ -1849,12 +1854,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     hideRemoteControlTaskbarIcon,
                                                     hideRemoteControlTitlebar,
                                                     remoteControlClickThrough,
+                                                    remoteControlExpandCover,
                                                     minimizeToTray,
                                                     closeToTray,
                                                     onToggleHideTaskbarIcon,
                                                     onToggleHideRemoteControlTaskbarIcon,
                                                     onToggleHideRemoteControlTitlebar,
                                                     onToggleRemoteControlClickThrough,
+                                                    onToggleRemoteControlExpandCover,
                                                     onToggleMinimizeToTray,
                                                     onToggleCloseToTray,
                                                     onToggleOpenPlayerOnLaunch,

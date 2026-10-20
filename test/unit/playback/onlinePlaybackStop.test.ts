@@ -65,7 +65,7 @@ function controller() {
 describe('online playback stop conditions', () => {
     it.each([
         ['region-restricted', 'status.songRegionRestricted'],
-        ['auth-required', 'status.loginExpired'],
+        ['auth-required', 'failure.signInNeeded'],
         ['preview-only', 'status.songPreviewOnly'],
     ] as const)('pauses and never schedules queue skipping for %s', async (reason, message) => {
         vi.mocked(loadOnlineSongAudioSource).mockResolvedValue({ kind: 'unavailable', reason });
@@ -74,7 +74,8 @@ describe('online playback stop conditions', () => {
         expect(queue.pause).toHaveBeenCalledOnce();
         expect(queue.shouldAutoPlayRef.current).toBe(false);
         expect(usePlaybackStore.getState().playerState).toBe(PlayerState.IDLE);
-        expect(useStatusMessageStore.getState().message).toMatchObject({ type: 'error', text: message });
+        expect(useStatusMessageStore.getState().message).toMatchObject({ type: 'error' });
+        expect(useStatusMessageStore.getState().message?.text).toContain(message);
         expect(window.setTimeout).not.toHaveBeenCalled();
         expect(loadOnlineSongAudioSource).toHaveBeenCalledOnce();
     });

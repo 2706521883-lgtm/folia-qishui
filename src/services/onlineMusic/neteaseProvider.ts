@@ -327,7 +327,33 @@ export const neteaseProvider: OnlineMusicProvider = {
             const response = await neteaseApi.getSongUrl(toNeteaseId(song.id), mapQuality(quality));
             const raw = response?.data?.[0];
             const rawUrl = raw?.url;
-            if (!rawUrl) return null;
+            if (!rawUrl) {
+                // NetEase answers 200 with a null URL and tells the reason in the same item:
+                // fee 1 is a paid-account track, fee 4 must be bought, freeTrialInfo is a preview,
+                // and a `level` of `none` or a 404-ish code means it is gone.
+                const fee = Number(raw?.fee);
+                const level = typeof raw?.level === 'string' ? raw.level : undefined;
+                const code = raw?.code === undefined ? undefined : String(raw.code);
+                const preview = Boolean(raw?.freeTrialInfo);
+                const detail = preview
+                    ? { case: 'preview-only' as const, message: 'NetEase only offers a preview for this account', code }
+                    : fee === 1
+                        ? { case: 'subscription-required' as const, message: 'NetEase requires a paid account for this track', code }
+                        : fee === 4
+                            ? { case: 'purchase-required' as const, message: 'NetEase requires this album to be purchased', code }
+                            : level === 'none' || code === '404'
+                                ? { case: 'taken-down' as const, message: 'NetEase has no playable copy of this track', code }
+                                : { case: 'no-audio' as const, message: 'NetEase returned no audio URL', code };
+                throw new OnlineProviderError(
+                    'not-playable',
+                    detail.message,
+                    'netease',
+                    undefined,
+                    undefined,
+                    undefined,
+                    detail,
+                );
+            }
             const trackGain = toFiniteNumber(raw?.gain);
             return {
                 url: String(rawUrl).replace(/^http:/, 'https:'),

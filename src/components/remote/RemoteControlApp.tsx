@@ -38,6 +38,8 @@ const formatTime = (seconds: number) => {
 };
 
 const REMOTE_CONTROL_DOCUMENT_TITLE = 'Folia Remote';
+/** No pointer or keyboard input for this long opens the idle sleeve (when the switch is on). */
+const IDLE_COVER_DELAY_MS = 4000;
 const REMOTE_VIDEO_EXPORT_PRESET_VALUES_STORAGE_KEY = 'remote_video_export_preset_values';
 const REMOTE_BACKGROUND_MODE_STORAGE_KEY = 'remote_background_mode';
 
@@ -178,13 +180,21 @@ const RemoteControlApp: React.FC = () => {
         void window.electron?.getRemoteControlWindowSettings?.().then(settings => {
             if (mounted && settings) {
                 setWindowPresentation(prev => (
-                    prev.hideTitlebar === settings.hideTitlebar && prev.clickThrough === settings.clickThrough ? prev : settings
+                    prev.hideTitlebar === settings.hideTitlebar
+                    && prev.clickThrough === settings.clickThrough
+                    && prev.expandCover === settings.expandCover
+                        ? prev
+                        : settings
                 ));
             }
         });
         const unsubscribe = window.electron?.onRemoteControlWindowSettingsChanged?.(settings => {
             setWindowPresentation(prev => (
-                prev.hideTitlebar === settings.hideTitlebar && prev.clickThrough === settings.clickThrough ? prev : settings
+                prev.hideTitlebar === settings.hideTitlebar
+                && prev.clickThrough === settings.clickThrough
+                && prev.expandCover === settings.expandCover
+                    ? prev
+                    : settings
             ));
         });
         return () => {
@@ -271,19 +281,36 @@ const RemoteControlApp: React.FC = () => {
     const title = snapshot.title || 'Folia';
     const artist = snapshot.artist || (snapshot.hasTrack ? 'Unknown artist' : 'No active track');
     const [coverExpanded, setCoverExpanded] = useState(false);
+    // The idle sleeve: no pointer or keyboard input for a few seconds, with the "expand cover"
+    // switch on. Manual expansion stays until it is closed, exactly as before.
+    const [idleCover, setIdleCover] = useState(false);
     useEffect(() => {
-        if (!snapshot.hasTrack) setCoverExpanded(false);
-    }, [snapshot.hasTrack]);
-    useEffect(() => {
-        if (!coverExpanded) return undefined;
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key !== 'Escape' || event.repeat) return;
-            event.preventDefault();
+        if (!snapshot.hasTrack) {
             setCoverExpanded(false);
+            setIdleCover(false);
+            return undefined;
+        }
+
+        let timer = 0;
+        const wake = () => {
+            setIdleCover(false);
+            window.clearTimeout(timer);
+            timer = window.setTimeout(() => setIdleCover(true), IDLE_COVER_DELAY_MS);
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [coverExpanded]);
+        wake();
+        const events: Array<[keyof WindowEventMap, EventListener]> = [
+            ['pointermove', wake],
+            ['pointerdown', wake],
+            ['keydown', wake],
+            ['wheel', wake],
+            ['focusin', wake],
+        ];
+        events.forEach(([name, listener]) => window.addEventListener(name, listener, { passive: true }));
+        return () => {
+            window.clearTimeout(timer);
+            events.forEach(([name, listener]) => window.removeEventListener(name, listener));
+        };
+    }, [snapshot.hasTrack]);
 
     const {
         trackEnterOffset,
@@ -300,6 +327,20 @@ const RemoteControlApp: React.FC = () => {
         handoffIncomingOpacity,
         handoffOutgoingOpacity,
     } = useRemoteTrackHandoff({ snapshot, title, artist, isPlaying });
+
+    const coverSleeve = Boolean(currentCoverUrl) && (coverExpanded
+        || (idleCover && !isHovered && activePanel === 'playback' && windowPresentation.expandCover));
+    useEffect(() => {
+        if (!coverSleeve) return undefined;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.repeat) return;
+            event.preventDefault();
+            setCoverExpanded(false);
+            setIdleCover(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [coverSleeve]);
 
     const { coverColors, getCachedCoverColors } = useRemoteCoverArt({
         backgroundMode,
@@ -1242,7 +1283,7 @@ const RemoteControlApp: React.FC = () => {
 
             {/* 封面展开：在遥控窗口里铺满一张封面，点任意处或 Esc 收回。 */}
             <AnimatePresence>
-                {coverExpanded && currentCoverUrl && (
+                {coverSleeve && currentCoverUrl && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -1252,7 +1293,10 @@ const RemoteControlApp: React.FC = () => {
                         role="dialog"
                         aria-modal="true"
                         aria-label={title}
-                        onClick={() => setCoverExpanded(false)}
+                        onClick={() => {
+                            setCoverExpanded(false);
+                            setIdleCover(false);
+                        }}
                     >
                         <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${currentCoverUrl})` }} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/35" />

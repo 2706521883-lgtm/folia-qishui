@@ -1017,6 +1017,8 @@ export const kugouProvider: OnlineMusicProvider = {
         async getAudioSource(song, quality) {
             const sourceRef = song.sourceRef?.kind === 'online' ? song.sourceRef : null;
             const hash = String(sourceRef?.providerData?.hash || sourceRef?.mediaId || song.kgHash || song.id).toUpperCase();
+            let refusalStatus: unknown;
+            let refusalCode: unknown;
             const qualities = sourceRef?.variant === 'cloud' ? [quality] : qualityFallbacks(quality);
             const albumId = String(sourceRef?.providerData?.albumId || '');
             const albumAudioId = String(sourceRef?.providerData?.albumAudioId || '');
@@ -1075,13 +1077,15 @@ export const kugouProvider: OnlineMusicProvider = {
                                 ...(replayGain ? { replayGain } : {}),
                             };
                         }
+                        refusalStatus = valueOf(data, 'status') ?? valueOf(response, 'status');
+                        refusalCode = valueOf(data, 'errcode', 'error_code') ?? valueOf(response, 'errcode', 'error_code');
                         console.warn('[KuGouProvider] playback:no-url', {
                             hash,
                             requestedQuality: quality,
                             candidateQuality,
                             requestVariant: requestVariant.name,
-                            status: valueOf(data, 'status') ?? valueOf(response, 'status'),
-                            errorCode: valueOf(data, 'errcode', 'error_code') ?? valueOf(response, 'errcode', 'error_code'),
+                            status: refusalStatus,
+                            errorCode: refusalCode,
                         });
                     } catch (error) {
                         console.warn('[KuGouProvider] playback:quality-failed', {
@@ -1128,7 +1132,25 @@ export const kugouProvider: OnlineMusicProvider = {
                 }
             }
 
-            console.warn('[KuGouProvider] playback:unavailable', { hash, requestedQuality: quality, attemptedQualities: qualities });
+            console.warn('[KuGouProvider] playback:unavailable', {
+                hash,
+                requestedQuality: quality,
+                attemptedQualities: qualities,
+                status: refusalStatus,
+                errorCode: refusalCode,
+            });
+            if (refusalStatus !== undefined || refusalCode !== undefined) {
+                const code = refusalCode !== undefined ? String(refusalCode) : undefined;
+                throw new OnlineProviderError(
+                    'not-playable',
+                    `KuGou returned no playable URL (status ${String(refusalStatus ?? '-')}${code ? `, code ${code}` : ''})`,
+                    'kugou',
+                    undefined,
+                    undefined,
+                    undefined,
+                    { case: 'no-audio', code, message: undefined },
+                );
+            }
             return null;
         },
     },

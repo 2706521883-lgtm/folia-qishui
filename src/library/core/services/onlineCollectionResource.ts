@@ -4,6 +4,7 @@ import { OmniError } from '../../../types/onlineMusic';
 import type { OnlineGridViewCollectionDescriptor } from '../contracts/collection';
 import type { CollectionLoadError, CollectionResource, CollectionResourceContext } from '../contracts/resource';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
+import { onlineFailureOf } from '../../../services/onlineMusic/failure/onlineFailureCase';
 import { collectionRevision } from '../model/collectionIdentity';
 import { createCollectionResourceState } from './collectionResourceState';
 import {
@@ -38,10 +39,14 @@ export type OnlineCollectionResourceDeps = {
     wait?: (ms: number) => Promise<void>;
 };
 
-const toLoadError = (error: unknown): CollectionLoadError => (
+const toLoadError = (error: unknown, providerId?: string): CollectionLoadError => (
     error instanceof OmniError && error.code === 'not-public'
         ? { kind: 'not-public' }
-        : { kind: 'generic', message: error instanceof Error ? error.message : String(error) }
+        : {
+            kind: 'generic',
+            message: error instanceof Error ? error.message : String(error),
+            failure: onlineFailureOf({ operation: 'collection', providerId }, { error }),
+        }
 );
 
 // 首页和补页走同一套退避重试。之前只有补页重试，上游偶尔让首页超时一次就直接把整个
@@ -235,7 +240,7 @@ export const createOnlineCollectionResource = (key: string, deps: OnlineCollecti
             if (stale()) return;
             console.error('[LibraryUi] Failed to load collection tracks:', error);
             loading = false;
-            state.set({ status: 'error', error: toLoadError(error) }, 'urgent');
+            state.set({ status: 'error', error: toLoadError(error, descriptor?.providerId) }, 'urgent');
         }
     };
 

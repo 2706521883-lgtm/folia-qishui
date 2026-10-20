@@ -216,6 +216,52 @@ export type QrLoginFailureKind =
     // 轮询请求被上游断开（ECONNRESET）：照常给诊断入口，状态行提示换网络或重启应用。
     | 'connection-reset';
 
+// 一首在线歌要播放地址、一个集合读歌曲没有成功时能分出的情况。每一种停不停播放、给不给重试，
+// 见 services/onlineMusic/failure/onlineFailureCase.ts 的表。
+export type OnlineFailureCaseId =
+    | 'unreachable' | 'local-service-stopped' | 'retry-later'
+    | 'sign-in-needed' | 'subscription-required' | 'purchase-required' | 'entitlement-required'
+    | 'preview-only' | 'region-restricted' | 'not-configured'
+    | 'taken-down' | 'no-audio' | 'audio-unplayable' | 'not-public'
+    | 'refused' | 'unknown';
+
+// 没有成功的是哪一种请求：一首歌的播放地址，或者一个集合（歌单、专辑）的歌曲。
+export type OnlineFailureOperation = 'audio' | 'collection';
+
+// provider 对一次没有成功的请求知道的事实。只放可以公开贴出来的内容：不含 cookie、token、IP 或账号信息。
+export interface OnlineFailureDetail {
+    // 只有 provider 认得出是哪一种情况时，由它直接点名；不点名就由共用的规则按下面的事实去分。
+    case?: OnlineFailureCaseId;
+    // 平台自己的状态码和原话，平台说了才有。
+    code?: string;
+    message?: string;
+    httpStatus?: number;
+    // 平台转述的上游状态码，和它要求等多久再试。
+    upstreamCode?: string;
+    retryAfterMs?: number;
+    // 平台没给地址、原因说不准时，它的回答透出来的「可能」的原因：登录后可能能放，可能要会员，可能限地区。
+    // 只是可能，情况不变，界面只多说一句。
+    likelyCause?: 'sign-in' | 'subscription' | 'region';
+    // 发出请求时这个平台没有登录的账号：要登录的失败说「登录后才能播放」，不说「登录已失效」。
+    signedOut?: boolean;
+}
+
+// 一次失败的全部事实：provider 交出来的，加上抛出的错的共用代码。见 services/onlineMusic/failure。
+export interface OnlineFailureFacts extends OnlineFailureDetail {
+    // 抛出的是 OnlineProviderError 时它的 code。
+    errorCode?: ProviderErrorCode;
+    // 请求到了时限也没有回答。
+    timedOut?: boolean;
+}
+
+export interface OnlineFailure {
+    case: OnlineFailureCaseId;
+    // 'media'：地址拿到了，媒体元素却放不了，重新要地址也没有用。
+    operation: OnlineFailureOperation | 'media';
+    providerId?: OnlineProviderId;
+    facts: OnlineFailureFacts;
+}
+
 export type ProviderErrorCode =
     | 'auth-required'
     | 'unsupported'
@@ -225,6 +271,8 @@ export type ProviderErrorCode =
     | 'unavailable'
     | 'not-playable'
     | 'preview-only'
+    // The platform plays for paying accounts only, and this account does not pay.
+    | 'subscription-required'
     | 'region-restricted'
     | 'network'
     | 'invalid-response';
@@ -239,6 +287,8 @@ export class OnlineProviderError extends Error {
         public readonly httpStatus?: number,
         /** 后端要求的冷却时长（429 退避）；只有能读出它的 transport 会传。 */
         public readonly retryAfterMs?: number,
+        /** 平台自己认得的失败细节（会员、地区、下架…），交给服务层的失败分类。 */
+        public readonly failureDetail?: OnlineFailureDetail,
     ) {
         super(message);
         this.name = 'OnlineProviderError';

@@ -189,6 +189,9 @@ export const buildSettingsCommandContext = (
         toggleAutoCrossSourceFallback: () => audio.handleToggleAutoCrossSourceFallback(
             !useAudioSettingsStore.getState().autoCrossSourceFallback,
         ),
+        toggleAutoSkipUnplayable: () => audio.handleToggleAutoSkipUnplayable(
+            !useAudioSettingsStore.getState().autoSkipUnplayable,
+        ),
         canAutoScanLocalLibrary: isLocalLibraryAutoScanSupported,
         toggleLocalLibraryAutoScan: () => useLocalLibrarySettingsStore.getState().toggleAutoScan(),
         canReportNeteasePlayback: isNeteaseScrobbleReady,

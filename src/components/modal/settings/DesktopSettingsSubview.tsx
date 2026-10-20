@@ -59,12 +59,14 @@ export type DesktopSettingsPreferences = {
     hideRemoteControlTaskbarIcon: boolean;
     hideRemoteControlTitlebar: boolean;
     remoteControlClickThrough: boolean;
+    remoteControlExpandCover: boolean;
     minimizeToTray: boolean;
     closeToTray: boolean;
     onToggleHideTaskbarIcon: (enabled: boolean) => void;
     onToggleHideRemoteControlTaskbarIcon: (enabled: boolean) => void;
     onToggleHideRemoteControlTitlebar: (enabled: boolean) => void;
     onToggleRemoteControlClickThrough: (enabled: boolean) => void;
+    onToggleRemoteControlExpandCover: (enabled: boolean) => void;
     onToggleMinimizeToTray: (enabled: boolean) => void;
     onToggleCloseToTray: (enabled: boolean) => void;
     onToggleOpenPlayerOnLaunch: (enabled: boolean) => void;
@@ -117,12 +119,14 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
         hideRemoteControlTaskbarIcon,
         hideRemoteControlTitlebar,
         remoteControlClickThrough,
+        remoteControlExpandCover,
         minimizeToTray,
         closeToTray,
         onToggleHideTaskbarIcon,
         onToggleHideRemoteControlTaskbarIcon,
         onToggleHideRemoteControlTitlebar,
         onToggleRemoteControlClickThrough,
+        onToggleRemoteControlExpandCover,
         onToggleMinimizeToTray,
         onToggleCloseToTray,
         onToggleOpenPlayerOnLaunch,
@@ -265,6 +269,11 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
                         t('options.remoteControlClickThrough'),
                         t('options.remoteControlClickThroughDesc'),
                         renderToggle(remoteControlClickThrough, () => onToggleRemoteControlClickThrough(!remoteControlClickThrough)),
+                    )}
+                    {renderRow(
+                        t('options.remoteControlExpandCover'),
+                        t('options.remoteControlExpandCoverHint'),
+                        renderToggle(remoteControlExpandCover, () => onToggleRemoteControlExpandCover(!remoteControlExpandCover)),
                     )}
                     {renderRow(
                         t('options.hideFullscreenButton'),

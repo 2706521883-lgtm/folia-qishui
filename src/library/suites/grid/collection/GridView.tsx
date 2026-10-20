@@ -3,6 +3,7 @@ import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useI
 import { ChevronLeft, Crosshair, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
 import GridPanelToggleIndicator from '../shared/GridPanelToggleIndicator';
 import { useTranslation } from 'react-i18next';
+import { onlineFailureLine } from '../../../../services/onlineMusic/failure/onlineFailureTexts';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../../../../types';
 import { isSongUnavailable } from '../../../../services/onlineMusic/songAvailability';
 import { formatSongName } from '../../../../utils/songNameFormatter';
@@ -1573,7 +1574,9 @@ export const GridView: React.FC<GridViewProps> = ({
                         {loadError && !hasSearchQuery
                             ? (loadError.kind === 'not-public'
                                 ? t('playlist.loadNotPublic')
-                                : t('playlist.loadFailed', { error: loadError.message }))
+                                : loadError.failure
+                                    ? onlineFailureLine(loadError.failure, t)
+                                    : t('playlist.loadFailed', { error: loadError.message }))
                             : hasSearchQuery ? (t('home.gridSearchNoResults')) : (t('home.loadingLibrary'))}
                     </div>
                 ) : (

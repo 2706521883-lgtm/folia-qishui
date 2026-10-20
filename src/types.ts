@@ -73,6 +73,10 @@ export interface Line {
   // User-saved fine word boundaries for fullText, baked in upstream by the lyric setter.
   // join('') must equal fullText. When present it wins over Intl.Segmenter word segmentation.
   wordSegments?: string[];
+  // icu-folia's automatic word boundaries for fullText (utils/lyrics/icuFolia), baked in by the
+  // lyric setter once its engines have loaded. Used when there is no wordSegments; absent until
+  // then, and the line falls back to plain Intl.Segmenter.
+  autoWordSegments?: string[];
 }
 
 export interface LyricData {

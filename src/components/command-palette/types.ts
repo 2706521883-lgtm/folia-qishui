@@ -297,6 +297,8 @@ export type CommandPaletteSettingsContext = {
     togglePlaybackFade: () => void;
     /** Whether an unavailable online song is retried on the other configured sources. */
     toggleAutoCrossSourceFallback: () => void;
+    /** Whether restricted or unknown failures count down and skip like a taken-down song. */
+    toggleAutoSkipUnplayable: () => void;
     /**
      * Whether this build can watch the imported local folders at all. A getter because the answer
      * is a runtime API check (FileSystemObserver) rather than a stored value, and the settings

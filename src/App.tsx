@@ -51,6 +51,7 @@ import { createCoverUrlResolver } from './components/app/playback/createCoverUrl
 import { createLyricsSetter } from './components/app/playback/createLyricsSetter';
 import { createLyricSegmentationActions } from './components/app/playback/createLyricSegmentationActions';
 import { useLyricWordSegmentation } from './hooks/useLyricWordSegmentation';
+import { useIcuFoliaSegmentation } from './hooks/useIcuFoliaSegmentation';
 import { createOnlineRecoveryController } from './components/app/playback/createOnlineRecoveryController';
 import { persistPlaybackCache } from './components/app/playback/persistPlaybackCache';
 import { useAppOverlaysModel } from './components/app/overlays/useAppOverlaysModel';
@@ -122,6 +123,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { clampMediaVolume, toSafeRemoteUrl } from './utils/appPlaybackHelpers';
 import { hasLoopedToStart } from './services/playedTrackCache';
 import { getOnlineProviderIdForSong, getPlaybackSongKey, isLocalPlaybackSong, isNavidromePlaybackSong, isStagePlaybackSong } from './utils/appPlaybackGuards';
+import { mediaFailureOf } from './services/onlineMusic/failure/onlineFailureCase';
 import { readLyricOffset, writeLyricOffset } from './utils/lyrics/lyricOffsetMemory';
 import { FALLBACK_AI_DUAL_THEME } from './services/themeSanitizer';
 import { BASE_DUAL_THEME, DAYLIGHT_THEME, DEFAULT_THEME } from './services/baseThemes';
@@ -1910,6 +1912,9 @@ export default function App() {
     });
     // Loads the playing song's saved word segmentation into the store the lyric setter reads.
     useLyricWordSegmentation();
+    // Loads icu-folia's engines once a word-layout mode shows Han/kana lyrics, then bakes its split
+    // onto lines that reached the store first.
+    useIcuFoliaSegmentation(visualizerMode);
     /**
      * Cancels a blend back onto the track the listener is hearing, or null when there is none.
      *
@@ -2676,6 +2681,10 @@ export default function App() {
 
                 const failedSrc = e.currentTarget.currentSrc || audioSrc;
                 const songKeyAtFailure = currentSong ? getPlaybackSongKey(currentSong) : null;
+                const mediaFailure = mediaFailureOf(
+                    audioElement.error,
+                    currentSong ? getOnlineProviderIdForSong(currentSong) ?? undefined : undefined,
+                );
                 const shouldRetryOnlineSong = Boolean(
                     currentSong &&
                     !isLocalPlaybackSong(currentSong) &&
@@ -2694,13 +2703,13 @@ export default function App() {
                         });
 
                         if (!recovered) {
-                            skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure });
+                            skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure, failure: mediaFailure });
                         }
                     })();
                     return;
                 }
 
-                skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure });
+                skipAfterPlaybackFailure({ failedSrc, songKeyAtFailure, failure: mediaFailure });
             }}
         />
     );

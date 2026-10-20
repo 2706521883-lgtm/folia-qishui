@@ -38,6 +38,12 @@ export const PLAYBACK_FADE_KEY = 'folia_playback_fade_enabled';
 /** Whether an unavailable online song is retried on other configured sources. On by default. */
 export const AUTO_CROSS_SOURCE_FALLBACK_KEY = 'auto_cross_source_fallback';
 
+/**
+ * Whether a song that cannot be played for an account restriction or an unknown reason counts down to
+ * a skip, like a taken-down one (services/onlineMusic/failure/onlineFailureCase). Off unless asked for.
+ */
+export const AUTO_SKIP_UNPLAYABLE_KEY = 'folia_auto_skip_unplayable';
+
 /** Gigabytes of cached audio to keep. Zero is the listener asking for no ceiling at all. */
 export const DEFAULT_MEDIA_CACHE_LIMIT_GB = 5;
 
@@ -149,6 +155,8 @@ export type AudioSettingsState = {
     playbackFadeEnabled: boolean;
     /** Search other online sources and switch automatically when a song cannot be played. */
     autoCrossSourceFallback: boolean;
+    /** Count down and skip when a song is restricted or fails for an unknown reason. Off by default. */
+    autoSkipUnplayable: boolean;
     audioOutputDeviceId: string;
     audioEqualizerSettings: AudioEqualizerSettings;
     isAudioEqualizerOpen: boolean;
@@ -164,6 +172,7 @@ export type AudioSettingsState = {
     handleToggleNeteaseScrobble: (enable: boolean) => void;
     handleTogglePlaybackFade: (enable: boolean) => void;
     handleToggleAutoCrossSourceFallback: (enable: boolean) => void;
+    handleToggleAutoSkipUnplayable: (enable: boolean) => void;
     handleSetAudioOutputDeviceId: (deviceId: string) => void;
     handleSetAudioEqualizerSettings: (settings: AudioEqualizerSettings) => void;
     handleApplyAudioSoundPreset: (modeId: AudioEqualizerModeId) => void;
@@ -188,6 +197,8 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
     neteaseScrobbleEnabled: getStoredBoolean(NETEASE_SCROBBLE_KEY, false),
     playbackFadeEnabled: getStoredBoolean(PLAYBACK_FADE_KEY, true),
     autoCrossSourceFallback: getStoredBoolean(AUTO_CROSS_SOURCE_FALLBACK_KEY, true),
+    // Off unless asked for: skipping a song the listener picked is not something to do by default.
+    autoSkipUnplayable: getStoredBoolean(AUTO_SKIP_UNPLAYABLE_KEY, false),
     audioOutputDeviceId: readStoredAudioOutputDeviceId(),
     audioEqualizerSettings: readStoredAudioEqualizerSettings(),
     isAudioEqualizerOpen: false,
@@ -248,6 +259,10 @@ export const useAudioSettingsStore = create<AudioSettingsState>((set, get) => ({
             type: 'info',
             text: i18n.t('notifications.' + (enable ? 'crossSourceFallbackOn' : 'crossSourceFallbackOff')),
         });
+    },
+    handleToggleAutoSkipUnplayable: (enable) => {
+        setStoredBoolean(AUTO_SKIP_UNPLAYABLE_KEY, enable);
+        set({ autoSkipUnplayable: enable });
     },
     handleSetAudioOutputDeviceId: (deviceId) => {
         set({ audioOutputDeviceId: deviceId });
@@ -348,6 +363,7 @@ export const selectAudioSettingsSnapshot = (state: AudioSettingsState) => ({
     handleToggleNeteaseScrobble: state.handleToggleNeteaseScrobble,
     handleTogglePlaybackFade: state.handleTogglePlaybackFade,
     handleToggleAutoCrossSourceFallback: state.handleToggleAutoCrossSourceFallback,
+    handleToggleAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
     handleSetAudioOutputDeviceId: state.handleSetAudioOutputDeviceId,
     handleSetAudioEqualizerSettings: state.handleSetAudioEqualizerSettings,
     handleApplyAudioSoundPreset: state.handleApplyAudioSoundPreset,

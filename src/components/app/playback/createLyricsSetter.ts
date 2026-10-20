@@ -6,6 +6,7 @@ import { applyLyricStaffPolicy } from '../../../utils/lyrics/staffCreditsPolicy'
 import type { LyricStaffPolicyOptions } from '../../../utils/lyrics/staffCreditsPolicy';
 import { ensureLyricDataRenderHints } from '../../../utils/lyrics/renderHints';
 import { applyLyricWordSegmentation } from '../../../utils/lyrics/lyricSegmentationRecord';
+import { applyAutoWordSegmentation } from '../../../utils/lyrics/icuFolia';
 import { getLyricSegmentationRecord } from '../../../stores/useLyricSegmentationStore';
 import { applyDetectedChorusEffects, applyNeteaseChorusByTime } from '../../../utils/lyrics/chorusEffects';
 import type { NeteaseChorusRange } from '../../../utils/lyrics/chorusEffects';
@@ -101,6 +102,9 @@ export const createLyricsSetter = (
             // with no song identity and so cannot look up a per-song override themselves. Last in
             // the chain, so it sees the lines that actually survived filtering.
             processed = applyLyricWordSegmentation(processed, getLyricSegmentationRecord());
+            // icu-folia's default split, for every line the saved one does not cover. A no-op until
+            // its engines have loaded; useIcuFoliaSegmentation bakes it on afterwards in that case.
+            processed = applyAutoWordSegmentation(processed);
             // Extension layers (Folium `lyrics.transform`) see the finished lyrics once per load.
             setLyricsState(applyLyricsTransform(ensureLyricDataRenderHints(processed)));
         } else {

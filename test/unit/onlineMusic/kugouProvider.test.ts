@@ -607,15 +607,17 @@ describe('kugouProvider', () => {
         expect(source?.url).toBe('https://legacy.example.test/backup.mp3');
     });
 
-    it('still returns null when the legacy mobile playInfo has no playable URL', async () => {
+    it('reports a refusal with the platform status when the legacy mobile playInfo has no playable URL', async () => {
         requestMock.mockResolvedValue({ status: 3 });
         legacyPlayInfoMock.mockResolvedValue({ status: 3 });
         const song = normalizeKugouSong({ FileHash: 'hash', SongName: 'Song' });
 
-        const source = await kugouProvider.playback?.getAudioSource(song, 'standard');
+        await expect(kugouProvider.playback?.getAudioSource(song, 'standard')).rejects.toMatchObject({
+            code: 'not-playable',
+            failureDetail: { case: 'no-audio' },
+        });
 
         expect(legacyPlayInfoMock).toHaveBeenCalledWith('HASH');
-        expect(source).toBeNull();
     });
 
     it('hydrates canonical album and artist ids through hash-verified KRM metadata once', async () => {

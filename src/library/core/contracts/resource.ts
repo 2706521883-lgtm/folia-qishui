@@ -1,5 +1,5 @@
 import type { SongResult } from '../../../types';
-import type { MediaId, ProviderCollection } from '../../../types/onlineMusic';
+import type { MediaId, OnlineFailure, ProviderCollection } from '../../../types/onlineMusic';
 import type { LibraryCollectionDescriptor } from './collection';
 
 // src/library/core/contracts/resource.ts
@@ -13,7 +13,7 @@ export type CollectionResourceKind = 'online' | 'navidrome' | 'static';
 export type CollectionLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 /** 存判别式而不是成品文案：翻译在渲染时做，切换语言才能跟着变。 */
-export type CollectionLoadError = { kind: 'not-public' } | { kind: 'generic'; message: string };
+export type CollectionLoadError = { kind: 'not-public' } | { kind: 'generic'; message: string; failure?: OnlineFailure };
 
 /** 后台补页：没有 / 进行中 / 在某个上游 offset 处中断（可续传）。 */
 export type CollectionSyncState =

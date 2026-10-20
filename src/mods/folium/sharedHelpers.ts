@@ -1,6 +1,7 @@
 import type { Line, Theme } from '@/types';
 import { getLineRenderEndTime } from '@/utils/lyrics/renderHints';
 import { segmentLyricWords } from '@/utils/lyrics/wordSegmentation';
+import { segmentIcuFolia } from '@/utils/lyrics/icuFolia';
 import { resolveThemeFontStack, resolveThemeFontWeight, resolveThemeTranslationFontStack } from '@/utils/fontStacks';
 import { getRecentCompletedLine, getUpcomingLine, getUpcomingLines } from '@/components/visualizer/runtime';
 import { buildWordColorRanges, resolveWordColor } from '@/components/visualizer/wordColoring';
@@ -22,7 +23,11 @@ const asLines = (lines: readonly FoliumLine[]) => lines as unknown as Line[];
 
 const lyricsHelpers: FoliumLyricsHelpers = {
     getLineRenderEndTime: (line) => getLineRenderEndTime(line),
-    segmentWords: (line) => segmentLyricWords({ fullText: line.fullText, wordSegments: line.wordSegments }),
+    segmentWords: (line) => segmentLyricWords({
+        fullText: line.fullText,
+        wordSegments: line.wordSegments,
+        autoWordSegments: segmentIcuFolia(line.fullText) ?? undefined,
+    }),
     getRecentCompletedLine: (lines, lineIndex, time) => (
         getRecentCompletedLine({
             lines: asLines(lines),

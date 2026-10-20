@@ -125,7 +125,12 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
                     isDaylight={isDaylight}
                 />
 
-                <SoundTiles isDaylight={isDaylight} />
+                <SoundTiles
+                    isDaylight={isDaylight}
+                    loopMode={loopMode}
+                    onToggleLoop={onToggleLoop}
+                    loopToggleDisabled={loopToggleDisabled}
+                />
 
                 <div className={`mx-1 my-3 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
 

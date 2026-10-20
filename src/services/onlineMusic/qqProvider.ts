@@ -374,6 +374,8 @@ const getAudioSource = async (song: SongResult, quality: AudioQualityPreference)
     // not stream the song (membership, region, takedown). Without keeping that apart from a request
     // failure, an unplayable song looks exactly like a transient error worth retrying.
     let sawEmptyPlayLink = false;
+    let playRefusal = '';
+    let lastTransportError: unknown = null;
 
     for (const candidate of QQ_QUALITY_FALLBACKS[quality]) {
         try {
@@ -395,8 +397,11 @@ const getAudioSource = async (song: SongResult, quality: AudioQualityPreference)
             }
             if (entry) {
                 sawEmptyPlayLink = true;
+                const refusal = String(entry?.error || response?.data?.error || '').trim();
+                if (refusal) playRefusal = refusal;
             }
         } catch (error) {
+            lastTransportError = error;
             if (error instanceof OnlineProviderError && error.code === 'auth-required') throw error;
             console.warn('[QQProvider] playback:quality-failed', {
                 requestedQuality: quality,
@@ -411,7 +416,34 @@ const getAudioSource = async (song: SongResult, quality: AudioQualityPreference)
         hasMediaMid: Boolean(mediaId),
         // `true` means the upstream answered normally but issued no stream for this account.
         upstreamRefusedPlayLink: sawEmptyPlayLink,
+        refusal: playRefusal || undefined,
     });
+    if (sawEmptyPlayLink) {
+        // The backend answered, so this is the track being refused rather than the network:
+        // keep its own words and sort them into the shared failure cases.
+        const lower = playRefusal.toLowerCase();
+        const detail = /会员|vip|付费|订阅|subscription|member/.test(lower)
+            ? { case: 'subscription-required' as const }
+            : /购买|专辑|purchase|buy/.test(lower)
+                ? { case: 'purchase-required' as const }
+                : /地区|region|area/.test(lower)
+                    ? { case: 'region-restricted' as const }
+                    : /下架|版权|copyright|taken.?down|不可用/.test(lower)
+                        ? { case: 'taken-down' as const }
+                        : { case: 'no-audio' as const };
+        throw new OnlineProviderError(
+            'not-playable',
+            playRefusal || 'QQ Music returned no playable URL for this account',
+            'qq',
+            undefined,
+            undefined,
+            undefined,
+            { ...detail, message: playRefusal || undefined },
+        );
+    }
+    if (lastTransportError instanceof OnlineProviderError) {
+        throw lastTransportError;
+    }
     return null;
 };
 

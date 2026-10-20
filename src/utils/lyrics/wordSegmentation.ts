@@ -8,8 +8,9 @@ import { splitLyricGraphemes } from './graphemeTiming';
 // wired into three places that could drift apart.
 //
 // Callers that have a Line should use `segmentLyricWords`, which honours `line.wordSegments` (the
-// user's saved segmentation, baked on upstream by createLyricsSetter). `segmentTextWords` is the
-// no-override path for text that has no Line behind it.
+// user's saved segmentation, baked on upstream by createLyricsSetter) and then
+// `line.autoWordSegments` (icu-folia's split, baked on by the same setter; see ./icuFolia).
+// `segmentTextWords` is the plain Intl.Segmenter path for text that has neither.
 
 export interface LyricWordSegment {
     segment: string;
@@ -97,28 +98,45 @@ const splitEdgeWhitespace = (boundaries: string[]): string[] => boundaries.flatM
     return core ? [lead, core, trail].filter(Boolean) : [boundary].filter(Boolean);
 });
 
-/** Word segments for a line: the user's saved split when it is valid, else Intl.Segmenter. */
-export const segmentLyricWords = (line: Pick<Line, 'fullText' | 'wordSegments'>): LyricWordSegment[] => {
+/**
+ * Word segments for a line: the user's saved split when it is valid, else icu-folia's baked split,
+ * else Intl.Segmenter. icu-folia's split already keeps whitespace as pieces of its own, so it needs
+ * no splitEdgeWhitespace; it is validated all the same, since it is data on a line like any other.
+ */
+export const segmentLyricWords = (
+    line: Pick<Line, 'fullText' | 'wordSegments' | 'autoWordSegments'>,
+): LyricWordSegment[] => {
     if (isValidWordSegmentation(line.fullText, line.wordSegments)) {
         return segmentsFromBoundaries(splitEdgeWhitespace(line.wordSegments!));
+    }
+
+    if (isValidWordSegmentation(line.fullText, line.autoWordSegments)) {
+        return segmentsFromBoundaries(line.autoWordSegments!);
     }
 
     return segmentTextWords(line.fullText);
 };
 
 /**
- * Fingerprint of a line's saved split, for layout cache keys and memo dependencies.
+ * Fingerprint of a line's split, for layout cache keys and memo dependencies.
  *
  * Boundary LENGTHS rather than the segment text: the boundaries always join back to the line's own
  * `fullText`, which every caller of this already keys on, so the lengths alone pin the split down
- * exactly — and no second copy of the lyric is built on paths that run per frame. Empty string when
- * the line is on the default split, so adding it to a key changes nothing for lyrics without one.
+ * exactly — and no second copy of the lyric is built on paths that run per frame. The icu-folia
+ * split is prefixed so it can never collide with a saved split of the same shape. Empty string when
+ * the line is on plain Intl.Segmenter, so adding it to a key changes nothing for such lyrics.
  */
-export const getWordSegmentationKey = (line: Pick<Line, 'wordSegments'>): string => (
-    line.wordSegments ? line.wordSegments.map(segment => segment.length).join(',') : ''
-);
+export const getWordSegmentationKey = (line: Pick<Line, 'wordSegments' | 'autoWordSegments'>): string => {
+    if (line.wordSegments) {
+        return line.wordSegments.map(segment => segment.length).join(',');
+    }
+    return line.autoWordSegments ? `a${line.autoWordSegments.map(segment => segment.length).join(',')}` : '';
+};
 
-/** Whether this line will render with a user-supplied split rather than the default one. */
+/**
+ * Whether this line will render with a user-supplied split rather than the default one. icu-folia's
+ * split is the default, not an override, so it does not count here.
+ */
 export const hasWordSegmentationOverride = (line: Pick<Line, 'fullText' | 'wordSegments'>): boolean => (
     isValidWordSegmentation(line.fullText, line.wordSegments)
 );
