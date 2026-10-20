@@ -1254,6 +1254,7 @@ export default {
     "latticeBack": "左上角返回上一页。{{mod}} + B 也会关闭 Lattice；Esc 会先取消海报展开或键盘焦点，再在第二次返回。",
     "latticePlay": "播放",
     "latticeFocusCurrent": "聚焦当前歌曲",
+    "locatePlaying": "定位正在播放",
     "latticeAutoFocusOnSongChange": "切歌时自动聚焦",
     "latticeLights": "海报灯光",
     "latticeLightsOn": "开灯",

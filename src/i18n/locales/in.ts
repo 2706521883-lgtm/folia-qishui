@@ -1250,6 +1250,7 @@ export default {
     "latticeBack": "Tombol kiri atas kembali. {{mod}} + B juga menutup Lattice; Escape lebih dulu menutup poster atau fokus, lalu kembali pada tekanan berikutnya.",
     "latticePlay": "PUTAR",
     "latticeFocusCurrent": "Fokus lagu saat ini",
+    "locatePlaying": "Temukan lagu yang diputar",
     "latticeAutoFocusOnSongChange": "Fokus otomatis saat lagu berganti",
     "latticeLights": "Pencahayaan poster",
     "latticeLightsOn": "Lampu nyala",

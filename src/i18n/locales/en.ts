@@ -1255,6 +1255,7 @@ export default {
     "latticeBack": "The top-left button returns. {{mod}} + B also closes Lattice; Escape first collapses a poster or clears keyboard focus, then returns on the next press.",
     "latticePlay": "PLAY",
     "latticeFocusCurrent": "Focus current song",
+    "locatePlaying": "Locate the playing song",
     "latticeAutoFocusOnSongChange": "Auto-focus on track change",
     "latticeLights": "Poster lighting",
     "latticeLightsOn": "Lights on",
