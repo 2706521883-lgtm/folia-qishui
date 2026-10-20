@@ -27,6 +27,7 @@ import { useBravaisMutationNotice } from './useBravaisMutationNotice';
 import { useBravaisPlaybackMarks } from './useBravaisPlaybackMarks';
 import { useBravaisSessionFocus } from './useBravaisSessionFocus';
 import { projectBravaisSeamAlbum } from './bravaisAlbumModel';
+import { assignAlbumCoverArt } from './bravaisAlbumWall';
 
 // src/library/suites/bravais/BravaisCollection.tsx
 // 集合 surface（B7：全部 23 个动作）。它不画墙：订阅 core binding，把曲目投影成层描述推进 stage store，再向命令面板注册
@@ -241,6 +242,11 @@ const BravaisCollection: React.FC<LibraryCollectionSurfaceProps> = ({
         trackCount: totalTracks,
         labels: { kind: t('libraryBravais.kind.album'), trackCount: count => t('libraryBravais.trackCount', { count }) },
     }), [collection, snapshot?.detail, t, totalTracks]);
+    // 专辑墙：曲目封面画成整面拼贴或从专辑封面上切下来的碎片；没有专辑封面时保持原样。
+    const displayItems = useMemo<readonly BravaisItem[]>(
+        () => (seamAlbum ? assignAlbumCoverArt(items, seamAlbum.coverUrl) : items),
+        [items, seamAlbum],
+    );
     const seam = useMemo<BravaisSeamModel>(() => ({
         title: displayTitle,
         crumb: displayTitle,
@@ -258,7 +264,7 @@ const BravaisCollection: React.FC<LibraryCollectionSurfaceProps> = ({
         sessionKey,
         surface: 'collection',
         mode: view.isFilterActive ? 'finite' : 'infinite',
-        items,
+        items: displayItems,
         seam,
         isInteractive: isActive,
         focusedEntryKey: focus.initialKey,

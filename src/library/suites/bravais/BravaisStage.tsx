@@ -413,6 +413,7 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
 
     // 歌手海报的配色：从这位歌手最火的三张专辑封面取，写成根节点变量供 bravaisPoster.css 使用。
     const posterActive = seamTarget.variant === 'poster';
+    const albumPoster = posterActive && Boolean(layer?.seam.album);
     const posterSources = useMemo(
         () => (posterActive && layer ? resolvePosterPaletteSources(layer.items) : []),
         [layer, posterActive],
@@ -442,7 +443,8 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
         seeThrough && BRAVAIS_SEAM_ACRYLIC_BLUR ? 'has-seam-blur' : '',
         display?.layer.seam.home?.manage ? 'is-managing-hidden' : '',
         display?.layer.home?.batch ? 'is-batch' : '',
-        posterActive ? 'has-poster-wall' : '',
+        posterActive && !albumPoster ? 'has-poster-wall' : '',
+        albumPoster ? 'has-album-wall' : '',
     ].filter(Boolean).join(' ');
 
     return (

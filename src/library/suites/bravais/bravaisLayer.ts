@@ -10,6 +10,9 @@ import type { LibraryHomeSpecialKind } from '../../core/model/homeSpecialCards';
 /** 磁贴上的内容种类（设计稿 §6；'wall' 留白由 stage 自己画，不出现在条目里）。 */
 export type BravaisItemKind = 'track' | 'playlist' | 'album' | 'artist' | 'folder' | 'feed';
 
+/** 专辑墙上曲目封面的画法（bravaisAlbumWall）：整面墙拼成一张封面，或从封面上切下来的碎片。 */
+export type BravaisCoverArt = { mode: 'mosaic' | 'shard'; url: string };
+
 /** 墙上一张磁贴的内容。 */
 export type BravaisItem = {
     /** 层内唯一的 key：集合是条目键（core 的 entryKey），首页卡片是 `card:<id>`。翻牌按它判断「内容变了没有」。 */
@@ -18,6 +21,8 @@ export type BravaisItem = {
     title: string;
     subtitle: string;
     coverUrl?: string;
+    /** 专辑墙（has-album-wall）上这首的封面画法；没有就照常画整张封面。 */
+    coverArt?: BravaisCoverArt;
     /** 徽标文字：集合层是条目序号（01、02…），首页与歌手页是种类（歌单 / 专辑…），集合带曲目数（「歌单 · 124」）。 */
     badge: string;
     /**

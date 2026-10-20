@@ -1,8 +1,11 @@
 import React, { memo, useLayoutEffect, useRef, useState, type MouseEvent, type MutableRefObject } from 'react';
 import { WallTitle } from '../../../components/wall/WallTitle';
 import { useWallPosterArtwork } from '../../../components/wall/useWallPosterArtwork';
+import { parseWallSlotKey } from '../../../components/wall/wallSlots';
 import { countRender } from '../../../dev/renderCount';
+import { getSizedCoverUrl } from '../../../utils/coverUrl';
 import {
+    BRAVAIS_ALBUM_COVER_PX,
     BRAVAIS_METRICS,
     BRAVAIS_REDUCED_FADE_MS,
     BRAVAIS_TILE_FLIP_IN_MS,
@@ -14,6 +17,8 @@ import { bravaisFaceKey, type BravaisTileKind } from './bravaisLook';
 import BravaisFocusCardBody, { type BravaisFocusCardActions } from './BravaisFocusCardBody';
 import BravaisTileMarks, { BravaisTileBadge } from './BravaisTileMarks';
 import { useBravaisArtistTone } from './bravaisArtistTone';
+import { noteCoverFlightSource } from './bravaisCoverFlight';
+import { BRAVAIS_ALBUM_MOSAIC_PX, mosaicPlacement, shardPlacement, useBravaisCoverSpots } from './bravaisAlbumWall';
 import { resolveBravaisTileForm } from './bravaisTileForm';
 import './bravaisTileKinds.css';
 import { getWaveStagger, WALL_WAVE_IN_MS, WALL_WAVE_LIFT, WALL_WAVE_OUT_MS } from './bravaisWallWave';
@@ -264,12 +269,30 @@ function BravaisTile({
     const portraitWanted = isPortrait && !face.seeThrough;
     const tone = useBravaisArtistTone(display?.coverUrl, portraitWanted);
     const drawsPortrait = portraitWanted && tone !== false;
+    // 专辑墙（has-album-wall）：整面墙拼成的那一块，或从封面上切下来的碎片。聚焦卡画整张封面。
+    const art = display && !face.seeThrough && !isExpanded ? display.coverArt : undefined;
+    const artSpots = useBravaisCoverSpots(art?.mode === 'shard' ? art.url : undefined);
+    const artUrl = useWallPosterArtwork(
+        art?.url,
+        (art?.mode === 'mosaic' ? BRAVAIS_ALBUM_MOSAIC_PX : Math.max(rect.width, rect.height) * 2.75) * pixelScale,
+    );
+    const artStandIn = art?.mode === 'mosaic' ? getSizedCoverUrl(art.url, BRAVAIS_ALBUM_COVER_PX) : '';
+    const artImage = artStandIn && artStandIn !== artUrl ? `url("${artUrl}"), url("${artStandIn}")` : `url("${artUrl}")`;
+    const artPlacement = !art || !display
+        ? null
+        : art.mode === 'mosaic'
+            ? mosaicPlacement(rect, parseWallSlotKey(slotKey) ?? { column: 0, row: 0 })
+            : artSpots ? shardPlacement(artSpots, display.key, rect) : null;
 
     const handleClick = (event: MouseEvent<HTMLElement>) => {
         if (event.target instanceof Element && event.target.closest('button')) return;
         if (didDragRef.current) {
             didDragRef.current = false;
             return;
+        }
+        // 点专辑：记下这张封面此刻的样子，真打开了专辑，封面从这里飞到专辑海报上。
+        if (display?.kind === 'album' && event.currentTarget.parentElement) {
+            noteCoverFlightSource(event.currentTarget.parentElement, display.key, slotKey, display.coverUrl);
         }
         handlers.activate(slotKey);
     };
@@ -322,6 +345,20 @@ function BravaisTile({
                                 style={tone ? { '--bravais-duo-light': tone } as React.CSSProperties : undefined}
                             >
                                 <i style={{ backgroundImage: cover }} />
+                            </span>
+                        )}
+                        {art && artPlacement && artUrl && (
+                            <span
+                                className="bravais-tile-art"
+                                data-bravais-art={art.mode}
+                                style={{
+                                    '--bravais-art-image': artImage,
+                                    '--bravais-art-size': `${artPlacement.size.toFixed(1)}px`,
+                                    '--bravais-art-x': `${artPlacement.x.toFixed(1)}px`,
+                                    '--bravais-art-y': `${artPlacement.y.toFixed(1)}px`,
+                                } as React.CSSProperties}
+                            >
+                                <i />
                             </span>
                         )}
                         <span className="lattice-poster-shade" />
