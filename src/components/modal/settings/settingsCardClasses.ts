@@ -6,16 +6,20 @@
 // carries the panel's look must not depend on a second hand-kept copy of these strings.
 // LabSettingsModal keeps its own pair on purpose: it sits on a different panel background.
 
+// The colors come from the settings window's variables (settingsTheme.ts), so light and dark share
+// one string and a custom theme's accent reaches the controls. `isDaylight` stays in the signature
+// because every caller already passes it and a few surfaces render outside the settings window.
 export const settingsCardClassFor = (isDaylight: boolean) => (
-    isDaylight ? 'bg-black/[0.025] border-black/10' : 'bg-white/5 border-white/5'
+    isDaylight
+        ? 'bg-[color:var(--st-card,#ffffff)] border-[color:var(--st-line,rgba(0,0,0,0.08))]'
+        : 'bg-[color:var(--st-card,#232327)] border-[color:var(--st-line,rgba(255,255,255,0.08))]'
 );
 
 export const settingsToggleOffClassFor = (isDaylight: boolean) => (
-    isDaylight ? 'bg-zinc-300/90' : 'bg-white/10'
+    isDaylight ? 'bg-[color:var(--st-track,#d4d4d8)]' : 'bg-[color:var(--st-track,rgba(255,255,255,0.17))]'
 );
 
-// Hairline between rows inside a settings card. Chosen by isDaylight rather than a `dark:` variant:
-// Tailwind's dark variant follows the OS color scheme, which says nothing about the daylight theme.
+// Hairline between rows inside a settings card.
 export const settingsDividerClassFor = (isDaylight: boolean) => (
-    isDaylight ? 'border-black/5' : 'border-white/5'
+    isDaylight ? 'border-[color:var(--st-line,rgba(0,0,0,0.08))]' : 'border-[color:var(--st-line,rgba(255,255,255,0.08))]'
 );
