@@ -253,12 +253,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         transparentPlayerBackground,
         autoHidePlayerChrome,
         autoHideCursorWithPlayerChrome,
+        hideCursorWhenIdle,
         showOpenPanelCloseButton,
         handleToggleHidePlayerProgressBar: onToggleHidePlayerProgressBar,
         handleToggleHidePlayerRightPanelButton: onToggleHidePlayerRightPanelButton,
         handleToggleTransparentPlayerBackground: onToggleTransparentPlayerBackgroundFromStore,
         handleToggleAutoHidePlayerChrome: onToggleAutoHidePlayerChrome,
         handleToggleAutoHideCursorWithPlayerChrome: onToggleAutoHideCursorWithPlayerChrome,
+        handleToggleHideCursorWhenIdle: onToggleHideCursorWhenIdle,
         handleToggleOpenPanelCloseButton: onToggleOpenPanelCloseButton,
     } = usePlayerChromeSettingsStore(useShallow(selectPlayerChromeSettingsSnapshot));
     const {
@@ -1673,6 +1675,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 onToggleTransparentPlayerBackground={resolvedToggleTransparentPlayerBackground}
                                                 onToggleAutoHidePlayerChrome={onToggleAutoHidePlayerChrome}
                                                 onToggleAutoHideCursorWithPlayerChrome={onToggleAutoHideCursorWithPlayerChrome}
+                                                onToggleHideCursorWhenIdle={onToggleHideCursorWhenIdle}
                                                 onSaveCustomTheme={onSaveCustomTheme}
                                                 settingsCardClass={settingsCardClass}
                                                 songThemeAutoSwitchEnabled={songThemeAutoSwitchEnabled}
@@ -1683,6 +1686,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 transparentPlayerBackground={transparentPlayerBackground}
                                                 autoHidePlayerChrome={autoHidePlayerChrome}
                                                 autoHideCursorWithPlayerChrome={autoHideCursorWithPlayerChrome}
+                                                hideCursorWhenIdle={hideCursorWhenIdle}
                                                 stageTrackPillMode={stageTrackPillMode}
                                                 stageTrackPillTimeoutSec={stageTrackPillTimeoutSec}
                                                 stageTrackPillOnHome={stageTrackPillOnHome}

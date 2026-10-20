@@ -64,6 +64,7 @@ type AppearanceSettingsSubviewProps = {
     onToggleTransparentPlayerBackground: (enabled: boolean) => void;
     onToggleAutoHidePlayerChrome: (enabled: boolean) => void;
     onToggleAutoHideCursorWithPlayerChrome: (enabled: boolean) => void;
+    onToggleHideCursorWhenIdle: (enabled: boolean) => void;
     onSaveCustomTheme: (dualTheme: DualTheme) => void;
     settingsCardClass: string;
     songThemeAutoSwitchEnabled: boolean;
@@ -74,6 +75,7 @@ type AppearanceSettingsSubviewProps = {
     transparentPlayerBackground: boolean;
     autoHidePlayerChrome: boolean;
     autoHideCursorWithPlayerChrome: boolean;
+    hideCursorWhenIdle: boolean;
     stageTrackPillMode: 'auto' | 'always' | 'never';
     stageTrackPillTimeoutSec: number;
     stageTrackPillOnHome: boolean;
@@ -113,6 +115,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
     onToggleTransparentPlayerBackground,
     onToggleAutoHidePlayerChrome,
     onToggleAutoHideCursorWithPlayerChrome,
+    onToggleHideCursorWhenIdle,
     onSaveCustomTheme,
     settingsCardClass,
     songThemeAutoSwitchEnabled,
@@ -123,6 +126,7 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
     transparentPlayerBackground,
     autoHidePlayerChrome,
     autoHideCursorWithPlayerChrome,
+    hideCursorWhenIdle,
     stageTrackPillMode,
     stageTrackPillTimeoutSec,
     onChangeStageTrackPillMode,
@@ -726,6 +730,23 @@ const AppearanceSettingsSubview: React.FC<AppearanceSettingsSubviewProps> = ({
                                 style={{ backgroundColor: autoHideCursorWithPlayerChrome ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
                             >
                                 <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${autoHideCursorWithPlayerChrome ? 'translate-x-6' : 'translate-x-0'}`} />
+                            </button>
+                        </div>
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between gap-4">
+                            <div className="space-y-1">
+                                <div className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                    {t('options.hideCursorWhenIdle')}
+                                </div>
+                                <div className="text-xs opacity-50 max-w-[360px]" style={{ color: 'var(--text-secondary)' }}>
+                                    {t('options.hideCursorWhenIdleDesc')}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => onToggleHideCursorWhenIdle(!hideCursorWhenIdle)}
+                                className={`w-12 h-6 rounded-full p-1 transition-colors shrink-0 ${!hideCursorWhenIdle ? toggleOffBackgroundClass : ''}`}
+                                style={{ backgroundColor: hideCursorWhenIdle ? theme?.secondaryColor || 'rgba(114, 119, 134, 1)' : undefined }}
+                            >
+                                <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${hideCursorWhenIdle ? 'translate-x-6' : 'translate-x-0'}`} />
                             </button>
                         </div>
                     </div>

@@ -5,6 +5,12 @@ import { Lock, LockOpen } from 'lucide-react';
 import TitlebarDragZone from '../TitlebarDragZone';
 import WindowControls from '../WindowControls';
 
+// 透明播放窗口的圆角应该跟宿主系统的窗口圆角一致。Windows 11 原生窗口圆角是 8px，
+// 其余平台沿用原来的半径。
+export const resolveWindowCornerRadius = (platform: string): string => (
+    platform === 'win32' ? '8px' : '18px'
+);
+
 // Shared shell for the app container, Electron titlebar, and mounted audio node.
 type AppShellProps = {
     appStyle: React.CSSProperties;
@@ -43,6 +49,7 @@ const AppShell: React.FC<AppShellProps> = ({
 }) => {
     const { t } = useTranslation();
     const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+    const [isWindowFullscreen, setIsWindowFullscreen] = useState(false);
     const hasFullscreenTitlebarButton = isElectronWindow && !hideFullscreenButton;
 
     useEffect(() => {
@@ -75,7 +82,45 @@ const AppShell: React.FC<AppShellProps> = ({
         };
     }, [useCustomWindowRadius]);
 
-    const shouldApplyWindowRadius = useCustomWindowRadius && !isWindowMaximized;
+    // 全屏不等于「最大化」，不排除它，透明播放窗口在全屏下仍会保留圆角、露出背后的桌面。
+    useEffect(() => {
+        if (!useCustomWindowRadius || !window.electron?.isWindowFullscreen) {
+            setIsWindowFullscreen(false);
+            return;
+        }
+
+        let isCancelled = false;
+        let fullscreenEventReceived = false;
+
+        const unsubscribe = window.electron!.onWindowFullscreenChanged(fullscreen => {
+            fullscreenEventReceived = true;
+            if (!isCancelled) {
+                setIsWindowFullscreen(fullscreen);
+            }
+        });
+
+        const syncFullscreenState = async () => {
+            try {
+                const nextValue = await window.electron!.isWindowFullscreen();
+                if (!isCancelled && !fullscreenEventReceived) {
+                    setIsWindowFullscreen(nextValue);
+                }
+            } catch {
+                if (!isCancelled && !fullscreenEventReceived) {
+                    setIsWindowFullscreen(false);
+                }
+            }
+        };
+
+        void syncFullscreenState();
+
+        return () => {
+            isCancelled = true;
+            unsubscribe();
+        };
+    }, [useCustomWindowRadius]);
+
+    const shouldApplyWindowRadius = useCustomWindowRadius && !isWindowMaximized && !isWindowFullscreen;
     const areTitlebarControlsVisible = isTitlebarRevealed || alwaysShowMainWindowTitlebar;
     const shouldRenderTitlebarBackdrop = !isPlayerView || (useCustomWindowRadius && !isMainWindowClickThroughEnabled);
     const titlebarBackdropClassName = `absolute inset-0 backdrop-blur-sm ${
@@ -93,7 +138,7 @@ const AppShell: React.FC<AppShellProps> = ({
             className="fixed inset-0 w-full h-full flex flex-col overflow-hidden font-sans transition-colors duration-500"
             style={{
                 ...appStyle,
-                borderRadius: shouldApplyWindowRadius ? '18px' : undefined,
+                borderRadius: shouldApplyWindowRadius ? resolveWindowCornerRadius(window.electron?.platform ?? '') : undefined,
                 boxShadow: showTransparentWindowBorder ? 'inset 0 0 0 1px rgba(255,255,255,0.24)' : undefined,
             }}
         >

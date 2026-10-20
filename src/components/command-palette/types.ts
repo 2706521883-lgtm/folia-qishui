@@ -289,6 +289,7 @@ export type CommandPaletteSettingsContext = {
     toggleHideFullscreenButton: () => void;
     toggleNativeMacFullscreenButton: () => void;
     toggleAutoHideCursorWithPlayerChrome: () => void;
+    toggleHideCursorWhenIdle: () => void;
     /** Lab switch: whether the restored session starts playing by itself on launch. */
     toggleAutoPlayOnLaunch: () => void;
     toggleTranscodeFallback: () => void;

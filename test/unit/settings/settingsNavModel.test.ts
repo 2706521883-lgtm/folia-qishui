@@ -12,7 +12,7 @@ import id from '../../../src/i18n/locales/in';
 const echo = (key: string) => key;
 
 const ALL_SECTIONS: SettingsSectionId[] = [
-    'appearance', 'general', 'playback', 'interaction', 'integration', 'storage', 'desktop', 'graphics', 'mods', 'lab', 'developer',
+    'appearance', 'playback', 'general', 'interaction', 'integration', 'storage', 'desktop', 'graphics', 'mods', 'lab', 'developer',
 ];
 
 const lookup = (bundle: Record<string, unknown>, key: string): unknown => (
@@ -54,7 +54,9 @@ describe('settingsNavModel', () => {
         const rendered = items.flatMap(item => item.anchors.map(anchor => [anchor.id, item.id]));
         const declared = Object.entries(SETTINGS_ANCHOR_DEFINITIONS).map(([id, definition]) => [id, definition.section]);
 
-        expect(rendered).toEqual(declared);
+        // Section order follows the sidebar grouping, so compare the pairs as sets: what is locked
+        // here is that every declared anchor is expanded under its owning section, not the order.
+        expect([...rendered].sort()).toEqual([...declared].sort());
     });
 
     it('lists the library suite anchor only when there is a suite to choose (its section renders nothing otherwise)', () => {

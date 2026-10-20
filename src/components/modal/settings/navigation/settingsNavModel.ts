@@ -62,33 +62,32 @@ export const SETTINGS_NAV_GROUP_SPECS: GroupSpec[] = [
         labelKey: 'options.settingsGroupAppearance',
         sections: [
             { id: 'appearance', icon: Sparkles, labelKey: 'options.visualSettings', descriptionKey: 'options.visualSettingsPanelDesc' },
-            { id: 'general', icon: Languages, labelKey: 'options.generalSettings', descriptionKey: 'options.generalSettingsDesc' },
         ],
     },
     {
-        // Named for what the group is about rather than for its first section: it now holds how the
-        // listener drives the app as well as how the app plays.
+        // 按听众正在看的东西分组：音乐一页只放播放与歌词，其它应用级设置归到「应用」。
         id: 'controls',
         labelKey: 'options.settingsGroupControls',
         sections: [
             { id: 'playback', icon: PlayCircle, labelKey: 'options.playbackSettings', descriptionKey: 'options.playbackSettingsPanelDesc' },
-            { id: 'interaction', icon: Keyboard, labelKey: 'options.interactionSettings', descriptionKey: 'options.interactionSettingsPanelDesc' },
         ],
     },
     {
         id: 'connections',
         labelKey: 'options.settingsGroupConnections',
         sections: [
+            { id: 'general', icon: Languages, labelKey: 'options.generalSettings', descriptionKey: 'options.generalSettingsDesc' },
+            { id: 'interaction', icon: Keyboard, labelKey: 'options.interactionSettings', descriptionKey: 'options.interactionSettingsPanelDesc' },
             { id: 'integration', icon: Server, labelKey: 'options.integrationSettings', descriptionKey: 'options.integrationSettingsDesc' },
             { id: 'storage', icon: Database, labelKey: 'options.storageSettings', descriptionKey: 'options.storageSettingsPanelDesc' },
+            { id: 'desktop', icon: Command, labelKey: 'options.desktopSettings', descriptionKey: 'options.desktopSettingsPanelDesc', electronOnly: true },
+            { id: 'graphics', icon: Gauge, labelKey: 'options.graphicsSettings', descriptionKey: 'options.graphicsSettingsDesc' },
         ],
     },
     {
         id: 'system',
         labelKey: 'options.settingsGroupSystem',
         sections: [
-            { id: 'desktop', icon: Command, labelKey: 'options.desktopSettings', descriptionKey: 'options.desktopSettingsPanelDesc', electronOnly: true },
-            { id: 'graphics', icon: Gauge, labelKey: 'options.graphicsSettings', descriptionKey: 'options.graphicsSettingsDesc' },
             // The loader only exists in the desktop main process; on web there is nothing to switch on.
             { id: 'mods', icon: Boxes, labelKey: 'options.modSettings', descriptionKey: 'options.modSettingsDesc', electronOnly: true },
             { id: 'lab', icon: FlaskConical, labelKey: 'options.labSettings', descriptionKey: 'options.labSettingsDesc' },
