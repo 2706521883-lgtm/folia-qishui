@@ -9,6 +9,8 @@ import { createSafeObjectUrl } from '../utils/blobGuards';
 import type { AudioQualityPreference, MediaId } from '../types/onlineMusic';
 import { OnlineProviderError, type ProviderErrorCode } from '../types/onlineMusic';
 import { omni } from './onlineMusic/omni';
+import { onlineFailureOf, type OnlineFailure } from './onlineMusic/failure/onlineFailureCase';
+import { getOnlineProviderIdForSong } from '../utils/appPlaybackGuards';
 import { getSongResourceCacheKey } from './onlineMusic/resourceKeys';
 import { getCachedSongAudioBlob, getCachedSongReplayGain, getSongCacheWithLegacyMigration } from './onlineMusic/resourceCache';
 import { toSafePlaybackUrl } from '../utils/appPlaybackHelpers';
@@ -22,8 +24,9 @@ export async function loadOnlineSongAudioSource(
     prefetched: PrefetchedSongData | null
 ): Promise<
     | { kind: 'ok'; audioSrc: string; blobUrl?: string; replayGain?: ReplayGainInfo }
-    | { kind: 'unavailable'; reason?: ProviderErrorCode }
+    | { kind: 'unavailable'; reason?: ProviderErrorCode; failure?: OnlineFailure }
 > {
+    const providerId = getOnlineProviderIdForSong(song) ?? undefined;
     const cachedAudioBlob = await getCachedSongAudioBlob(song);
     if (cachedAudioBlob) {
         const blobUrl = createSafeObjectUrl(cachedAudioBlob);
@@ -52,11 +55,18 @@ export async function loadOnlineSongAudioSource(
         source = await omni.getAudioSource(song, audioQuality);
     } catch (error) {
         console.warn('[OnlinePlayback] Provider audio source is temporarily unavailable', error);
-        return { kind: 'unavailable', ...(error instanceof OnlineProviderError ? { reason: error.code } : {}) };
+        return {
+            kind: 'unavailable',
+            ...(error instanceof OnlineProviderError ? { reason: error.code } : {}),
+            failure: onlineFailureOf({ operation: 'audio', providerId }, { error }),
+        };
     }
     const url = toSafePlaybackUrl(source?.url);
     if (!url) {
-        return { kind: 'unavailable' };
+        return {
+            kind: 'unavailable',
+            failure: onlineFailureOf({ operation: 'audio', providerId }, { detail: { case: 'no-audio' } }),
+        };
     }
 
     const replayGain = applyOnlineAudioSourceMetadata(song, source?.replayGain).replayGain;

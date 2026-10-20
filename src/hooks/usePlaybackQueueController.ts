@@ -50,6 +50,8 @@ import { useTranslation } from 'react-i18next';
 import { currentTime } from '../stores/motionSignals';
 import { setIsPanelOpen, setPanelTab } from '../stores/useAppViewStore';
 import { useAudioSettingsStore } from '../stores/useAudioSettingsStore';
+import { logOnlineFailure, onlineFailureFromProviderCode, onlineFailureOf, stopsPlayback, type OnlineFailure } from '../services/onlineMusic/failure/onlineFailureCase';
+import { onlineFailureLine } from '../services/onlineMusic/failure/onlineFailureTexts';
 import { useSearchNavigationStore } from '../stores/useSearchNavigationStore';
 import { showLatticeFmNotice, usePlaybackEntryViewStore } from '../stores/usePlaybackEntryViewStore';
 import { useStableActionSurface } from './useStableCallbacks';
@@ -211,6 +213,7 @@ export function usePlaybackQueueController({
     const queueAddBehavior = useAudioSettingsStore(state => state.queueAddBehavior);
     const loopMode = useAudioSettingsStore(state => state.loopMode);
     const autoCrossSourceFallback = useAudioSettingsStore(state => state.autoCrossSourceFallback);
+    const autoSkipUnplayable = useAudioSettingsStore(state => state.autoSkipUnplayable);
     const activePlaybackContext = usePlaybackStore(state => state.activePlaybackContext);
     const currentSong = usePlaybackStore(state => state.currentSong);
     const playQueue = usePlaybackStore(state => state.playQueue);
@@ -423,7 +426,7 @@ export function usePlaybackQueueController({
     }, [t, setIsLyricsLoading, setStatusMsg]);
 
     const showTimedSkipPrompt = useCallback((
-        messageKey: SkipPromptMessageKey,
+        message: SkipPromptMessageKey | ((seconds: number) => string),
         onSkip: () => void,
         onCancel?: () => void
     ) => {
@@ -442,7 +445,7 @@ export function usePlaybackQueueController({
         };
         const buildMessage = (seconds: number): StatusMessage => ({
             type: 'error',
-            text: t(messageKey, { seconds }),
+            text: typeof message === 'function' ? message(seconds) : t(message, { seconds }),
             persistent: true,
             actionLabel: t('status.skipUnavailableAction'),
             cancelLabel: t('status.cancel'),
@@ -566,6 +569,7 @@ export function usePlaybackQueueController({
         }
     }, [
         autoCrossSourceFallback,
+        autoSkipUnplayable,
         currentSongRef,
         playQueue,
         playbackRequestIdRef,
@@ -724,24 +728,35 @@ export function usePlaybackQueueController({
                 });
                 if (fallbackOutcome === 'handled') return;
 
-                if (preloadedOnlineAudioResult.reason === 'preview-only' || preloadedOnlineAudioResult.reason === 'auth-required'
-                    || preloadedOnlineAudioResult.reason === 'region-restricted') {
+                const failure = preloadedOnlineAudioResult.failure ?? (
+                    preloadedOnlineAudioResult.reason
+                        ? onlineFailureFromProviderCode(preloadedOnlineAudioResult.reason, getOnlineProviderIdForSong(song) ?? undefined)
+                        : onlineFailureOf(
+                            { operation: 'audio', providerId: getOnlineProviderIdForSong(song) ?? undefined },
+                            { detail: { case: 'no-audio' } },
+                        )
+                );
+                logOnlineFailure(failure);
+                const failureText = onlineFailureLine(failure, t);
+
+                // Sign-in, membership, purchase, preview and region failures stop here unless the
+                // listener asked for unplayable songs to be skipped like taken-down ones.
+                if (stopsPlayback(failure, autoSkipUnplayable)) {
                     shouldAutoPlayRef.current = false;
                     audioRef.current?.pause();
                     setPlayerState(PlayerState.IDLE);
                     setIsLyricsLoading(false);
-                    setStatusMsg({ type: 'error', text: t(preloadedOnlineAudioResult.reason === 'preview-only'
-                        ? 'status.songPreviewOnly' : preloadedOnlineAudioResult.reason === 'region-restricted'
-                            ? 'status.songRegionRestricted' : 'status.loginExpired') });
+                    setStatusMsg({ type: 'error', text: failureText });
                     return;
                 }
+
                 const nextSong = getNextPlayableQueueSong(queueContext, song);
                 const canSkip = Boolean(nextSong) && skipCount < MAX_UNAVAILABLE_AUTO_SKIP_COUNT;
 
                 setIsLyricsLoading(false);
 
                 if (canSkip && nextSong) {
-                    showTimedSkipPrompt('status.songUnavailablePrompt', () => {
+                    showTimedSkipPrompt(seconds => `${failureText} · ${t('failure.skipCountdown', { seconds })}`, () => {
                         if (playbackRequestIdRef.current !== playbackRequestId) return;
                         void playSong(nextSong, newQueue, isFmCall, {
                             ...deferredPlayOptions,
@@ -749,7 +764,7 @@ export function usePlaybackQueueController({
                         });
                     });
                 } else {
-                    setStatusMsg({ type: 'error', text: t('status.songUnavailable') });
+                    setStatusMsg({ type: 'error', text: failureText });
                 }
                 return;
             }
@@ -1178,9 +1193,12 @@ export function usePlaybackQueueController({
 
     const skipAfterPlaybackFailure = useCallback(async ({
         songKeyAtFailure,
+        failure,
     }: {
         failedSrc?: string | null;
         songKeyAtFailure?: string | number | null;
+        /** The media failure behind this call, when the caller has it. */
+        failure?: OnlineFailure;
     } = {}) => {
         clearPendingUnavailableSkip();
         const failureKey = songKeyAtFailure ?? (currentSong ? getPlaybackSongKey(currentSong) : null);
@@ -1213,6 +1231,41 @@ export function usePlaybackQueueController({
             }
         }
 
+        if (failure) {
+            logOnlineFailure(failure);
+            const failureText = onlineFailureLine(failure, t);
+            if (stopsPlayback(failure, autoSkipUnplayable)) {
+                setPlayerState(PlayerState.IDLE);
+                setStatusMsg({ type: 'error', text: failureText });
+                return;
+            }
+            const skipCountAtMediaFailure = playbackAutoSkipCountRef.current;
+            const songKeyAtMediaFailure = failureKey ?? (currentSong ? getPlaybackSongKey(currentSong) : null);
+            const indexAtMediaFailure = songKeyAtMediaFailure
+                ? playQueue.findIndex(song => getPlaybackSongKey(song) === songKeyAtMediaFailure)
+                : -1;
+            const hasNextAtMediaFailure = indexAtMediaFailure >= 0 && (
+                indexAtMediaFailure < playQueue.length - 1 ||
+                (loopMode === 'all' && playQueue.length > 1)
+            );
+            if (!hasNextAtMediaFailure || skipCountAtMediaFailure >= MAX_UNAVAILABLE_AUTO_SKIP_COUNT) {
+                setPlayerState(PlayerState.IDLE);
+                setStatusMsg({ type: 'error', text: failureText });
+                return;
+            }
+            const nextSkipCountAtMediaFailure = skipCountAtMediaFailure + 1;
+            showTimedSkipPrompt(seconds => `${failureText} · ${t('failure.skipCountdown', { seconds })}`, () => {
+                playbackAutoSkipCountRef.current = nextSkipCountAtMediaFailure;
+                void handleNextTrack({
+                    allowStopOnMissing: true,
+                    shouldNavigateToPlayer: false,
+                    unavailableSkipCount: nextSkipCountAtMediaFailure,
+                    fromSong: currentSong ?? undefined,
+                });
+            });
+            return;
+        }
+
         const skipCount = playbackAutoSkipCountRef.current;
         const currentSongKey = failureKey ?? (currentSong ? getPlaybackSongKey(currentSong) : null);
         const currentIndex = currentSongKey
@@ -1241,6 +1294,7 @@ export function usePlaybackQueueController({
             });
         });
     }, [
+        autoSkipUnplayable,
         clearPendingUnavailableSkip,
         currentSong,
         currentSongRef,
@@ -1250,7 +1304,9 @@ export function usePlaybackQueueController({
         playQueue,
         playbackAutoSkipCountRef,
         setPlayerState,
+        setStatusMsg,
         showTimedSkipPrompt,
+        t,
         tryCrossSourceFallback,
     ]);
 

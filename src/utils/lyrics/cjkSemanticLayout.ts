@@ -41,8 +41,11 @@ export interface LyricLayoutUnit {
     isSticky?: boolean;
 }
 
-/** The Line fields layout planning reads. `wordSegments` carries the user's saved split. */
-export type SegmentableLine = Pick<Line, 'fullText' | 'words' | 'wordSegments'>;
+/**
+ * The Line fields layout planning reads. `wordSegments` carries the user's saved split,
+ * `autoWordSegments` icu-folia's default one.
+ */
+export type SegmentableLine = Pick<Line, 'fullText' | 'words' | 'wordSegments' | 'autoWordSegments'>;
 
 export interface BuildPostLyricLayoutUnitsOptions {
     // Enables CJK semantic grouping before sticky punctuation is applied.

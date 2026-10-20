@@ -7,7 +7,7 @@ import { isValidWordSegmentation } from './wordSegmentation';
 // 导入时跳过所有解析器直接加载。
 //
 // 装进去的是「解析之后、setter 之前」的数据，再加上用户保存的分词（wordSegments）。合唱效果、
-// 默认的 Intl.Segmenter 分词和 renderHints 都不写：它们是派生数据，导入时经过 setter 会重新算，
+// 默认分词（Intl.Segmenter，以及 icu-folia 烘焙上去的 autoWordSegments）和 renderHints 都不写：它们是派生数据，导入时经过 setter 会重新算，
 // 写进文件反而会把渲染参数的某一版冻结在用户的文件里。
 
 export const FOLIA_LYRIC_DOCUMENT_FORMAT = 'folia-lyricdata';
@@ -44,8 +44,9 @@ export interface FoliaLyricDocumentMeta {
 }
 
 const stripLineRenderHints = (line: Line): Line => {
-    if (!line.renderHints) return line;
-    const { renderHints: _renderHints, ...rest } = line;
+    if (!line.renderHints && !line.autoWordSegments) return line;
+    // autoWordSegments 是 icu-folia 的派生分词，和 renderHints 一样不进文件。
+    const { renderHints: _renderHints, autoWordSegments: _autoWordSegments, ...rest } = line;
     return rest;
 };
 
@@ -61,7 +62,7 @@ const compactSong = (song: FoliaLyricDocumentSong | undefined): FoliaLyricDocume
     return result;
 };
 
-/** 把一份 LyricData 装进 `.fia` 信封；renderHints 被剥掉，其余字段原样保留。 */
+/** 把一份 LyricData 装进 `.fia` 信封；renderHints 和 autoWordSegments 被剥掉，其余字段原样保留。 */
 export const buildFoliaLyricDocument = (lyrics: LyricData, meta: FoliaLyricDocumentMeta = {}): FoliaLyricDocument => {
     const document: FoliaLyricDocument = {
         format: FOLIA_LYRIC_DOCUMENT_FORMAT,
@@ -124,7 +125,10 @@ const optionalString = (value: unknown): string | undefined => (typeof value ===
  */
 const sanitizeLine = (line: Line): Line => {
     const {
-        translation, romanization, wordSegments, alternateTexts, backgroundVocal, backgroundVocals, ...rest
+        translation, romanization, wordSegments, alternateTexts, backgroundVocal, backgroundVocals,
+        // 派生字段，文件里本不该有；有也丢掉，由 setter 按当前的 icu-folia 重新烘焙。
+        autoWordSegments: _autoWordSegments,
+        ...rest
     } = line as Line & Record<string, unknown>;
     const words = rest.words.map(word => (
         word.syllables !== undefined && !(Array.isArray(word.syllables) && word.syllables.every(isValidWord))

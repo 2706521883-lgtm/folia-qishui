@@ -32,6 +32,10 @@ export const DEFAULT_READY_GRACE_MS = 8000;
  * Numeric FNV-1a rather than the string key in wordSegmentation.ts because this runs over every
  * line on every render of the modes that use it, and must not build a string per pass. Lyrics with
  * no saved split cost one null check per line and always fold to the same constant.
+ *
+ * icu-folia's default split (`autoWordSegments`) is folded in the same way, for the same reason: its
+ * engines load asynchronously, so the first song can get its split baked on after it is already on
+ * screen, with the text unchanged. A saved split wins over it on screen, so it wins here too.
  */
 const hashWordSegments = (lines: Line[]): number => {
     let hash = 2166136261;
@@ -39,11 +43,14 @@ const hashWordSegments = (lines: Line[]): number => {
         hash = Math.imul(hash ^ value, 16777619);
     };
     lines.forEach((line, index) => {
-        if (!line.wordSegments) {
+        const segments = line.wordSegments ?? line.autoWordSegments;
+        if (!segments) {
             return;
         }
         mix(index);
-        line.wordSegments.forEach(segment => mix(segment.length));
+        // Keeps a saved split and an automatic one of the same shape apart.
+        mix(line.wordSegments ? 1 : 2);
+        segments.forEach(segment => mix(segment.length));
     });
     return hash >>> 0;
 };

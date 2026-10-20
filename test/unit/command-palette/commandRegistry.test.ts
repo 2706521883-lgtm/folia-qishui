@@ -139,6 +139,7 @@ const createContext = (overrides: CommandPaletteContextOverrides = {}): CommandP
             toggleTranscodeFallback: vi.fn(),
             togglePlaybackFade: vi.fn(),
             toggleAutoCrossSourceFallback: vi.fn(),
+            toggleAutoSkipUnplayable: vi.fn(),
             toggleAlwaysShowMainWindowTitlebar: vi.fn(),
             toggleHideFullscreenButton: vi.fn(),
             toggleNativeMacFullscreenButton: vi.fn(),

@@ -5,11 +5,14 @@ export const REMOTE_TITLEBAR_REVEAL_THRESHOLD = 44;
 export interface RemoteWindowPresentation {
     hideTitlebar: boolean;
     clickThrough: boolean;
+    /** When idle, the cover opens into the large sleeve. On by default. */
+    expandCover: boolean;
 }
 
 export const DEFAULT_REMOTE_WINDOW_PRESENTATION: RemoteWindowPresentation = {
     hideTitlebar: false,
     clickThrough: false,
+    expandCover: true,
 };
 
 /** The bar shows only when the cursor is near the top and neither "hide bar" nor click-through is on. */

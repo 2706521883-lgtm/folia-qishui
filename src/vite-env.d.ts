@@ -1043,8 +1043,8 @@ declare global {
       closeRemoteControl: () => Promise<boolean>;
       getRemoteControlAlwaysOnTop: () => Promise<boolean>;
       setRemoteControlAlwaysOnTop: (alwaysOnTop: boolean) => Promise<boolean>;
-      getRemoteControlWindowSettings: () => Promise<{ hideTitlebar: boolean; clickThrough: boolean }>;
-      onRemoteControlWindowSettingsChanged: (callback: (settings: { hideTitlebar: boolean; clickThrough: boolean }) => void) => () => void;
+      getRemoteControlWindowSettings: () => Promise<{ hideTitlebar: boolean; clickThrough: boolean; expandCover: boolean }>;
+      onRemoteControlWindowSettingsChanged: (callback: (settings: { hideTitlebar: boolean; clickThrough: boolean; expandCover: boolean }) => void) => () => void;
       publishRemoteControlSnapshot: (snapshot: ElectronRemoteControlSnapshot) => Promise<boolean>;
       getRemoteControlSnapshot: () => Promise<ElectronRemoteControlSnapshot | null>;
       sendRemoteControlCommand: (command: ElectronRemoteControlCommand) => Promise<boolean>;

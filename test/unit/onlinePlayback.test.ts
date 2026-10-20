@@ -79,7 +79,11 @@ describe('online audio ReplayGain plumbing', () => {
 
     it.each(['preview-only', 'region-restricted', 'auth-required'] as const)('preserves %s for the queue and does not cache audio', async reason => {
         sourceMock.mockRejectedValueOnce(new OnlineProviderError(reason, 'Playback unavailable', 'bodian'));
-        await expect(loadOnlineSongAudioSource(song, 'high', null)).resolves.toEqual({ kind: 'unavailable', reason });
+        await expect(loadOnlineSongAudioSource(song, 'high', null)).resolves.toMatchObject({
+            kind: 'unavailable',
+            reason,
+            failure: { case: reason === 'auth-required' ? 'sign-in-needed' : reason },
+        });
         expect(updatePrefetchedAudioUrlMock).not.toHaveBeenCalled();
     });
 

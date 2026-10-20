@@ -633,6 +633,14 @@ export const settingsCommands: CommandPaletteCommand[] = [
         ['cross source', 'fallback', 'auto switch', 'source switch', '跨音源', '自动换源', '换源', '音源切换'],
         context => context.settings.toggleAutoCrossSourceFallback(),
     ),
+    createToggleCommand(
+        'settings-toggle-auto-skip-unplayable',
+        'settings',
+        'Skip unplayable songs',
+        'Toggle counting down to a skip when a song is restricted or fails for an unknown reason',
+        ['auto skip', 'skip unavailable', 'skip restricted songs', 'cannot play', 'unplayable', 'vip only', '自动跳过', '跳过无法播放', '无法播放', '跳过会员歌曲', '跳过灰色歌曲', '播放失败跳过'],
+        context => context.settings.toggleAutoSkipUnplayable(),
+    ),
     createToggleCommand('settings-toggle-bottom-subtitle-overlay', 'settings', 'Toggle bottom subtitle overlay', 'Show or hide the whole bottom subtitle overlay', [
             'bottom subtitle overlay',
             'subtitle overlay',

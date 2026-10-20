@@ -65,14 +65,31 @@ export const qishuiProvider: OnlineMusicProvider = {
                 const audio: ProviderAudioSource = { url, fetchedAt: Date.now(), quality };
                 return audio;
             }
-            const category = qishuiText(data?.restriction?.category || data?.reason);
+            const category = qishuiText(data?.restriction?.category || data?.reason).toLowerCase();
+            const message = qishuiText(data?.message);
             if (category === 'login_required' || category === 'cookie_required') {
                 throw new OnlineProviderError('auth-required',
-                    qishuiText(data?.message) || 'Sign in to Qishui Music to play this track', 'qishui');
+                    message || 'Sign in to Qishui Music to play this track', 'qishui');
+            }
+            if (/vip|member|subscription|paid|paywall|会员|付费/.test(category)) {
+                throw new OnlineProviderError('subscription-required',
+                    message || 'Qishui Music requires a paid account for this track', 'qishui',
+                    undefined, undefined, undefined, { case: 'subscription-required', message });
+            }
+            if (/region|area|geo|地区/.test(category)) {
+                throw new OnlineProviderError('region-restricted',
+                    message || 'Qishui Music restricts this track in your region', 'qishui',
+                    undefined, undefined, undefined, { case: 'region-restricted', message });
+            }
+            if (/trial|preview|试听/.test(category)) {
+                throw new OnlineProviderError('preview-only',
+                    message || 'Qishui Music only offers a preview for this account', 'qishui',
+                    undefined, undefined, undefined, { case: 'preview-only', message });
             }
             // 拿不到直连 URL 时协议层把这首歌退回「推荐/匹配源」，交给上层换源。
             throw new OnlineProviderError('not-playable',
-                qishuiText(data?.message) || 'Qishui Music has no direct audio URL for this track', 'qishui');
+                message || 'Qishui Music has no direct audio URL for this track', 'qishui',
+                undefined, undefined, undefined, { case: 'no-audio', message });
         },
         getAvailability(song) {
             return song.sourceRef?.kind === 'online' && song.sourceRef.providerData?.unavailable

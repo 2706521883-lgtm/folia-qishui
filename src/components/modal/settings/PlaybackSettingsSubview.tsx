@@ -11,6 +11,7 @@ import TransitionSettingsSection from './TransitionSettingsSection';
 import LocalLyricFormatOrderSetting from './LocalLyricFormatOrderSetting';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
+import { Row, Toggle } from './kit';
 import { useLyricSettingsStore } from '../../../stores/useLyricSettingsStore';
 import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 import { useOnlineProviderAccountStore } from '../../../stores/useOnlineProviderAccountStore';
@@ -53,11 +54,13 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
         neteaseScrobbleEnabled,
         playbackFadeEnabled,
         autoCrossSourceFallback,
+        autoSkipUnplayable,
         queueAddBehavior,
         onToggleTranscodeFallback,
         onToggleNeteaseScrobble,
         onTogglePlaybackFade,
         onToggleAutoCrossSourceFallback,
+        onToggleAutoSkipUnplayable,
         onQueueAddBehaviorChange,
     } = useAudioSettingsStore(useShallow(state => ({
         audioOutputDeviceId: state.audioOutputDeviceId,
@@ -65,11 +68,13 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
         neteaseScrobbleEnabled: state.neteaseScrobbleEnabled,
         playbackFadeEnabled: state.playbackFadeEnabled,
         autoCrossSourceFallback: state.autoCrossSourceFallback,
+        autoSkipUnplayable: state.autoSkipUnplayable,
         queueAddBehavior: state.queueAddBehavior,
         onToggleTranscodeFallback: state.handleToggleTranscodeFallback,
         onToggleNeteaseScrobble: state.handleToggleNeteaseScrobble,
         onTogglePlaybackFade: state.handleTogglePlaybackFade,
         onToggleAutoCrossSourceFallback: state.handleToggleAutoCrossSourceFallback,
+        onToggleAutoSkipUnplayable: state.handleToggleAutoSkipUnplayable,
         onQueueAddBehaviorChange: state.handleSetQueueAddBehavior,
     })));
     // Subscribed to rather than read once: the panel has to grey out the moment the NetEase account
@@ -506,18 +511,19 @@ const PlaybackSettingsSubview: React.FC<PlaybackSettingsSubviewProps> = ({
 
             <SettingsAnchor anchorId="crossSourcePlayback" label={t('options.crossSourcePlayback')}>
                 <SettingsSectionHeading icon={RefreshCw} label={t('options.crossSourcePlayback')} />
-                <div className={`p-4 rounded-xl border ${settingsCardClass}`}>
-                    <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                                {t('options.autoCrossSourceFallback')}
-                            </div>
-                            <div className="text-[11px] opacity-50 max-w-[420px]" style={{ color: 'var(--text-secondary)' }}>
-                                {t('options.autoCrossSourceFallbackDesc')}
-                            </div>
-                        </div>
-                        {renderToggle(autoCrossSourceFallback, () => onToggleAutoCrossSourceFallback(!autoCrossSourceFallback))}
-                    </div>
+                <div className="st-card overflow-hidden rounded-xl bg-[var(--st-card)] shadow-[0_0_0_1px_var(--st-line)]">
+                    <Row
+                        label={t('options.autoCrossSourceFallback')}
+                        hint={t('options.autoCrossSourceFallbackDesc')}
+                    >
+                        <Toggle checked={autoCrossSourceFallback} onChange={onToggleAutoCrossSourceFallback} />
+                    </Row>
+                    <Row
+                        label={t('options.autoSkipUnplayable')}
+                        hint={t('options.autoSkipUnplayableDesc')}
+                    >
+                        <Toggle checked={autoSkipUnplayable} onChange={onToggleAutoSkipUnplayable} />
+                    </Row>
                 </div>
             </SettingsAnchor>
         </div>
