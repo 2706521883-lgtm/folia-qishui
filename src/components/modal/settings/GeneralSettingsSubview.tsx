@@ -63,6 +63,9 @@ const GeneralSettingsSubview: React.FC<GeneralSettingsSubviewProps> = ({
     })));
     const getResolvedLanguageLabel = (): string => {
         const lang = i18n.resolvedLanguage;
+        if (lang === 'zh-TW') {
+            return t('options.appLanguageZhTW');
+        }
         if (lang?.startsWith('zh')) {
             return t('options.appLanguageZhCN');
         }
@@ -77,6 +80,7 @@ const GeneralSettingsSubview: React.FC<GeneralSettingsSubviewProps> = ({
     const languageOptions: Array<{ value: AppLanguagePreference; label: string; }> = [
         { value: 'system', label: t('options.appLanguageSystem') },
         { value: 'zh-CN', label: t('options.appLanguageZhCN') },
+        { value: 'zh-TW', label: t('options.appLanguageZhTW') },
         { value: 'en', label: t('options.appLanguageEnUS') || 'English' },
         { value: 'in', label: t('options.appLanguageInID') || 'Bahasa Indonesia' },
     ];

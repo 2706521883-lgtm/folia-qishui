@@ -2,12 +2,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vitest/config';
 import { commandPinyinPlugin } from './dev/pinyin/commandPinyinPlugin.mjs';
+import { traditionalLocalePlugin } from './dev/i18n/traditionalLocalePlugin.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   // 命令面板的检索索引在单测里也要读到构建期生成的拼音字典。
-  plugins: [commandPinyinPlugin()],
+  // 繁中 locale 由 zh-CN 在构建期转换生成，同样只以虚拟模块存在。
+  plugins: [commandPinyinPlugin(), traditionalLocalePlugin()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src')

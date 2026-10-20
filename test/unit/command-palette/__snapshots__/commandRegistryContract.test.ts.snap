@@ -182,6 +182,7 @@ exports[`command palette registry contract > keeps the registered command order 
   "settings-toggle-subtitle-background",
   "settings-language-system",
   "settings-language-zh-CN",
+  "settings-language-zh-TW",
   "settings-language-en",
   "settings-language-in",
   "lattice-focus-current",

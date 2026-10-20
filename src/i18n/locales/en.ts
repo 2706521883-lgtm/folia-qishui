@@ -821,6 +821,7 @@ export default {
       "settings-toggle-subtitle-background": { "title": "Toggle subtitle background", "description": "Show or hide the readability background behind visualizer subtitles" },
       "settings-language-system": { "title": "Follow system language", "description": "Use the browser or system language" },
       "settings-language-zh-CN": { "title": "Switch language to Chinese", "description": "Use Simplified Chinese in the interface" },
+      "settings-language-zh-TW": { "title": "Switch language to Traditional Chinese", "description": "Use Traditional Chinese in the interface" },
       "settings-language-en": { "title": "Switch language to English", "description": "Use English in the interface" },
       "settings-language-in": { "title": "Switch language to Indonesian", "description": "Use Bahasa Indonesia in the interface" }
     }
@@ -1725,6 +1726,7 @@ export default {
     "appLanguageDesc": "Manually set Folia's interface language, or switch back to following the system.",
     "appLanguageSystem": "Follow system",
     "appLanguageZhCN": "Simplified Chinese",
+    "appLanguageZhTW": "Traditional Chinese",
     "appLanguageEnUS": "English",
     "appLanguageInID": "Indonesian",
     "appLanguageSystemHint": "Follow the browser or system language. Current: {{language}}",
