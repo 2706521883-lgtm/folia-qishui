@@ -103,7 +103,7 @@ jobs:
       - name: Build web app for Electron
         env:
           ELECTRON: 'true'
-          APP_VERSION_LABEL: Limo
+          APP_VERSION_LABEL: Folia Nightly
           APP_RELEASE_CHANNEL: limo
         run: npm run build
 

@@ -4,7 +4,7 @@
 const RELEASE_CHANNELS = {
   realeco: {
     id: 'realeco',
-    label: 'Realeco',
+    label: 'Folia Stable',
     updaterChannel: 'latest',
     allowPrerelease: false,
     updateEnabled: true,
@@ -12,7 +12,7 @@ const RELEASE_CHANNELS = {
   },
   limo: {
     id: 'limo',
-    label: 'Limo',
+    label: 'Folia Nightly',
     updaterChannel: 'beta',
     allowPrerelease: true,
     updateEnabled: true,
@@ -20,7 +20,7 @@ const RELEASE_CHANNELS = {
   },
   cielo: {
     id: 'cielo',
-    label: 'Cielo',
+    label: 'Folia Canary',
     updaterChannel: 'alpha',
     allowPrerelease: true,
     updateEnabled: true,

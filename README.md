@@ -4,7 +4,7 @@
 
 **folia-qishui** —— 在 [Folia](https://github.com/chthollyphile/folia-major) 的基础上二次创作，新增「汽水音乐」在线音源与「壁纸引擎」背景。
 
-[上游项目](https://github.com/chthollyphile/folia-major) ｜ [本仓库 Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) ｜ [许可证 AGPL-3.0](./LICENSE) ｜ [上游原始 README](./README.original.md)
+[上游项目](https://github.com/chthollyphile/folia-major) ｜ [安装包下载](https://github.com/2706521883-lgtm/folia-updates/releases) ｜ [许可证 AGPL-3.0](./LICENSE) ｜ [上游原始 README](./README.original.md)
 
 </div>
 
@@ -70,17 +70,17 @@
 
 **方式 A：安装包（Windows）**
 
-1. 到本仓库的 [Releases](https://github.com/2706521883-lgtm/folia-qishui/releases) 页面下载最新安装包 `Folia-Setup-<版本>.exe`（例如 `Folia-Setup-0.3.2.exe`）。
+1. 到安装包仓库的 [Releases](https://github.com/2706521883-lgtm/folia-updates/releases) 页面下载最新安装包 `Folia-Setup-<版本>.exe`（例如 `Folia-Setup-0.3.9.exe`）。
 2. 双击运行，向导里选「仅为我安装」，安装目录按需要选择即可。
 3. 装完会自动启动。首次打开时在音源列表里选「汽水音乐」，点登录，用汽水 App 扫码。
 
-> ℹ️ **关于版本号与自动更新**：本二创版从 **0.3.1** 开始独立编号，比上游的 0.7.x 小，这是正常的。因此**第一次从官方版换到本版（或从本版换回官方版）需要手动装一次安装包**；装好之后，检查更新只查本仓库的 Releases，更新下来的是本版安装包，**不会把 `resources\app` 换回官方版**，汽水音源与壁纸引擎背景都不会丢。
+> ℹ️ **关于版本号与自动更新**：本二创版从 **0.3.1** 开始独立编号，比上游的 0.7.x 小，这是正常的。因此**第一次从官方版换到本版（或从本版换回官方版）需要手动装一次安装包**；装好之后，检查更新只查安装包仓库 `folia-updates` 的 Releases，更新下来的是本版安装包，**不会把 `resources\app` 换回官方版**，汽水音源与壁纸引擎背景都不会丢。
 >
 > 版本检查与下载需要能访问 GitHub，网络不稳时请在系统里挂好代理。
 
 **方式 B：绿色版**
 
-解压本仓库 Release 里附带的绿色包（若该版本提供）或自行按第六节从源码构建，直接运行 `Folia.exe`。
+解压安装包仓库 Release 里附带的绿色包（若该版本提供）或自行按第六节从源码构建，直接运行 `Folia.exe`。
 
 **遇到问题 / 联系作者**
 

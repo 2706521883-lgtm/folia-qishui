@@ -263,7 +263,7 @@ export default async function viteConfig(_config: ConfigEnv): Promise<UserConfig
   const buildRepo = resolveBuildRepo(process.env, () => execSync('git remote get-url origin', { stdio: ['ignore', 'pipe', 'ignore'] }).toString());
   const buildCommit = normalizeBuildCommit(commitHash);
 
-  const appVersionLabel = process.env.APP_VERSION_LABEL?.trim() || 'Realeco';
+  const appVersionLabel = process.env.APP_VERSION_LABEL?.trim() || 'Folia';
   const appReleaseChannel = process.env.APP_RELEASE_CHANNEL?.trim().toLowerCase() || 'realeco';
   const dockerStackVersion = process.env.DOCKER_STACK_VERSION?.trim() || '';
 
