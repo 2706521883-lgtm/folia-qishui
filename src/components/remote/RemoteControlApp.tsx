@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { ChevronLeft, Heart, Lock, LockOpen, Pause, Pin, PinOff, Play, Repeat, Repeat1, RepeatOff, SkipBack, SkipForward, Video, MirrorRectangular, X, Check, Sliders, Palette } from 'lucide-react';
+import { ChevronLeft, Heart, Lock, LockOpen, Maximize2, Minimize2, Pause, Pin, PinOff, Play, Repeat, Repeat1, RepeatOff, SkipBack, SkipForward, Video, MirrorRectangular, X, Check, Sliders, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PlayerState } from '../../types';
 import RemoteVideoExportPanel from './RemoteVideoExportPanel';
@@ -270,6 +270,20 @@ const RemoteControlApp: React.FC = () => {
         : undefined;
     const title = snapshot.title || 'Folia';
     const artist = snapshot.artist || (snapshot.hasTrack ? 'Unknown artist' : 'No active track');
+    const [coverExpanded, setCoverExpanded] = useState(false);
+    useEffect(() => {
+        if (!snapshot.hasTrack) setCoverExpanded(false);
+    }, [snapshot.hasTrack]);
+    useEffect(() => {
+        if (!coverExpanded) return undefined;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.repeat) return;
+            event.preventDefault();
+            setCoverExpanded(false);
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [coverExpanded]);
 
     const {
         trackEnterOffset,
@@ -611,6 +625,17 @@ const RemoteControlApp: React.FC = () => {
                                     );
                                 })}
                             </AnimatePresence>
+                            {currentCoverUrl && (
+                                <button
+                                    type="button"
+                                    title={t('remote.expandCover')}
+                                    aria-label={t('remote.expandCover')}
+                                    onClick={event => { event.stopPropagation(); setCoverExpanded(true); }}
+                                    className={`absolute right-2 top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full opacity-0 shadow backdrop-blur-md transition-opacity group-hover:opacity-100 focus-visible:opacity-100 ${isDaylight ? 'bg-white/80 text-zinc-800 hover:bg-white' : 'bg-black/55 text-white hover:bg-black/75'}`}
+                                >
+                                    <Maximize2 size={13} />
+                                </button>
+                            )}
                             {activePanel !== 'playback' && (
                                 <button
                                     type="button"
@@ -1214,6 +1239,39 @@ const RemoteControlApp: React.FC = () => {
                     )}
                 </AnimatePresence>
             </div>
+
+            {/* 封面展开：在遥控窗口里铺满一张封面，点任意处或 Esc 收回。 */}
+            <AnimatePresence>
+                {coverExpanded && currentCoverUrl && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-[90] flex flex-col overflow-hidden bg-black"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={title}
+                        onClick={() => setCoverExpanded(false)}
+                    >
+                        <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${currentCoverUrl})` }} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-black/35" />
+                        <button
+                            type="button"
+                            title={t('remote.collapseCover')}
+                            aria-label={t('remote.collapseCover')}
+                            onClick={event => { event.stopPropagation(); setCoverExpanded(false); }}
+                            className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white shadow backdrop-blur-md transition-colors hover:bg-black/75"
+                        >
+                            <Minimize2 size={15} />
+                        </button>
+                        <div className="relative z-10 mt-auto p-5 text-white">
+                            <div className="text-lg font-extrabold leading-tight drop-shadow">{title}</div>
+                            <div className="mt-1 text-xs font-medium text-white/70">{artist}</div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </main>
     );
 };

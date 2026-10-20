@@ -3625,6 +3625,8 @@ export default {
     "uiAutoHide": "Antarmuka: Sembunyi Otomatis",
     "close": "Tutup",
     "back": "Kembali",
+    "expandCover": "Perbesar sampul",
+    "collapseCover": "Perkecil sampul",
     "showBorder": "Tampilkan Batas",
     "hideBorder": "Sembunyikan Batas",
     "disableClickThrough": "Nonaktifkan Klik-Tembus",

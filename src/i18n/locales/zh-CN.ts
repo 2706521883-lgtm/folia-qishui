@@ -3739,6 +3739,8 @@ export default {
     "uiAutoHide": "UI：自动隐藏",
     "close": "关闭",
     "back": "返回",
+    "expandCover": "展开封面",
+    "collapseCover": "收起封面",
     "showBorder": "显示边框",
     "hideBorder": "隐藏边框",
     "disableClickThrough": "关闭点击穿透",
