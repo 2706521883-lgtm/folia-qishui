@@ -102,6 +102,24 @@ describe('player and playlist controls translations', () => {
     });
 });
 
+describe('explore and wall queue labels', () => {
+    // i18next treats dots as nesting by default: keys written as "explore.title" at the root are
+    // looked up as explore -> title, so a flat dotted key silently renders its own name.
+    it.each([
+        'title', 'short', 'subtitle', 'refresh', 'close', 'loading', 'error', 'retry', 'empty', 'daily', 'playlists', 'personalFm',
+    ] as const)('nests explore.%s in both locales', key => {
+        expect(en.explore[key]).toBeTruthy();
+        expect(zhCN.explore[key]).toBeTruthy();
+    });
+
+    it.each([
+        'title', 'short', 'shuffle', 'clear', 'clearConfirm', 'close', 'empty', 'playNext', 'moveToEnd', 'remove', 'hint',
+    ] as const)('nests wallQueue.%s in both locales', key => {
+        expect(en.wallQueue[key]).toBeTruthy();
+        expect(zhCN.wallQueue[key]).toBeTruthy();
+    });
+});
+
 describe('player control slot loop action resolution', () => {
     it.each([
         ['off', 'player.loopOff'],
