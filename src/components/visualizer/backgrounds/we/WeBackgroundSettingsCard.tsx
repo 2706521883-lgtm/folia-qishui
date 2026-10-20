@@ -188,6 +188,21 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                 </div>
             ) : null}
 
+            {/* The library sits directly under the current wallpaper, before the capture sliders:
+                choosing a wallpaper is the reason this card was opened. */}
+            {supported && hasScanned && total > 0 ? (
+                <WeWallpaperPicker
+                    t={t}
+                    theme={theme}
+                    isDaylight={isDaylight}
+                    selectedId={tuning.itemId}
+                    onSelect={(itemId, itemTitle) => {
+                        onTuningChange?.({ itemId, itemTitle });
+                        void startSession(itemId, tuning.muteAudio);
+                    }}
+                />
+            ) : null}
+
             <BackgroundToggleRow
                 label={t('options.weAutoStart')}
                 description={t('options.weAutoStartDesc')}
@@ -271,18 +286,6 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                 />
             </div>
 
-            {supported && hasScanned && total > 0 ? (
-                <WeWallpaperPicker
-                    t={t}
-                    theme={theme}
-                    isDaylight={isDaylight}
-                    selectedId={tuning.itemId}
-                    onSelect={(itemId, itemTitle) => {
-                        onTuningChange?.({ itemId, itemTitle });
-                        void startSession(itemId, tuning.muteAudio);
-                    }}
-                />
-            ) : null}
         </div>
     );
 };

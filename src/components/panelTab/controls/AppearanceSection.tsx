@@ -96,15 +96,22 @@ const AppearanceSection: React.FC<AppearanceSectionProps> = ({
         [t],
     );
     const resolvedBackgroundMode = resolveVisualizerBackgroundMode(visualizerBackgroundMode, visualizerMode);
+    // Wallpaper Engine has its own entry in the lyric-style settings (with the library picker);
+    // the panel's quick background picker leaves it out instead of offering a bare mode chip.
+    const panelHiddenBackgroundModes: readonly VisualizerBackgroundMode[] = ['we'];
+    const steppableBackgroundOptions = backgroundOptions.filter(option => !panelHiddenBackgroundModes.includes(option.value));
 
     const stepBackgroundMode = (direction: -1 | 1) => {
-        if (backgroundOptions.length < 2) {
+        if (steppableBackgroundOptions.length < 2) {
             return;
         }
 
-        const index = backgroundOptions.findIndex(option => option.value === resolvedBackgroundMode);
-        const nextIndex = ((index < 0 ? 0 : index) + direction + backgroundOptions.length) % backgroundOptions.length;
-        setVisualizerBackgroundMode(backgroundOptions[nextIndex].value);
+        const index = steppableBackgroundOptions.findIndex(option => option.value === resolvedBackgroundMode);
+        // The current mode may be hidden (Wallpaper Engine): stepping forward starts at the first
+        // visible mode, stepping back at the last one.
+        const anchor = index < 0 ? (direction === 1 ? -1 : 0) : index;
+        const nextIndex = (anchor + direction + steppableBackgroundOptions.length) % steppableBackgroundOptions.length;
+        setVisualizerBackgroundMode(steppableBackgroundOptions[nextIndex].value);
     };
 
     const openVisualizerSettings = () => {
@@ -190,6 +197,7 @@ const AppearanceSection: React.FC<AppearanceSectionProps> = ({
                 <ModeStepperRow<VisualizerBackgroundMode>
                     value={resolvedBackgroundMode}
                     options={backgroundOptions}
+                    hiddenValues={panelHiddenBackgroundModes}
                     onSelect={setVisualizerBackgroundMode}
                     onStep={stepBackgroundMode}
                     renderGlyph={mode => <BackgroundModeGlyph mode={mode} />}

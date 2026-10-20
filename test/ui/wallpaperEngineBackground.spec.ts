@@ -27,6 +27,11 @@ test('lists the Wallpaper Engine background type and opens its settings card', a
         useSettingsModalStore.getState().openSettings('options', 'visualizer', 'background');
     });
 
+    // Wallpaper Engine has a dedicated entry above the ordinary background types; it is the only
+    // place that also carries the library picker, while the panel's quick picker omits it.
+    await expect(page.getByText('Wallpaper mode', { exact: true })).toBeVisible();
+    await expect(page.getByText('Turn on wallpaper mode', { exact: true })).toBeVisible();
+
     // Scoped to the background chip row: the visualizer-mode row above it uses some of the same
     // labels (its "Common" chip), so the plain name lookup is ambiguous.
     const backgroundGroup = page.locator('div.space-y-2\\.5').filter({ hasText: 'Background Type' });
@@ -49,3 +54,4 @@ test('lists the Wallpaper Engine background type and opens its settings card', a
     }
     await expect(card.getByText('Wallpaper Engine backgrounds are only available in the Windows desktop build', { exact: true })).toBeVisible();
 });
+

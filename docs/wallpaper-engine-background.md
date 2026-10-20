@@ -7,7 +7,7 @@
 ## 一、原理链路
 
 ```
-设置卡/命令面板
+歌词样式 → 背景 → 壁纸模式卡片 / 命令面板
    └─ 背景模式 'we'（src/components/visualizer/backgrounds/we/entry.tsx）
         ├─ 识别：IPC wallpaper-engine-scan → wallpaperEngineLibrary.cjs 扫描 Steam 库
         │        └─ 只列 type=scene 且带合法 PKGV 包的工程（视频/Web 壁纸不参与）
@@ -68,6 +68,7 @@
 ## 三、渲染端
 
 - **背景注册**：`src/components/visualizer/backgrounds/we/entry.tsx`（`mode:'we'`, `order:60`），`registry.tsx` 的 `import.meta.glob` 自动发现；`src/types/visualizerModes.ts` 的 id 列表必须同步（启动时 `assertBuiltinModeList` 会对账，漏改直接抛错）。
+- **入口**：播放器面板的快速背景选择器故意不列「壁纸引擎」（`AppearanceSection` 的 `hiddenValues`），入口固定在「歌词样式 → 背景」的「壁纸模式」卡片；壁纸库选择器在该卡片下方的设置卡里，紧跟在当前壁纸预览之后。播放器面板右上角的调色盘按钮打开的就是这一页。
 - **入口回归锁定**：`test/unit/visualizer/backgroundRegistry.test.ts`（内置背景 id 列表含 `we`）与 `test/ui/wallpaperEngineBackground.spec.ts`（「背景类型」一行能看到「壁纸引擎」chip，选中后渲染设置卡）。若在已安装的 App 里看不到该 chip，先确认那份 App 是不是由本源码构建的：安装目录 `resources/app` 里搜不到 `wallpaperEngine` 就是旧构建，本功能不在其中。
 - **采集**（`src/services/wallpaperEngineCapture.ts`）：`getUserMedia({video:{mandatory:{chromeMediaSource:'desktop', chromeMediaSourceId, minFrameRate:10, maxFrameRate}}})`。**没有** `setDisplayMediaRequestHandler`——`desktopCapturer` + mandatory 约束这条老路径在 Windows 上不需要用户授权弹窗。
 - **图层**（`we/WeBackgroundLayer.tsx`）：`<video muted playsInline autoPlay>` + `object-cover`，透明度/缩放/位移走 CSS `transform`/`opacity`。**采集流只在会话/帧率变化时重建**，所以拖滑杆不会重启采集、不会闪黑；采集失败（例如窗口被 WE 本体抢走）自动退回 `folia-we://preview/<itemId>` 静态预览图，且失败会重试（3 次）而不是一次就永久停在预览图上。

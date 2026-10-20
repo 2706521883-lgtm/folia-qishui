@@ -648,6 +648,41 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
                                 <span>{t('options.nativeBlurBackgroundNotice')}</span>
                             </div>
                         )}
+                        {/* Wallpaper Engine is not a bare background chip: it needs a library and a
+                            captured session. Its entry lives here, above the ordinary background
+                            types, and the library picker follows in its settings card below. */}
+                        <div className="rounded-[24px] border p-4 space-y-3" style={{ backgroundColor: controlCardBg, borderColor: colorWithAlpha(theme.secondaryColor, 0.16) }}>
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex min-w-0 items-start gap-2.5">
+                                    <span
+                                        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                                        style={{ backgroundColor: colorWithAlpha(theme.secondaryColor, 0.12), color: theme.accentColor }}
+                                    >
+                                        <Monitor size={16} />
+                                    </span>
+                                    <div className="min-w-0 space-y-1">
+                                        <div className="text-sm font-medium" style={{ color: theme.primaryColor }}>
+                                            {t('options.weModeEntry')}
+                                        </div>
+                                        <div className="text-xs opacity-70" style={{ color: theme.secondaryColor }}>
+                                            {t('options.weModeEntryDesc')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => backgroundActions?.onModeChange?.('we')}
+                                    disabled={resolvedBackgroundMode === 'we'}
+                                    className="flex h-8 shrink-0 items-center rounded-lg border px-3 text-xs font-medium transition-opacity disabled:opacity-50"
+                                    style={{
+                                        borderColor: resolvedBackgroundMode === 'we' ? colorWithAlpha(theme.secondaryColor, 0.2) : theme.accentColor,
+                                        color: resolvedBackgroundMode === 'we' ? theme.secondaryColor : theme.accentColor,
+                                    }}
+                                >
+                                    {resolvedBackgroundMode === 'we' ? t('options.weModeEntryActive') : t('options.weModeEntryAction')}
+                                </button>
+                            </div>
+                        </div>
                         <div className="rounded-[24px] border p-4 space-y-4" style={{ backgroundColor: controlCardBg, borderColor: colorWithAlpha(theme.secondaryColor, 0.16) }}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-1">
