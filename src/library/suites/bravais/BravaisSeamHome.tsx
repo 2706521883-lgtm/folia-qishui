@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     CalendarPlus,
@@ -18,7 +18,8 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BravaisLayer, BravaisSeamTab } from './bravaisLayer';
-import type { BravaisHomeAccount, BravaisHomeSection, BravaisHomeShortcut } from './bravaisHomeModels';
+import type { BravaisHomeAccount, BravaisHomeAction, BravaisHomeSection, BravaisHomeShortcut } from './bravaisHomeModels';
+import { QUEUE_TILE_DRAG_THRESHOLD_PX, resolveQueueTileDragAction } from './bravaisSeamQueueDrag';
 import type { BravaisSeamLevel } from './bravaisSeamLevel';
 import BravaisSeamAccountSwitcher from './BravaisSeamAccountSwitcher';
 import BravaisSeamHomeTools from './BravaisSeamHomeTools';
@@ -298,6 +299,57 @@ const BravaisSeamHome: React.FC<{
     // 显示进度；页签缩成一个字时全名在页签的 title / aria-label 里。
     const reduced = useBravaisReducedTransitions();
     const reveal = bravaisRevealMotion(reduced);
+    const queueTool = home?.tools.find(tool => tool.id === 'queue');
+    const searchTool = home?.tools.find(tool => tool.id === 'search');
+    const actionDragRef = useRef<{
+        pointerId: number;
+        startX: number;
+        startY: number;
+        dx: number;
+        dy: number;
+        moved: boolean;
+    } | null>(null);
+    const suppressActionClickRef = useRef(false);
+    const [actionDrag, setActionDrag] = useState<{ dx: number; action: 'lattice' | 'search' | null } | null>(null);
+
+    const beginActionDrag = (event: React.PointerEvent<HTMLButtonElement>, action: BravaisHomeAction) => {
+        if (event.button !== 0 || action.disabled) return;
+        actionDragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            dx: 0,
+            dy: 0,
+            moved: false,
+        };
+        setActionDrag({ dx: 0, action: null });
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+    };
+    const moveActionDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = actionDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        drag.dx = event.clientX - drag.startX;
+        drag.dy = event.clientY - drag.startY;
+        if (!drag.moved && Math.hypot(drag.dx, drag.dy) < QUEUE_TILE_DRAG_THRESHOLD_PX) return;
+        drag.moved = true;
+        setActionDrag({ dx: drag.dx, action: resolveQueueTileDragAction(drag.dx, drag.dy) });
+    };
+    const endActionDrag = (event: React.PointerEvent<HTMLButtonElement>, action: BravaisHomeAction) => {
+        const drag = actionDragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        actionDragRef.current = null;
+        setActionDrag(null);
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
+        if (!drag.moved) return;
+        suppressActionClickRef.current = true;
+        window.setTimeout(() => { suppressActionClickRef.current = false; }, 350);
+        const resolved = resolveQueueTileDragAction(drag.dx, drag.dy);
+        if (resolved === 'lattice') {
+            queueTool?.run();
+        } else if (resolved === 'search' && searchTool && !searchTool.pressed) {
+            searchTool.run();
+        }
+    };
     const filterEditing = useBravaisUiStore(state => state.filterEditing);
     const meta = home?.scan ? <motion.div key="scan" className="bravais-seam-scan" data-bravais-scan {...reveal}>{home.scan}</motion.div> : null;
     // 缩减级别变了（标题隐藏、页签缩成一个字、入口挪进 / 挪出菜单）：页头与切换位淡入新的样子，不硬切。
@@ -325,22 +377,39 @@ const BravaisSeamHome: React.FC<{
                             {/* 中段快捷入口（汽水推荐流 / 回到播放页）：竖排；不打开集合、不换层。 */}
                             {home?.actions && home.actions.length > 0 && (
                                 <div className="bravais-seam-home-actions" data-bravais-home-actions={home.actions.length}>
-                                    {home.actions.map(action => {
+                                    {home.actions.map((action, index) => {
                                         const unavailable = Boolean(action.disabled);
+                                        // The first action (the green tile in the seam) also carries the
+                                        // two-way gesture: right opens the queue collage, left search.
+                                        const draggable = index === 0 && Boolean(queueTool);
                                         return (
                                             <button
                                                 key={action.id}
                                                 type="button"
-                                                className={`bravais-seam-home-action${action.tone === 'neutral' ? ' is-neutral' : ''}${action.busy ? ' is-busy' : ''}${unavailable ? ' is-disabled' : ''}`}
+                                                className={`bravais-seam-home-action${action.tone === 'neutral' ? ' is-neutral' : ''}${action.busy ? ' is-busy' : ''}${unavailable ? ' is-disabled' : ''}${draggable ? ' is-queue-drag' : ''}${draggable && actionDrag?.action ? ' is-queue-drag-armed' : ''}`}
                                                 data-bravais-home-action={action.id}
                                                 data-bravais-home-action-busy={action.busy ? 'true' : undefined}
                                                 data-bravais-home-action-disabled={unavailable ? 'true' : undefined}
+                                                data-bravais-queue-hint={draggable && actionDrag?.action
+                                                    ? (actionDrag.action === 'search' ? t('libraryBravaisHome.queueDragLeft') : t('libraryBravaisHome.queueDragRight'))
+                                                    : undefined}
                                                 aria-label={action.title}
                                                 aria-busy={action.busy || undefined}
                                                 aria-disabled={unavailable || undefined}
                                                 disabled={unavailable}
-                                                title={action.title}
+                                                title={draggable ? `${action.title} · ${t('libraryBravaisHome.queueDragHint')}` : action.title}
+                                                style={draggable && actionDrag
+                                                    ? { transform: `translateX(${Math.max(-14, Math.min(14, actionDrag.dx * 0.25))}px)` }
+                                                    : undefined}
+                                                onPointerDown={draggable ? event => beginActionDrag(event, action) : undefined}
+                                                onPointerMove={draggable ? moveActionDrag : undefined}
+                                                onPointerUp={draggable ? event => endActionDrag(event, action) : undefined}
+                                                onPointerCancel={draggable ? () => { actionDragRef.current = null; setActionDrag(null); } : undefined}
                                                 onClick={() => {
+                                                    if (draggable && suppressActionClickRef.current) {
+                                                        suppressActionClickRef.current = false;
+                                                        return;
+                                                    }
                                                     if (!action.busy && !unavailable) action.run();
                                                 }}
                                             >
