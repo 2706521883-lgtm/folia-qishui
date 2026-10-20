@@ -16,8 +16,8 @@ type SettingsSectionHeadingProps = {
 export const SettingsSectionHeading: React.FC<SettingsSectionHeadingProps> = ({ icon: Icon, label, divider, className, action }) => {
     const heading = (
         <h3
-            className={`text-sm font-bold uppercase tracking-wider opacity-50 flex items-center gap-2${action ? '' : ' mb-4'}${divider ? ' border-t border-white/10 pt-5' : ''}${className ? ` ${className}` : ''}`}
-            style={{ color: 'var(--text-secondary)' }}
+            className={`text-sm font-bold uppercase tracking-wider opacity-50 flex items-center gap-2${action ? '' : ' mb-4'}${divider ? ' border-t border-[color:var(--st-line)] pt-5' : ''}${className ? ` ${className}` : ''}`}
+            style={{ color: 'var(--st-t3, var(--text-secondary))' }}
         >
             <Icon size={14} /> {label}
         </h3>
