@@ -7,7 +7,7 @@ import { APP_VERSION, waitForAppMounted } from '../helpers/appState';
 // desktop capturer, so the card reports the platform notice there instead of offering the session
 // controls — that is the state this spec can assert without a Windows desktop build.
 
-test('lists the Wallpaper Engine background type and opens its settings card', async ({ page }) => {
+test('gives Wallpaper Engine its own settings tab and keeps it out of the background chips', async ({ page }) => {
     await page.addInitScript((version) => {
         localStorage.clear();
         localStorage.setItem('library_suite_prompt_seen', 'true');
@@ -27,21 +27,21 @@ test('lists the Wallpaper Engine background type and opens its settings card', a
         useSettingsModalStore.getState().openSettings('options', 'visualizer', 'background');
     });
 
-    // Wallpaper Engine has a dedicated entry above the ordinary background types; it is the only
-    // place that also carries the library picker, while the panel's quick picker omits it.
-    await expect(page.getByText('Wallpaper mode', { exact: true })).toBeVisible();
-    await expect(page.getByText('Turn on wallpaper mode', { exact: true })).toBeVisible();
+    // Wallpaper Engine is its own tab, not a chip among the ordinary backgrounds. The panel's
+    // quick picker also omits it; this spec covers the settings side.
+    const wallpaperTab = page.getByRole('button', { name: 'Wallpaper mode', exact: true });
+    await expect(wallpaperTab).toBeVisible();
 
     // Scoped to the background chip row: the visualizer-mode row above it uses some of the same
     // labels (its "Common" chip), so the plain name lookup is ambiguous.
     const backgroundGroup = page.locator('div.space-y-2\\.5').filter({ hasText: 'Background Type' });
 
-    // Every built-in background type offers a chip; the engine one sits last because of its order.
-    for (const label of ['Common', 'Monet', 'Nomand', 'Latent', 'Embed', 'Sora', 'Wallpaper Engine']) {
+    for (const label of ['Common', 'Monet', 'Nomand', 'Latent', 'Embed', 'Sora']) {
         await expect(backgroundGroup.getByRole('button', { name: label, exact: true })).toBeVisible();
     }
+    await expect(backgroundGroup.getByRole('button', { name: 'Wallpaper Engine', exact: true })).toHaveCount(0);
 
-    await backgroundGroup.getByRole('button', { name: 'Wallpaper Engine', exact: true }).click();
+    await wallpaperTab.click();
 
     // The card carries its own title, so scope by it: the shared background card above has sliders
     // with the same labels as the engine ones (both call theirs "Opacity").

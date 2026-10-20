@@ -175,12 +175,13 @@ const LYRICS_FONT_SIZE_AUTO_NOTICE_KEYS: Partial<Record<string, string>> = {
     lumiere: 'options.lumiereFontSizeAutoNotice',
 };
 
-const SECTION_OPTIONS: VisPlaygroundEditSection[] = ['common', 'background', 'visualizer', 'subtitle'];
+const SECTION_OPTIONS: VisPlaygroundEditSection[] = ['common', 'background', 'visualizer', 'subtitle', 'wallpaper'];
 
 const getSectionLabel = (section: VisPlaygroundEditSection, t: (key: string) => string) => {
     if (section === 'common') return t('options.previewCommonSettings');
     if (section === 'background') return t('options.previewBackgroundSettings');
     if (section === 'subtitle') return t('options.previewSubtitleSettings');
+    if (section === 'wallpaper') return t('options.weModeEntry');
     return t('options.previewVisualizerSettings');
 };
 
@@ -455,13 +456,28 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
     const enablePlayerPageNativeBlur = usePlayerChromeSettingsStore(state => state.enablePlayerPageNativeBlur);
     const resolvedBackgroundMode = backgroundConfig?.mode ?? DEFAULT_VISUALIZER_BACKGROUND_MODE;
     const backgroundEntry = getVisualizerBackgroundRegistryEntry(resolvedBackgroundMode);
+    // Wallpaper Engine is its own tab, not a chip among the ordinary backgrounds.
+    const backgroundEntryForTypeRow = resolvedBackgroundMode === 'we'
+        ? getVisualizerBackgroundRegistryEntry('common')
+        : backgroundEntry;
+    const weBackgroundEntry = useMemo(() => getVisualizerBackgroundRegistryEntry('we'), []);
     const backgroundModeOptions = useMemo(() => (
-        VISUALIZER_BACKGROUND_REGISTRY.map(entry => ({
-            value: entry.mode,
-            label: getVisualizerBackgroundModeLabel(entry.mode, t),
-        }))
+        VISUALIZER_BACKGROUND_REGISTRY
+            .filter(entry => entry.mode !== 'we')
+            .map(entry => ({
+                value: entry.mode,
+                label: getVisualizerBackgroundModeLabel(entry.mode, t),
+            }))
         // eslint-disable-next-line react-hooks/exhaustive-deps
     ), [t, foliumBackgroundEntries]);
+
+    // Opening the wallpaper tab is choosing that mode; its card then owns the library, session and
+    // capture controls instead of the ordinary background page.
+    useEffect(() => {
+        if (activeSection === 'wallpaper' && resolvedBackgroundMode !== 'we') {
+            backgroundActions?.onModeChange?.('we');
+        }
+    }, [activeSection, backgroundActions, resolvedBackgroundMode]);
     const renderMissingFoliumHint = (kind: 'visualizer' | 'background') => {
         const missing = missingFoliumSelections.find(entry => entry.kind === kind);
         return missing ? (
@@ -648,41 +664,6 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
                                 <span>{t('options.nativeBlurBackgroundNotice')}</span>
                             </div>
                         )}
-                        {/* Wallpaper Engine is not a bare background chip: it needs a library and a
-                            captured session. Its entry lives here, above the ordinary background
-                            types, and the library picker follows in its settings card below. */}
-                        <div className="rounded-[24px] border p-4 space-y-3" style={{ backgroundColor: controlCardBg, borderColor: colorWithAlpha(theme.secondaryColor, 0.16) }}>
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="flex min-w-0 items-start gap-2.5">
-                                    <span
-                                        className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
-                                        style={{ backgroundColor: colorWithAlpha(theme.secondaryColor, 0.12), color: theme.accentColor }}
-                                    >
-                                        <Monitor size={16} />
-                                    </span>
-                                    <div className="min-w-0 space-y-1">
-                                        <div className="text-sm font-medium" style={{ color: theme.primaryColor }}>
-                                            {t('options.weModeEntry')}
-                                        </div>
-                                        <div className="text-xs opacity-70" style={{ color: theme.secondaryColor }}>
-                                            {t('options.weModeEntryDesc')}
-                                        </div>
-                                    </div>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => backgroundActions?.onModeChange?.('we')}
-                                    disabled={resolvedBackgroundMode === 'we'}
-                                    className="flex h-8 shrink-0 items-center rounded-lg border px-3 text-xs font-medium transition-opacity disabled:opacity-50"
-                                    style={{
-                                        borderColor: resolvedBackgroundMode === 'we' ? colorWithAlpha(theme.secondaryColor, 0.2) : theme.accentColor,
-                                        color: resolvedBackgroundMode === 'we' ? theme.secondaryColor : theme.accentColor,
-                                    }}
-                                >
-                                    {resolvedBackgroundMode === 'we' ? t('options.weModeEntryActive') : t('options.weModeEntryAction')}
-                                </button>
-                            </div>
-                        </div>
                         <div className="rounded-[24px] border p-4 space-y-4" style={{ backgroundColor: controlCardBg, borderColor: colorWithAlpha(theme.secondaryColor, 0.16) }}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-1">
@@ -695,8 +676,8 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
                                 </div>
                                 <ResetSectionButton
                                     label={t('ui.default')}
-                                    onClick={backgroundEntry.resetSettings
-                                        ? () => backgroundEntry.resetSettings?.(backgroundActions)
+                                    onClick={backgroundEntryForTypeRow.resetSettings
+                                        ? () => backgroundEntryForTypeRow.resetSettings?.(backgroundActions)
                                         : undefined}
                                     theme={theme}
                                 />
@@ -711,9 +692,20 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
                                 theme={theme}
                             />
                             {renderMissingFoliumHint('background')}
+                            {resolvedBackgroundMode === 'we' && (
+                                <button
+                                    type="button"
+                                    onClick={() => onSectionChange('wallpaper')}
+                                    className="flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-xs transition-colors"
+                                    style={{ borderColor: colorWithAlpha(theme.accentColor, 0.36), color: theme.secondaryColor }}
+                                >
+                                    <span>{t('options.weMovedToOwnTab')}</span>
+                                    <span style={{ color: theme.accentColor }}>{t('options.weModeEntry')} ›</span>
+                                </button>
+                            )}
                         </div>
 
-                        {backgroundEntry.renderSettingsPanel?.({
+                        {resolvedBackgroundMode !== 'we' && backgroundEntry.renderSettingsPanel?.({
                             config: backgroundConfig,
                             actions: backgroundActions,
                             t,
@@ -1024,6 +1016,41 @@ const VisPlaygroundSettingsPanel: React.FC<VisPlaygroundSettingsPanelProps> = (p
                             icon={PanelTop}
                         />
                     </div>
+                )}
+
+                {activeSection === 'wallpaper' && (
+                    <>
+                        <div className="rounded-[24px] border p-4 space-y-3" style={{ backgroundColor: controlCardBg, borderColor: colorWithAlpha(theme.secondaryColor, 0.16) }}>
+                            <div className="flex items-start gap-2.5">
+                                <span
+                                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl"
+                                    style={{ backgroundColor: colorWithAlpha(theme.secondaryColor, 0.12), color: theme.accentColor }}
+                                >
+                                    <Monitor size={16} />
+                                </span>
+                                <div className="min-w-0 space-y-1">
+                                    <div className="text-sm font-medium" style={{ color: theme.primaryColor }}>
+                                        {t('options.weModeEntry')}
+                                    </div>
+                                    <div className="text-xs opacity-70" style={{ color: theme.secondaryColor }}>
+                                        {t('options.weModeEntryDesc')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {weBackgroundEntry.renderSettingsPanel?.({
+                            config: backgroundConfig,
+                            actions: backgroundActions,
+                            t,
+                            isDaylight,
+                            theme,
+                            controlCardBg,
+                            rangeInputClass,
+                            onSliderPointerDown,
+                            onSliderCommit,
+                        })}
+                    </>
                 )}
             </div>
         </div>

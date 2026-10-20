@@ -640,7 +640,7 @@ const VisPlayground: React.FC<VisPlaygroundProps> = ({
 
     const visualizerEntry = getVisualizerRegistryEntry(visualizerMode);
     const modeLabel = getVisualizerModeLabel(visualizerMode, t);
-    const hotspotLabels = useMemo<Record<Exclude<VisPlaygroundEditSection, 'common'>, string>>(() => ({
+    const hotspotLabels = useMemo<Record<Exclude<VisPlaygroundEditSection, 'common' | 'wallpaper'>, string>>(() => ({
         background: t('options.previewBackgroundHotspot'),
         visualizer: t('options.previewVisualizerHotspot'),
         subtitle: t('options.previewSubtitleHotspot'),

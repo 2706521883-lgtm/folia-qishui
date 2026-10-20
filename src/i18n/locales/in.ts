@@ -2700,6 +2700,7 @@ export default {
     "weModeEntryDesc": "Gunakan wallpaper adegan dari Wallpaper Engine lokal sebagai latar pemutar. Pilih wallpaper di bawah setelah aktif.",
     "weModeEntryAction": "Aktifkan mode wallpaper",
     "weModeEntryActive": "Mode wallpaper aktif",
+    "weMovedToOwnTab": "Wallpaper Engine kini punya tab Mode wallpaper sendiri",
     "weBackgroundSettings": "Latar Belakang Wallpaper Engine",
     "weBackgroundSettingsDesc": "Membuka scene Workshop di Wallpaper Engine lokal lalu menangkapnya ke lapisan latar belakang. Berkas Workshop tidak pernah diubah dan wallpaper desktop Anda tidak pernah diganti.",
     "weScan": "Deteksi wallpaper",

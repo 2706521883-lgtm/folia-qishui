@@ -2836,6 +2836,7 @@ export default {
     "weModeEntryDesc": "用本机 Wallpaper Engine 的场景壁纸作为播放器背景。启用后在下方壁纸库中选一张。",
     "weModeEntryAction": "启用壁纸模式",
     "weModeEntryActive": "壁纸模式已启用",
+    "weMovedToOwnTab": "壁纸引擎已单独放在「壁纸模式」页",
     "weBackgroundSettings": "壁纸引擎背景",
     "weBackgroundSettingsDesc": "在本机 Wallpaper Engine 中打开一个创意工坊场景，采集进背景层。创意工坊文件不会被修改，桌面壁纸也不会被替换。",
     "weScan": "识别壁纸",

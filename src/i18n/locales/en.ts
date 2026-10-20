@@ -2833,6 +2833,7 @@ export default {
     "weModeEntryDesc": "Use a scene from your local Wallpaper Engine library as the player background. Pick a wallpaper below once it is on.",
     "weModeEntryAction": "Turn on wallpaper mode",
     "weModeEntryActive": "Wallpaper mode is on",
+    "weMovedToOwnTab": "Wallpaper Engine now has its own Wallpaper mode tab",
     "weBackgroundSettings": "Wallpaper Engine Background",
     "weBackgroundSettingsDesc": "Opens a Workshop scene in your local Wallpaper Engine and captures it into the background layer. Workshop files are never modified and your desktop wallpaper is never replaced.",
     "weScan": "Detect wallpapers",
