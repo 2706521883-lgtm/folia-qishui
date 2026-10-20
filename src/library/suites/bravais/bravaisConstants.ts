@@ -9,6 +9,10 @@ export const BRAVAIS_METRICS: WallMetrics = { cellSize: 128, gap: 8 };
 
 /** 完整信息条（集合页）的开口。 */
 export const BRAVAIS_SEAM_FULL_WIDTH = 300;
+/** 歌手页海报的宽度：视口的 46%，夹在 520–680 之间。 */
+export const BRAVAIS_SEAM_POSTER_MIN_WIDTH = 520;
+export const BRAVAIS_SEAM_POSTER_MAX_WIDTH = 680;
+export const BRAVAIS_SEAM_POSTER_VIEWPORT_RATIO = 0.46;
 /** 首页窄缝（只放页签与入口）的开口。 */
 export const BRAVAIS_SEAM_HOME_WIDTH = 120;
 /** 书脊。 */

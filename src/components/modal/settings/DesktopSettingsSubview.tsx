@@ -19,6 +19,7 @@ import { CustomSelect } from '../../shared/CustomSelect';
 import { SettingsAnchor } from './navigation/SettingsAnchorContext';
 import SettingsSectionHeading from './navigation/SettingsSectionHeading';
 import AiConnectionTest from './AiConnectionTest';
+import WallpaperDisplayRow from './WallpaperDisplayRow';
 import SettingsRow, { SettingsToggle } from './SettingsRow';
 import { settingsDividerClassFor } from './settingsCardClasses';
 import { usePlayerChromeSettingsStore } from '../../../stores/usePlayerChromeSettingsStore';
@@ -312,6 +313,7 @@ const DesktopSettingsSubview: React.FC<DesktopSettingsSubviewProps> = ({
                             renderToggle(wallpaperMode, () => onToggleWallpaperMode(!wallpaperMode)),
                             !isMac,
                         )}
+                        <WallpaperDisplayRow wallpaperMode={wallpaperMode} isDaylight={isDaylight} />
                         {isMac && renderRow(
                             t('options.wallpaperMacAutohideDock'),
                             t('options.wallpaperMacAutohideDockDesc'),

@@ -4,7 +4,7 @@ import { applyQueueAddBehavior } from '../../../utils/queueAddBehavior';
 import type { NavidromeSong } from '../../../types/navidrome';
 import type { QueueAddBehavior, SongResult, StatusMessage } from '../../../types';
 import { getPlaybackSongKey } from '../../../utils/appPlaybackGuards';
-import { moveQueueItemToNext } from '../../../utils/queueReorder';
+import { moveQueueItem, moveQueueItemToNext } from '../../../utils/queueReorder';
 import { applyQueueBatchOperation as transformQueueBatch } from '../../../utils/queueBatchOperations';
 import type { QueueBatchAction } from '../../command-palette/queueQuery';
 import { setStatusMessage as setStatusMsg } from '../../../stores/useStatusMessageStore';
@@ -72,6 +72,13 @@ export const createQueueMutations = ({
         updateQueueOrder(nextQueue);
     };
 
+    /** 拖动排序：把 from 的那首移到 to（移动完成后的下标）。 */
+    const moveQueueSong = (from: number, to: number) => {
+        const nextQueue = moveQueueItem(playQueue, from, to);
+        if (nextQueue === playQueue) return;
+        updateQueueOrder(nextQueue);
+    };
+
     const moveQueueSongToNext = (index: number) => {
         const currentSongKey = currentSong ? getPlaybackSongKey(currentSong) : null;
         const currentIndex = currentSongKey
@@ -114,6 +121,7 @@ export const createQueueMutations = ({
         addNavidromeSongsToQueue,
         applyQueueBatchOperation,
         removeQueueSong,
+        moveQueueSong,
         moveQueueSongToEnd,
         moveQueueSongToNext,
     };

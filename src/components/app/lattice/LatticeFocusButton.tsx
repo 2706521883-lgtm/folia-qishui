@@ -2,6 +2,7 @@ import { Crosshair, Focus, ListMusic } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLatticeControlsStore } from '../../../stores/useLatticeControlsStore';
 import { useLatticeSettingsStore } from '../../../stores/useLatticeSettingsStore';
+import { useWallQueuePanelStore } from '../../../stores/useWallQueuePanelStore';
 import { openCommandPaletteCommand } from '../../../stores/useAppViewStore';
 import { PRIMARY_MODIFIER_LABEL } from '../../../utils/platform';
 import WallToolsButton, { type WallToolsEntry } from '../../wall/WallToolsButton';
@@ -36,6 +37,13 @@ export default function LatticeFocusButton({ isDaylight }: { isDaylight: boolean
             label: t('home.latticeAutoFocusOnSongChange'),
             checked: autoFocusOnSongChange,
             onToggle: handleToggleAutoFocusOnSongChange,
+        },
+        {
+            kind: 'action',
+            id: 'queue-panel',
+            icon: ListMusic,
+            label: t('wallQueue.title'),
+            onSelect: () => useWallQueuePanelStore.getState().toggle(),
         },
         {
             kind: 'action',

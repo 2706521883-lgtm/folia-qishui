@@ -41,6 +41,10 @@ import { shouldMountPlayerVisualizer } from './components/app/presentation/playe
 import { resolveWallHandoffPresentation } from './components/app/presentation/wallHandoffPresentation';
 import { useWallHandoffDirector } from './components/app/presentation/wallHandoffDirector';
 import WallToolsDockHost from './components/wall/WallToolsDock';
+import WallQueuePanel from './components/app/wall-queue/WallQueuePanel';
+import ExploreOverlay from './components/app/explore/ExploreOverlay';
+import { useWallQueuePanelStore } from './stores/useWallQueuePanelStore';
+import { useExploreOverlayStore } from './stores/useExploreOverlayStore';
 import { buildPlayerViewFlags } from './components/app/presentation/buildPlayerViewFlags';
 import { buildVisualizerTheme } from './components/app/presentation/buildVisualizerTheme';
 import { createCoverUrlResolver } from './components/app/playback/createCoverUrlResolver';
@@ -227,6 +231,10 @@ export default function App() {
         isHomeFullyHidden: state.isHomeFullyHidden,
         setIsHomeFullyHidden: state.setIsHomeFullyHidden,
     })));
+    const isWallQueueOpen = useWallQueuePanelStore(state => state.isOpen);
+    const closeWallQueue = useWallQueuePanelStore(state => state.close);
+    const isExploreOpen = useExploreOverlayStore(state => state.isOpen);
+    const closeExplore = useExploreOverlayStore(state => state.close);
     const {
         isTitlebarRevealed,
         showTransparentWindowBorder,
@@ -992,7 +1000,7 @@ export default function App() {
         setLyricsStable,
     ]);
 
-    const { addNavidromeSongsToQueue, applyQueueBatchOperation, removeQueueSong, moveQueueSongToEnd, moveQueueSongToNext } = useMemo(() => createQueueMutations({
+    const { addNavidromeSongsToQueue, applyQueueBatchOperation, removeQueueSong, moveQueueSong, moveQueueSongToEnd, moveQueueSongToNext } = useMemo(() => createQueueMutations({
         currentSong,
         playQueue,
         persistLastPlaybackCache,
@@ -2808,6 +2816,41 @@ export default function App() {
                 )}
             </AnimatePresence>
             </WallToolsDockHost>
+
+            <ExploreOverlay
+                isOpen={isExploreOpen}
+                isDaylight={isDaylight}
+                providers={onlineProviders}
+                activeProviderId={activeProviderId}
+                onClose={closeExplore}
+                onSelectProvider={providerId => { void accountController.selectProvider(providerId); }}
+                onPlaySong={(song, queue) => {
+                    void playSong(song, queue, false, { shouldNavigateToPlayer: false });
+                }}
+                onAddToQueue={addOnlineSongToQueue}
+                onOpenCollection={collection => {
+                    closeExplore();
+                    openHomeCollection(collection);
+                }}
+            />
+
+            <WallQueuePanel
+                isOpen={isWallQueueOpen}
+                playQueue={playQueue}
+                currentSong={currentSong}
+                isDaylight={isDaylight}
+                onClose={closeWallQueue}
+                onPlaySong={(song, queue) => {
+                    void playSong(song, queue, false, { shouldNavigateToPlayer: false });
+                }}
+                onRemoveSong={removeQueueSong}
+                onMoveSongToNext={moveQueueSongToNext}
+                onMoveSongToEnd={moveQueueSongToEnd}
+                onMoveSong={moveQueueSong}
+                onClearQueue={clearQueue}
+                onShuffle={shuffleQueue}
+                onSaveCurrentQueueAsPlaylist={saveCurrentQueueAsLocalPlaylist}
+            />
 
             {/* --- VISUALIZER (Background Layer & Main Click Target) --- */}
             {/* 指针隐藏跟着控制栏的空闲时钟走，不另起一套计时：控件收起时页面上已经没有可点的东西，

@@ -1,10 +1,12 @@
 import React, { useCallback, useSyncExternalStore } from 'react';
-import { Blinds, Crosshair, PanelsTopLeft, Shuffle, Sparkles, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Blinds, Compass, Crosshair, ListMusic, PanelsTopLeft, Shuffle, Sparkles, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import WallBackButton from '../../../components/wall/WallBackButton';
 import WallToolsButton, { type WallToolsEntry, type WallToolsQuickAction } from '../../../components/wall/WallToolsButton';
 import { useAudioSettingsStore } from '../../../stores/useAudioSettingsStore';
 import { useLibraryWallLookStore } from '../../../stores/useLibraryWallLookStore';
+import { useWallQueuePanelStore } from '../../../stores/useWallQueuePanelStore';
+import { useExploreOverlayStore } from '../../../stores/useExploreOverlayStore';
 import { PRIMARY_MODIFIER_LABEL } from '../../../utils/platform';
 import type { LibraryWallLook } from '../../../utils/libraryWallLook';
 import type { LibraryStageToolsPort, LibraryStageToolsSnapshot } from '../../core/contracts/ports';
@@ -78,6 +80,12 @@ const BravaisStageChrome: React.FC<BravaisStageChromeProps> = ({
     // 面板打开着渲染时才求值：正在播放的那首此刻在不在墙上（与命令面板里同一个判定）。
     const quickActions = useCallback((): WallToolsQuickAction[] => {
         const actions: WallToolsQuickAction[] = [{
+            id: 'explore',
+            icon: Compass,
+            label: t('explore.title'),
+            shortLabel: t('explore.short'),
+            onSelect: () => useExploreOverlayStore.getState().open(),
+        }, {
             id: 'locate-playing',
             icon: Crosshair,
             label: t('libraryBravais.toolsLocate'),
@@ -99,6 +107,13 @@ const BravaisStageChrome: React.FC<BravaisStageChromeProps> = ({
                 // 不收起：洗完还能再洗一次，提示条报「播放队列已打乱」。
                 keepOpen: true,
                 onSelect: tools.shuffleQueue,
+            }, {
+                id: 'queue-panel',
+                icon: ListMusic,
+                label: t('wallQueue.title'),
+                shortLabel: t('wallQueue.short'),
+                // 不收起工具面板没有意义：队列浮岛会盖在面板上方，收起后墙上更干净。
+                onSelect: () => useWallQueuePanelStore.getState().toggle(),
             }, {
                 id: 'generate-theme',
                 icon: Sparkles,
