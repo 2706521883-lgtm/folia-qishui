@@ -3740,6 +3740,8 @@ export default {
     "uiAutoHide": "UI: Auto-hide",
     "close": "Close",
     "back": "Back",
+    "expandCover": "Expand cover",
+    "collapseCover": "Collapse cover",
     "showBorder": "Show Border",
     "hideBorder": "Hide Border",
     "disableClickThrough": "Disable Click-Through",
