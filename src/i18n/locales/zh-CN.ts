@@ -77,6 +77,7 @@ export default {
     "searchOnline": "搜索在线平台",
     "searchSubmit": "搜索",
     "searchClose": "关闭搜索",
+    "queueDragHint": "向右拖动打开队列拼贴，向左拖动搜索音乐",
     "backToPlayer": "回到播放页",
     "playerShort": "播放页",
     "stagePlayer": "舞台播放器",

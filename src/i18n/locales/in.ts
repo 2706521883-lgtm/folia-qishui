@@ -77,6 +77,7 @@ export default {
     "searchOnline": "Cari di platform online",
     "searchSubmit": "Cari",
     "searchClose": "Tutup pencarian",
+    "queueDragHint": "Geser ke kanan untuk kolase antrean, ke kiri untuk mencari musik",
     "backToPlayer": "Kembali ke pemutar",
     "playerShort": "Pemutar",
     "stagePlayer": "Pemutar panggung",

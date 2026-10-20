@@ -304,6 +304,10 @@
 .bravais-seam-home.is-compact .bravais-seam-tools .bravais-seam-icon { width: 36px; height: 36px; }
 .bravais-seam-tools .bravais-seam-icon:disabled { opacity: 0.3; cursor: default; }
 .bravais-seam-tools .bravais-seam-icon.is-pressed { color: var(--text-accent, currentColor); background: color-mix(in srgb, currentColor 16%, transparent); }
+/* Queue tile: horizontal drag is the gesture (right: queue collage, left: search), so let it
+   own horizontal pointer movement instead of the browser scrolling/panning. */
+.bravais-seam-tools .bravais-seam-icon.is-queue-drag { touch-action: none; cursor: grab; }
+.bravais-seam-tools .bravais-seam-icon.is-queue-drag:active { cursor: grabbing; }
 /* fb11：舞台开着时舞台入口单独占最上面一整行（宽同两格，图标 + 短名）；书脊上一列，它是最上面的一个图标。 */
 .bravais-seam-tools .bravais-seam-icon.is-wide {
     display: inline-flex;
