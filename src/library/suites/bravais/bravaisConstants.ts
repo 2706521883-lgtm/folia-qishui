@@ -13,6 +13,8 @@ export const BRAVAIS_SEAM_FULL_WIDTH = 300;
 export const BRAVAIS_SEAM_POSTER_MIN_WIDTH = 520;
 export const BRAVAIS_SEAM_POSTER_MAX_WIDTH = 680;
 export const BRAVAIS_SEAM_POSTER_VIEWPORT_RATIO = 0.46;
+/** 专辑海报上封面贴图的目标边长。 */
+export const BRAVAIS_ALBUM_COVER_PX = 512;
 /** 首页窄缝（只放页签与入口）的开口。 */
 export const BRAVAIS_SEAM_HOME_WIDTH = 120;
 /** 书脊。 */

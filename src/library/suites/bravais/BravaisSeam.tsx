@@ -97,7 +97,12 @@ const BravaisSeam: React.FC<BravaisSeamProps> = ({
                         data-bravais-seam-leaving={hideLeaving || undefined}
                     >
                         <BravaisSeamNavigation.Provider value={navigation}>
-                            <BravaisSeamContent variant={variant} layer={layer} depth={navigation.depth} actions={{ setLevel, openList, panel, openShortcut }} />
+                            <BravaisSeamContent
+                                variant={variant}
+                                layer={layer}
+                                depth={navigation.depth}
+                                actions={{ setLevel, openList, panel, openShortcut, currentLayerKey: () => currentLayer?.key ?? null }}
+                            />
                         </BravaisSeamNavigation.Provider>
                     </motion.div>
                 </div>

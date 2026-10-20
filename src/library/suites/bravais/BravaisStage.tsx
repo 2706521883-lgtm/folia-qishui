@@ -33,7 +33,7 @@ import { closeCommandFilter } from '../../../stores/useAppViewStore';
 import { findDisplayItemSlot } from './bravaisItemSlots';
 import { closeBravaisPanel, openBravaisPanel, syncPanelWithHistory } from './bravaisPanelHistory';
 import { resolveStageSeamTarget, type BravaisSeamTargetInput } from './bravaisSeamTarget';
-import { posterPaletteVars, resolvePosterPaletteSources, useBravaisPosterPalette } from './bravaisPosterPalette';
+import { albumPaletteVars, posterPaletteVars, resolvePosterPaletteSources, useBravaisPosterPalette } from './bravaisPosterPalette';
 import { setBravaisFilterEditing, useBravaisUiStore } from './bravaisUiStore';
 import type { BravaisPanelActions } from './BravaisListPanel';
 import { useBravaisWallLook } from './useBravaisWallLook';
@@ -163,8 +163,9 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
             panelOpen: current.panelFor === target.key && Boolean(target.entries?.hasPanel),
             filterOpen: current.filterOpen,
             searchOpen: current.searchOpen,
-            // 歌手页完整等级画成海报；集合页的专辑海报还没有接，先只开歌手。
-            poster: target.surface === 'artist' && Boolean(target.seam.artist),
+            // 歌手页与专辑集合页的完整等级画成海报。
+            poster: (target.surface === 'artist' && Boolean(target.seam.artist))
+                || (target.surface === 'collection' && Boolean(target.seam.album)),
         };
     }, [frameRef]);
     const resolvedSeamTarget = layer
@@ -418,8 +419,10 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
     );
     const posterPalette = useBravaisPosterPalette(posterSources, posterActive);
     const posterVars = useMemo(
-        () => posterPaletteVars(posterPalette?.artist ?? null),
-        [posterPalette],
+        () => (layer?.seam.album
+            ? albumPaletteVars(posterPalette?.album ?? null)
+            : posterPaletteVars(posterPalette?.artist ?? null)),
+        [layer?.seam.album, posterPalette],
     );
 
     const rootClassName = [

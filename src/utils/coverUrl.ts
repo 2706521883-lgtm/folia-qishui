@@ -1,6 +1,7 @@
 // src/utils/coverUrl.ts
 
 const NON_RESIZABLE_COVER_PROTOCOLS = new Set(['blob:', 'data:', 'file:', 'filesystem:']);
+const NETEASE_COVER_HOST_PATTERN = /^p\d+\.music\.126\.net$/i;
 const KUGOU_COVER_HOST_PATTERN = /(?:^|\.)(?:kugou\.com|kgimg\.com)$/i;
 const KUGOU_COVER_PATH_PATTERN = /(\/stdmusic\/)(\d+)(\/)/;
 const KUWO_COVER_HOST_PATTERN = /^img\d*\.kuwo\.cn$/i;
@@ -72,6 +73,28 @@ export const getOriginalCoverUrl = (url: string | null | undefined): string => {
     } catch {
         return trimmedUrl;
     }
+};
+
+/**
+ * A provider-independent identity for a cover: the same artwork at different CDN sizes (NetEase's
+ * p1/p2 hosts, QQ/KuGou/Kuwo path suffixes) maps to one string. Used by the album wall to decide
+ * whether every track carries the album's own cover.
+ */
+export const getCoverIdentity = (url: string | null | undefined): string => {
+    const trimmedUrl = url?.trim() ?? '';
+    if (!trimmedUrl) return '';
+
+    try {
+        const urlObj = new URL(trimmedUrl);
+        if (NON_RESIZABLE_COVER_PROTOCOLS.has(urlObj.protocol)) return trimmedUrl;
+        if (NETEASE_COVER_HOST_PATTERN.test(urlObj.hostname)) return `netease:${urlObj.pathname}`;
+        if (isKugouCoverUrl(urlObj)) return `kugou:${urlObj.pathname.replace(KUGOU_COVER_PATH_PATTERN, '$1*$3')}`;
+        if (isKuwoCoverUrl(urlObj)) return `kuwo:${urlObj.pathname.replace(KUWO_COVER_PATH_PATTERN, '$1*$3')}`;
+        if (isQqCoverUrl(urlObj)) return `qq:${urlObj.pathname.replace(QQ_COVER_PATH_PATTERN, '$1$3')}`;
+    } catch {
+        // Relative paths (/__folia_cover/…) fall through to the plain rule.
+    }
+    return trimmedUrl.split(/[?#]/)[0];
 };
 
 /**

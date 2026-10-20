@@ -14,6 +14,15 @@ describe('Bravais artist poster target', () => {
         })).toEqual({ width: resolvePosterWidth(1440), variant: 'poster' });
     });
 
+    it('uses the same poster variant for a full-level album collection', () => {
+        expect(resolveSeamTarget({
+            surface: 'collection',
+            level: 'full',
+            viewportWidth: 1440,
+            poster: true,
+        })).toEqual({ width: resolvePosterWidth(1440), variant: 'poster' });
+    });
+
     it('keeps the normal seam when the layer has no poster or the user chose the spine', () => {
         expect(resolveSeamTarget({ surface: 'artist', level: 'full', viewportWidth: 1440 }).variant).toBe('full');
         expect(resolveSeamTarget({ surface: 'artist', level: 'spine', viewportWidth: 1440, poster: true }).variant).toBe('spine');

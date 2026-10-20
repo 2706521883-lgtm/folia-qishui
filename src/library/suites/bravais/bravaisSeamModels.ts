@@ -170,3 +170,16 @@ export type BravaisSeamArtist = {
     /** 头像的替代文字（歌手名）。 */
     name: string;
 };
+
+/**
+ * 专辑页的海报要的信息：封面、歌手、「专辑 · 年份」标签、元信息行（首数、总时长、流派）。
+ * 只有专辑类型的集合有；简介在 collection.description 里。
+ */
+export type BravaisSeamAlbum = {
+    coverUrl?: string;
+    artists: readonly string[];
+    /** 「专辑 · 2024」（没有年份时只有「专辑」）。 */
+    kicker: string;
+    /** 首数、总时长、流派，已经排好的几段。 */
+    facts: readonly string[];
+};

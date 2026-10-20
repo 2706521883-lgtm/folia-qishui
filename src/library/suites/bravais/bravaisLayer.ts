@@ -1,4 +1,4 @@
-import type { BravaisLayerEntries, BravaisLayerWall, BravaisSeamArtist, BravaisSeamCollection, BravaisSeamFilter } from './bravaisSeamModels';
+import type { BravaisLayerEntries, BravaisLayerWall, BravaisSeamAlbum, BravaisSeamArtist, BravaisSeamCollection, BravaisSeamFilter } from './bravaisSeamModels';
 import type { BravaisHomeLayer, BravaisHomeSeam } from './bravaisHomeModels';
 import type { LibraryHomeSpecialKind } from '../../core/model/homeSpecialCards';
 
@@ -83,6 +83,8 @@ export type BravaisSeamModel = {
     home?: BravaisHomeSeam;
     /** B8 歌手页：头像、别名、简介与统计（ArtistGridView 的信息）。 */
     artist?: BravaisSeamArtist;
+    /** 专辑页：封面、歌手、年份与元信息（左边钉住的专辑海报）。只有专辑类型的集合有。 */
+    album?: BravaisSeamAlbum;
     /** B8：播放 / 加入当前范围的按钮文案（歌手页是「播放热门」「加入热门歌曲」）；不给就是「播放全部」「加入队列」。 */
     scopeLabels?: { play: string; enqueue: string };
 };
