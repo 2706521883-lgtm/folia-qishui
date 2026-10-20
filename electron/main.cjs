@@ -24,6 +24,13 @@ const wallpaperWatchdogModule = require('./wallpaperWatchdog.cjs');
 const { requestWallpaperEntryConfirmation } = require('./wallpaperEntryRequest.cjs');
 const windowsWallpaperModule = require('./windowsWallpaperController.cjs');
 const { createWindowsWallpaperTargetResolver } = require('./windowsWallpaperTarget.cjs');
+const {
+  WALLPAPER_DISPLAY_SETTING_KEY,
+  normalizeWallpaperDisplayChoice,
+  resolveWallpaperDisplay,
+  shouldMoveWallpaper,
+  describeWallpaperDisplays,
+} = require('./wallpaperDisplay.cjs');
 const { createWindowsWallpaperMouseInjector } = require('./windowsWallpaperMouse.cjs');
 const macWallpaperModule = require('./macWallpaperController.cjs');
 const {
@@ -417,13 +424,19 @@ function getMainWindowNativeHwnd() {
   }
 }
 
+// Explicit display choice from Settings → Desktop. Stored as { id, bounds, label }; a choice whose
+// display is unplugged resolves to null and the old follow-the-window rule applies again.
+const getWallpaperDisplayChoice = () => normalizeWallpaperDisplayChoice(store.get(WALLPAPER_DISPLAY_SETTING_KEY));
+const resolveChosenWallpaperDisplay = () => resolveWallpaperDisplay(screen.getAllDisplays(), getWallpaperDisplayChoice());
+
 // Target display of the wallpaper session: the monitor the wallpaper window fills. Resolution
-// order (live ordinary window → session target → WINDOW_BOUNDS → primary) lives in
+// order (explicit choice → live ordinary window → session target → WINDOW_BOUNDS → primary) lives in
 // electron/windowsWallpaperTarget.cjs.
 const windowsWallpaperTarget = createWindowsWallpaperTargetResolver({
   screen,
   getStoredBounds: () => getStoredWindowState().bounds,
   getMainWindow: () => mainWindow,
+  getChosenDisplay: resolveChosenWallpaperDisplay,
 });
 
 // Bounds of the display the wallpaper fills. The primary display is the last resort so a window is
@@ -6628,6 +6641,45 @@ ipcMain.handle('video-export-get-main-window-source', async (event) => {
   }
 
   return getMainWindowCaptureSource();
+});
+
+ipcMain.handle('wallpaper-displays-list', (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to read the wallpaper displays.');
+  }
+  if (process.platform !== 'win32') return null;
+  const displays = screen.getAllDisplays();
+  return describeWallpaperDisplays({
+    displays,
+    primaryId: screen.getPrimaryDisplay().id,
+    choice: getWallpaperDisplayChoice(),
+    active: windowsWallpaperTarget.resolve(),
+  });
+});
+
+ipcMain.handle('wallpaper-display-choose', (event, value) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to choose the wallpaper display.');
+  }
+  if (process.platform !== 'win32') return null;
+  const choice = normalizeWallpaperDisplayChoice(value);
+  store.set(WALLPAPER_DISPLAY_SETTING_KEY, choice);
+  if (isWallpaperModeEnabled()) {
+    const displays = screen.getAllDisplays();
+    const active = windowsWallpaperTarget.resolve();
+    if (shouldMoveWallpaper(displays, choice, active)) {
+      windowsWallpaperTarget.clear();
+      windowsWallpaper.killHelper();
+      rebuildWindowsWallpaperSession();
+    }
+  }
+  const displays = screen.getAllDisplays();
+  return describeWallpaperDisplays({
+    displays,
+    primaryId: screen.getPrimaryDisplay().id,
+    choice,
+    active: windowsWallpaperTarget.resolve(),
+  });
 });
 
 ipcMain.handle('wallpaper-engine-scan', async (event, force) => {

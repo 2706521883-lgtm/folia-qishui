@@ -1,5 +1,6 @@
 import type { CommandPaletteCommand } from '../types';
 import { defineCommand, createToggleCommand, createHomeTabCommand } from '../commandFactories';
+import { useExploreOverlayStore } from '../../../stores/useExploreOverlayStore';
 
 // src/components/command-palette/commands/navigationCommands.ts
 // Commands in the `navigation` group: moving between home tabs, the player, and window-level views.
@@ -36,6 +37,17 @@ export const navigationCommands: CommandPaletteCommand[] = [
     createHomeTabCommand('albums', 'Open albums', 'Open albums tab', ['albums', 'album', '专辑']),
     createHomeTabCommand('navidrome', 'Open Navidrome', 'Open Navidrome tab', ['navidrome', 'navi', '服务器']),
     createHomeTabCommand('radio', 'Open radio', 'Open radio tab', ['radio', 'fm', '电台']),
+    {
+        id: 'explore-open',
+        group: 'navigation',
+        title: 'Explore',
+        description: 'Open today\'s recommendations, playlists and personal FM preview',
+        keywords: ['discover', 'recommendations', 'daily', '发现', '推荐', '今日推荐'],
+        execute: () => {
+            useExploreOverlayStore.getState().open();
+            return true;
+        },
+    },
     {
         id: 'desktop-toggle-remote-control',
         platform: ['electron'],

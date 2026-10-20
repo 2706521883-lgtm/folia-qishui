@@ -314,6 +314,34 @@ declare global {
     items: ElectronWallpaperEngineItem[];
   }
 
+  interface ElectronWallpaperDisplayBounds {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }
+
+  interface ElectronWallpaperDisplay {
+    id: number;
+    label: string;
+    bounds: ElectronWallpaperDisplayBounds;
+    scaleFactor: number;
+    primary: boolean;
+  }
+
+  interface ElectronWallpaperDisplayChoice {
+    id: number;
+    bounds: ElectronWallpaperDisplayBounds;
+    label: string;
+  }
+
+  interface ElectronWallpaperDisplays {
+    displays: ElectronWallpaperDisplay[];
+    choice: ElectronWallpaperDisplayChoice | null;
+    chosenId: number | null;
+    activeId: number | null;
+  }
+
   interface ElectronWallpaperEngineStatus {
     phase: 'idle' | 'starting' | 'running' | 'stopping' | 'error';
     engineReady: boolean;
@@ -886,6 +914,10 @@ declare global {
       getSettings: () => Promise<any>;
       saveSettings: (key: string, value: any) => Promise<any>;
       onWallpaperModeChanged?: (callback: (settings: Record<string, unknown>) => void) => () => void;
+      /** Displays available to wallpaper mode; null on platforms that do not support the choice. */
+      listWallpaperDisplays?: () => Promise<ElectronWallpaperDisplays | null>;
+      /** Pick the display wallpaper mode uses; null restores follow-the-app-window. */
+      chooseWallpaperDisplay?: (choice: ElectronWallpaperDisplayChoice | null) => Promise<ElectronWallpaperDisplays | null>;
       onWallpaperTransparentRefused?: (callback: (settings: Record<string, unknown>) => void) => () => void;
       /** The tray asked to enter wallpaper mode; the renderer shows the confirmation before entering. */
       onWallpaperEntryRequested?: (callback: () => void) => () => void;

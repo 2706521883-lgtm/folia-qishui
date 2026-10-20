@@ -46,7 +46,7 @@ function boundsIntersect(a, b) {
 }
 
 function createWindowsWallpaperTargetResolver(options = {}) {
-  const { screen, getStoredBounds, getMainWindow } = options;
+  const { screen, getStoredBounds, getMainWindow, getChosenDisplay } = options;
 
   // { id, bounds } of the display this session's wallpaper belongs to; null until resolved.
   let sessionTarget = null;
@@ -121,6 +121,13 @@ function createWindowsWallpaperTargetResolver(options = {}) {
     const displays = safeDisplay(() => screen.getAllDisplays()) ?? [];
     if (!displays.length) {
       return snapshot(safeDisplay(() => screen.getPrimaryDisplay()));
+    }
+
+    // An explicit display choice (Settings → Desktop) outranks following the app window. A choice
+    // whose display is no longer connected resolves to null and falls through to the old rules.
+    const chosen = safeDisplay(() => getChosenDisplay?.() ?? null);
+    if (chosen) {
+      return snapshot(chosen);
     }
 
     const liveWindow = getOrdinaryMainWindow();

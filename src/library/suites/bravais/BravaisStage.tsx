@@ -33,6 +33,7 @@ import { closeCommandFilter } from '../../../stores/useAppViewStore';
 import { findDisplayItemSlot } from './bravaisItemSlots';
 import { closeBravaisPanel, openBravaisPanel, syncPanelWithHistory } from './bravaisPanelHistory';
 import { resolveStageSeamTarget, type BravaisSeamTargetInput } from './bravaisSeamTarget';
+import { posterPaletteVars, resolvePosterPaletteSources, useBravaisPosterPalette } from './bravaisPosterPalette';
 import { setBravaisFilterEditing, useBravaisUiStore } from './bravaisUiStore';
 import type { BravaisPanelActions } from './BravaisListPanel';
 import { useBravaisWallLook } from './useBravaisWallLook';
@@ -162,6 +163,8 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
             panelOpen: current.panelFor === target.key && Boolean(target.entries?.hasPanel),
             filterOpen: current.filterOpen,
             searchOpen: current.searchOpen,
+            // 歌手页完整等级画成海报；集合页的专辑海报还没有接，先只开歌手。
+            poster: target.surface === 'artist' && Boolean(target.seam.artist),
         };
     }, [frameRef]);
     const resolvedSeamTarget = layer
@@ -407,6 +410,18 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
     // 信息条的预设（§5「缝的材质」）：主题纸色以外的预设把材质写成根节点上的自定义属性；透明的缝不写（预设不生效）。
     const seamStyleVars = useMemo(() => (seamLook.seamStyle ? libraryWallSeamStyleVars(seamLook.seamStyle) : null), [seamLook.seamStyle]);
 
+    // 歌手海报的配色：从这位歌手最火的三张专辑封面取，写成根节点变量供 bravaisPoster.css 使用。
+    const posterActive = seamTarget.variant === 'poster';
+    const posterSources = useMemo(
+        () => (posterActive && layer ? resolvePosterPaletteSources(layer.items) : []),
+        [layer, posterActive],
+    );
+    const posterPalette = useBravaisPosterPalette(posterSources, posterActive);
+    const posterVars = useMemo(
+        () => posterPaletteVars(posterPalette?.artist ?? null),
+        [posterPalette],
+    );
+
     const rootClassName = [
         'lattice-root',
         'bravais-root',
@@ -424,6 +439,7 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
         seeThrough && BRAVAIS_SEAM_ACRYLIC_BLUR ? 'has-seam-blur' : '',
         display?.layer.seam.home?.manage ? 'is-managing-hidden' : '',
         display?.layer.home?.batch ? 'is-batch' : '',
+        posterActive ? 'has-poster-wall' : '',
     ].filter(Boolean).join(' ');
 
     return (
@@ -437,6 +453,7 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
                 '--bravais-focus-reveal-duration': `${WALL_REFLOW_CONTROLS_REVEAL.durationMs}ms`,
                 '--bravais-focus-reveal-rise': `${WALL_REFLOW_CONTROLS_REVEAL.risePx}px`,
                 ...seamStyleVars,
+                ...posterVars,
             } as CSSProperties}
             data-library-stage="bravais"
             data-bravais-layer={display?.layer.key}

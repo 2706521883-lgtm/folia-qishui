@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('wallpaper-mode-changed', listener);
         return () => ipcRenderer.removeListener('wallpaper-mode-changed', listener);
     },
+    listWallpaperDisplays: () => ipcRenderer.invoke('wallpaper-displays-list'),
+    chooseWallpaperDisplay: (choice) => ipcRenderer.invoke('wallpaper-display-choose', choice),
     onWallpaperTransparentRefused: (callback) => {
         const listener = (_event, settings) => callback(settings);
         ipcRenderer.on('wallpaper-transparent-refused', listener);

@@ -15,6 +15,7 @@ import BravaisSeamHome from './BravaisSeamHome';
 import BravaisSeamSearch from './BravaisSeamSearch';
 import BravaisDirectoryPanel from './BravaisDirectoryPanel';
 import BravaisSeamArtist from './BravaisSeamArtist';
+import BravaisSeamPoster from './BravaisSeamPoster';
 import BravaisSeamAbout from './BravaisSeamAbout';
 import BravaisSeamCrumbs from './BravaisSeamCrumbs';
 import BravaisSeamAccount from './BravaisSeamAccount';
@@ -166,6 +167,9 @@ const BravaisSeamContent: React.FC<BravaisSeamContentProps> = ({ variant, layer,
         case 'home-spine': return <BravaisSeamHome layer={layer} compact setLevel={actions.setLevel} openShortcut={actions.openShortcut} />;
         case 'search': return <BravaisSeamSearch layer={layer} />;
         case 'full': return <FullSeam layer={layer} depth={depth} actions={actions} />;
+        case 'poster': return layer.seam.artist
+            ? <BravaisSeamPoster layer={layer} actions={actions} />
+            : <FullSeam layer={layer} depth={depth} actions={actions} />;
         case 'spine': return <SpineSeam layer={layer} actions={actions} />;
         case 'panel':
             if (!actions.panel) return null;
