@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useIsPresent } from 'framer-motion';
-import { ChevronLeft, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
+import { motion, useMotionValue, animate, AnimatePresence, useDragControls, useIsPresent, useTransform } from 'framer-motion';
+import { ChevronLeft, Crosshair, Disc, Download, Play, Plus, Loader2, Heart, ListPlus, Pencil, RefreshCw, Trash2, Star, Tags } from 'lucide-react';
 import GridPanelToggleIndicator from '../shared/GridPanelToggleIndicator';
 import { useTranslation } from 'react-i18next';
 import { SongResult, type LocalSong, type StatusMessage, Theme, type UnifiedSong } from '../../../../types';
@@ -55,7 +55,9 @@ import { useGridSurfaceRegistration } from '../../../../hooks/useGridSurfaceRegi
 import type { CollectionResource } from '../../../core/contracts/resource';
 import type { CollectionMutationController, LibraryMutationResult } from '../../../core/contracts/mutations';
 import type { LibraryDeclaredActions } from '../../../core/contracts/suite';
-import { useSidePanelBottomPx } from '../../../../hooks/usePlayerBottomBarBottomPx';
+import { usePlayerBottomBarBottomPx, useSidePanelBottomPx } from '../../../../hooks/usePlayerBottomBarBottomPx';
+import { usePlaybackStore } from '../../../../stores/usePlaybackStore';
+import { getPlaybackSongKey } from '../../../../utils/appPlaybackGuards';
 import { hasBlockingWindow } from '../../../../utils/keyboardTargets';
 import { useGridViewSettingsStore } from '../../../../stores/useGridViewSettingsStore';
 import { collectionKey } from '../../../core/model/collectionIdentity';
@@ -411,6 +413,9 @@ export const GridView: React.FC<GridViewProps> = ({
     const [isDeleteFolderOpen, setIsDeleteFolderOpen] = useState(false);
     const [showCutInPanel, setShowCutInPanel] = useState(false);
     const [showSidePanel, setShowSidePanel] = useState(false);
+    const currentSong = usePlaybackStore(state => state.currentSong);
+    const gridLocateBottomPx = usePlayerBottomBarBottomPx();
+    const gridLocateOffset = useTransform(gridLocateBottomPx, value => value + 58);
     // 退场动画期间旧网格仍挂着：只有在场的那一个接键盘、筛选框和命令面板，
     // 否则在上一个网格还没退完时按下的 Enter 会落到它身上。
     const isPresent = useIsPresent();
@@ -510,6 +515,12 @@ export const GridView: React.FC<GridViewProps> = ({
         contextTracks: contextActionTracks,
         occurrences: trackOccurrences,
     } = collectionView;
+    // 「定位正在播放」：当前歌就在这一页的曲目里时，把它在网格中的卡片移到视口中央。
+    const locateIndex = useMemo(() => {
+        if (!currentSong) return -1;
+        const key = getPlaybackSongKey(currentSong);
+        return displayTracks.findIndex(track => getPlaybackSongKey(track as SongResult) === key);
+    }, [currentSong, displayTracks]);
 
     useEffect(() => {
         if (isDraggingRef.current || pendingFocusCommitTimeoutRef.current) return;
@@ -1953,6 +1964,22 @@ export const GridView: React.FC<GridViewProps> = ({
                     searchTitle={t('home.gridSearchPlaceholder')}
                     onOpenList={() => setShowSidePanel(true)}
                 />
+            )}
+            {mode === 'tracks' && locateIndex >= 0 && (
+                <motion.button
+                    type="button"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    data-testid="grid-locate-playing"
+                    title={t('home.locatePlaying')}
+                    aria-label={t('home.locatePlaying')}
+                    onClick={() => centerOnIndex(locateIndex)}
+                    style={{ bottom: gridLocateOffset }}
+                    className={`pointer-events-auto fixed right-4 z-[60] flex h-10 w-10 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-90 md:right-8 ${isDaylight ? 'border-black/10 bg-white/80 text-zinc-800 hover:bg-white' : 'border-white/10 bg-black/45 text-white hover:bg-black/60'}`}
+                >
+                    <Crosshair size={18} />
+                </motion.button>
             )}
 
             {/* Tracks Cut-in Side Panel */}
