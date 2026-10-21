@@ -20,7 +20,8 @@ const WeQuickControls: React.FC<WeQuickControlsProps> = ({ tuning, theme, t }) =
     const startSession = useWallpaperEngineStore(state => state.startSession);
     const stopSession = useWallpaperEngineStore(state => state.stopSession);
 
-    if (!tuning.itemId) return null;
+    // Video projects are played by the renderer directly; there is no engine session to toggle.
+    if (!tuning.itemId || tuning.itemKind === 'video') return null;
 
     const running = phase === 'running' && activeItemId === tuning.itemId;
     const busy = phase === 'starting' || phase === 'stopping';

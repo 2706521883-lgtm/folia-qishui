@@ -11,6 +11,9 @@ const {
   CONTROL_PROBE_ARGS,
   ENGINE_SIGNER_PATTERN,
   MUTE_SCHEDULE_MS,
+  WALLPAPER_ENGINE_LOCATION_PREFIX,
+  WINDOW_LOST_GRACE_MS,
+  WINDOW_WATCH_INTERVAL_MS,
   buildApplyPropertiesArgs,
   buildLocationTitle,
   buildOpenWallpaperArgs,
@@ -22,6 +25,9 @@ const {
   CONTROL_PROBE_ARGS: string[];
   ENGINE_SIGNER_PATTERN: RegExp;
   MUTE_SCHEDULE_MS: number[];
+  WALLPAPER_ENGINE_LOCATION_PREFIX: string;
+  WINDOW_LOST_GRACE_MS: number;
+  WINDOW_WATCH_INTERVAL_MS: number;
   buildApplyPropertiesArgs: (input: { locationTitle: string; properties: unknown }) => string[];
   buildLocationTitle: (seed: unknown) => string;
   buildOpenWallpaperArgs: (input: Record<string, unknown>) => string[];
@@ -67,6 +73,20 @@ describe('wallpaperEngineRuntime', () => {
         it('falls back to a session token for a missing seed', () => {
             expect(buildLocationTitle('')).toContain('Folia Wallpaper session');
             expect(buildLocationTitle(undefined)).toContain('Folia Wallpaper session');
+        });
+
+        it('uses the shared prefix that orphan cleanup scans for', () => {
+            const title = buildLocationTitle('3F2A-bc91 xx');
+            expect(title.startsWith(WALLPAPER_ENGINE_LOCATION_PREFIX)).toBe(true);
+            expect(WALLPAPER_ENGINE_LOCATION_PREFIX).toBe('Folia Wallpaper ');
+        });
+    });
+
+    describe('window watch contract', () => {
+        it('polls well before the lost grace period', () => {
+            expect(WINDOW_WATCH_INTERVAL_MS).toBeGreaterThanOrEqual(250);
+            expect(WINDOW_WATCH_INTERVAL_MS).toBeLessThanOrEqual(2000);
+            expect(WINDOW_LOST_GRACE_MS).toBeGreaterThanOrEqual(WINDOW_WATCH_INTERVAL_MS * 4);
         });
     });
 

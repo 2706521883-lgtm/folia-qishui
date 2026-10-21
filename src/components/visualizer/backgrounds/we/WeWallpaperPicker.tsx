@@ -1,20 +1,27 @@
 import React, { useMemo, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import type { Theme } from '../../../../types';
+import type { Theme, WeBackgroundItemKind } from '../../../../types';
 import { colorWithAlpha } from '../../colorMix';
 import { useWallpaperEngineStore } from '../../../../stores/useWallpaperEngineStore';
 
 // src/components/visualizer/backgrounds/we/WeWallpaperPicker.tsx
-// Searchable grid over the scanned Wallpaper Engine library. Only projects the engine can actually
-// play (scene type with a valid PKGV package) are listed.
+// Searchable grid over the scanned Wallpaper Engine library. Scene projects are played by the
+// (hardened) engine capture path; video projects are played natively by the renderer. Items that
+// are neither (unsupported/unknown project types) are only counted in the skipped line.
 
 interface WeWallpaperPickerProps {
     t: (key: string) => string;
     theme: Theme;
     isDaylight: boolean;
     selectedId: string;
-    onSelect: (itemId: string, title: string) => void;
+    onSelect: (itemId: string, title: string, kind: WeBackgroundItemKind) => void;
 }
+
+const playbackKindOf = (item: ElectronWallpaperEngineItem): WeBackgroundItemKind => {
+    if (item.builtinPlayable) return 'video';
+    if (item.type === 'web') return 'web';
+    return 'scene';
+};
 
 const WeWallpaperPicker: React.FC<WeWallpaperPickerProps> = ({ t, theme, isDaylight, selectedId, onSelect }) => {
     const items = useWallpaperEngineStore(state => state.items);
@@ -26,11 +33,14 @@ const WeWallpaperPicker: React.FC<WeWallpaperPickerProps> = ({ t, theme, isDayli
     const playable = useMemo(() => {
         const keyword = query.trim().toLowerCase();
         return items
-            .filter(item => item.enginePlayable)
+            .filter(item => item.enginePlayable || item.builtinPlayable)
             .filter(item => !keyword || item.title.toLowerCase().includes(keyword));
     }, [items, query]);
 
-    const skipped = useMemo(() => items.filter(item => !item.enginePlayable).length, [items]);
+    const skipped = useMemo(
+        () => items.filter(item => !item.enginePlayable && !item.builtinPlayable).length,
+        [items],
+    );
     const borderColor = colorWithAlpha(theme.secondaryColor, isDaylight ? 0.18 : 0.16);
 
     return (
@@ -72,7 +82,7 @@ const WeWallpaperPicker: React.FC<WeWallpaperPickerProps> = ({ t, theme, isDayli
                             <button
                                 key={item.id}
                                 type="button"
-                                onClick={() => onSelect(item.id, item.title)}
+                                onClick={() => onSelect(item.id, item.title, playbackKindOf(item))}
                                 className="group overflow-hidden rounded-lg border text-left transition-transform hover:scale-[1.02]"
                                 style={{
                                     borderColor: selected ? theme.accentColor : borderColor,
@@ -80,7 +90,7 @@ const WeWallpaperPicker: React.FC<WeWallpaperPickerProps> = ({ t, theme, isDayli
                                 }}
                                 title={item.title}
                             >
-                                <div className="aspect-video w-full overflow-hidden bg-black/30">
+                                <div className="relative aspect-video w-full overflow-hidden bg-black/30">
                                     {item.hasPreview ? (
                                         <img
                                             src={`folia-we://preview/${item.id}`}
@@ -89,6 +99,9 @@ const WeWallpaperPicker: React.FC<WeWallpaperPickerProps> = ({ t, theme, isDayli
                                             className="h-full w-full object-cover"
                                         />
                                     ) : null}
+                                    <span className="absolute left-1 top-1 rounded bg-black/65 px-1 py-0.5 text-[9px] leading-none text-white/90">
+                                        {item.builtinPlayable ? t('options.weBuiltinBadge') : t('options.weEngineBadge')}
+                                    </span>
                                 </div>
                                 <div className="truncate px-2 py-1 text-[11px]" style={{ color: theme.primaryColor }}>
                                     {item.title}

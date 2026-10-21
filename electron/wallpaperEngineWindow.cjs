@@ -9,6 +9,10 @@
 // desktop/wallpaper-engine-runtime.js, revision d43de565acabfdc1a9c9820a27e81a98ccbebcef.
 // This file is distributed with Folia under AGPL-3.0.
 
+const {
+  createWallpaperEngineNativeWindow,
+} = require('./wallpaperEngineWindowNative.cjs');
+
 const WALLPAPER_ENGINE_PROCESS_NAMES = ['wallpaper64', 'wallpaper32'];
 const PARK_TOLERANCE_PX = 2;
 // Wallpaper Engine creates the popout window asynchronously, so the first look usually misses it.
@@ -45,6 +49,12 @@ public class FoliaWeWindow {
   public static extern int GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
   [DllImport("user32.dll", SetLastError = true)]
   public static extern int GetSystemMetrics(int nIndex);
+  [DllImport("user32.dll", SetLastError = true)]
+  public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+  [DllImport("user32.dll", SetLastError = true)]
+  public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+  [DllImport("user32.dll")]
+  public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
   // Exact ordinal title match, unlike FindWindow: the unique session title must never be confused
@@ -104,6 +114,18 @@ public class FoliaWeWindow {
     }
     exit 0
   }
+  # The playback window is an ordinary top-level window: without these bits the shell gives it a
+  # taskbar button and Alt+Tab entry, and activating it brings the full-size parked window forward.
+  # The hide/show cycle also makes the shell drop a button it registered before the style change;
+  # SW_SHOWNOACTIVATE never steals focus.
+  $exStyle = [FoliaWeWindow]::GetWindowLong($hwnd, -20)
+  $managedStyle = (($exStyle -bor 0x08000000 -bor 0x00000080) -band (-bnot 0x00040000))
+  $styleChanged = $managedStyle -ne $exStyle
+  if ($styleChanged) {
+    [void][FoliaWeWindow]::SetWindowLong($hwnd, -20, $managedStyle)
+    [void][FoliaWeWindow]::ShowWindow($hwnd, 0)
+    [void][FoliaWeWindow]::ShowWindow($hwnd, 4)
+  }
   $rect = [FoliaWeWindow+RECT]::new()
   [void][FoliaWeWindow]::GetWindowRect($hwnd, [ref]$rect)
   $before = @{ x = $rect.Left; y = $rect.Top; width = ($rect.Right - $rect.Left); height = ($rect.Bottom - $rect.Top) }
@@ -117,6 +139,7 @@ public class FoliaWeWindow {
     ok = $true
     hwnd = $hwnd.ToInt64()
     processName = $owner.ProcessName
+    styleChanged = [bool]$styleChanged
     moved = [bool]$moved
     waitedMs = $waitedMs
     target = @{ x = $targetX; y = $targetY }
@@ -200,7 +223,56 @@ function createWallpaperEngineWindowHelper(options = {}) {
   return { parkWindow };
 }
 
+// Native first, PowerShell only as a fallback. The native backend can also monitor the window
+// (re-park after an engine restart or a display change, remove a re-created taskbar button) and
+// list orphaned Folia playback windows; the PowerShell helper can only do the one-shot park.
+function createWallpaperEngineWindowManager(options = {}) {
+  const {
+    spawn,
+    log = () => {},
+    logWarn = () => {},
+    ...nativeOptions
+  } = options;
+
+  const native = createWallpaperEngineNativeWindow({ log, logWarn, ...nativeOptions });
+  if (native.available) {
+    log('[wallpaper-engine] native window manager ready');
+    // Keep the old PowerShell recipe as a last-resort park if the FFI path throws (for example a
+    // hardened Windows install that refuses to load the native module). The native monitor still
+    // works independently, so a window parked by the fallback is still watched and repaired.
+    const fallback = createWallpaperEngineWindowHelper({ spawn, logWarn });
+    return {
+      ...native,
+      parkWindow: async (args) => {
+        try {
+          return await native.parkWindow(args);
+        } catch (error) {
+          logWarn('[wallpaper-engine] native park threw, trying PowerShell fallback', error && error.message);
+          return fallback.parkWindow(args);
+        }
+      },
+    };
+  }
+
+  logWarn('[wallpaper-engine] native window manager unavailable, using PowerShell fallback', native.reason);
+  const fallback = createWallpaperEngineWindowHelper({ spawn, logWarn });
+  return {
+    ...fallback,
+    available: true,
+    backend: 'powershell',
+    nativeReason: native.reason || '',
+    monitorWindow: null,
+    listSessionWindows: null,
+    hideWindow: null,
+    neutraliseWindow: null,
+    hideEngineMainWindow: null,
+    getWindowInfo: null,
+    dispose: () => {},
+  };
+}
+
 module.exports = {
+  createWallpaperEngineWindowManager,
   PARK_TOLERANCE_PX,
   SWP_FLAGS,
   WALLPAPER_ENGINE_PROCESS_NAMES,

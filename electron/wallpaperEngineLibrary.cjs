@@ -8,11 +8,13 @@
 //   header check. Folia reads the same local metadata and mutates nothing on disk.
 // This file is distributed with Folia under AGPL-3.0.
 //
-// Only local metadata is indexed: no project is copied, no Web/Application project is ever
-// executed, and the user's existing desktop wallpaper is never replaced.
+// Only local metadata is indexed: no project is copied and the user's existing desktop wallpaper
+// is never replaced. Folia never executes a Web/Application project itself; a `web` project can be
+// handed to the user's Wallpaper Engine process through `openWallpaper`, exactly like a scene.
 
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
+const { Readable } = require('stream');
 
 const WALLPAPER_ENGINE_APP_ID = '431960';
 const WALLPAPER_ENGINE_PROTOCOL_SCHEME = 'folia-we';
@@ -28,6 +30,16 @@ const PREVIEW_MIME_TYPES = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
+};
+// Video wallpapers are ordinary media files next to project.json. Chromium can decode MP4/WebM/Ogg
+// without Wallpaper Engine, so these are played natively as a built-in background instead of
+// starting the engine and capturing its window.
+const VIDEO_MIME_TYPES = {
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
+  '.ogg': 'video/ogg',
 };
 
 // Audio heuristics: which scene properties are volume/mute switches rather than visual effects.
@@ -363,6 +375,33 @@ function createWallpaperEngineLibrary(options = {}) {
     return null;
   };
 
+  // Resolves project.file only when it stays inside the project directory and has a media type we
+  // know how to serve. The renderer never sees this path; the protocol handler resolves an item id
+  // back to it, so a crafted URL cannot read arbitrary files.
+  const resolveProjectFile = async (projectDir, declared, mimeTypes) => {
+    const relative = typeof declared === 'string' ? declared.trim() : '';
+    if (!relative) return null;
+    const root = path.resolve(projectDir);
+    const resolved = path.resolve(root, relative);
+    const rel = path.relative(root, resolved);
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    const extension = path.extname(resolved).toLowerCase();
+    const mimeType = mimeTypes[extension];
+    if (!mimeType) return null;
+    try {
+      // Resolve symlinks/junctions as well: a project can contain a link that points outside its
+      // directory, and the renderer must only ever stream files that really live inside it.
+      const [realRoot, realFile] = await Promise.all([fsp.realpath(root), fsp.realpath(resolved)]);
+      const realRelative = path.relative(realRoot, realFile);
+      if (!realRelative || realRelative.startsWith('..') || path.isAbsolute(realRelative)) return null;
+      const stats = await fsp.stat(realFile);
+      if (!stats.isFile() || stats.size <= 0) return null;
+      return { filePath: realFile, mimeType, size: stats.size };
+    } catch {
+      return null;
+    }
+  };
+
   const findPreviewFile = async (projectDir, project) => {
     const declared = typeof project.preview === 'string' ? project.preview.trim() : '';
     const candidates = [];
@@ -390,6 +429,7 @@ function createWallpaperEngineLibrary(options = {}) {
     if (!project || typeof project !== 'object' || Array.isArray(project)) return null;
     const type = normalizeWallpaperProjectType(project.type);
     const scenePackage = type === 'scene' ? await findScenePackage(projectDir, project) : null;
+    const video = type === 'video' ? await resolveProjectFile(projectDir, project.file, VIDEO_MIME_TYPES) : null;
     const preview = await findPreviewFile(projectDir, project);
     const analysis = analyzeSceneProperties(project);
     const title = typeof project.title === 'string' && project.title.trim()
@@ -406,8 +446,15 @@ function createWallpaperEngineLibrary(options = {}) {
       projectDir,
       projectFile,
       workshopId,
-      // Only a scene project with a valid PKGV package is handed to the Wallpaper Engine runtime.
-      enginePlayable: type === 'scene' && Boolean(scenePackage),
+      // Scene projects need a valid PKGV package; web projects are opened by the engine from
+      // project.json directly. Both use the hardened engine-capture path. Video projects never do.
+      enginePlayable: (type === 'scene' && Boolean(scenePackage)) || type === 'web',
+      // Video projects are played by Chromium directly; this never starts Wallpaper Engine.
+      builtinPlayable: type === 'video' && Boolean(video),
+      builtinKind: type === 'video' && video ? 'video' : '',
+      videoFile: video ? video.filePath : '',
+      videoMimeType: video ? video.mimeType : '',
+      videoSize: video ? video.size : 0,
       scenePackageFile: scenePackage ? scenePackage.filePath : '',
       scenePackageHeader: scenePackage ? scenePackage.header : '',
       previewFile: preview ? preview.filePath : '',
@@ -496,21 +543,94 @@ function createWallpaperEngineLibrary(options = {}) {
 
   const getItem = (id) => items.get(String(id || '')) || null;
 
-  // folia-we://preview/<itemId> serves the preview thumbnail of an already-indexed project. The
-  // renderer never supplies a path: the item id is resolved against the scan index, so only files
-  // inside a discovered Wallpaper Engine project directory can ever be read.
+  // Video is played by the renderer's <video> element, which issues Range requests for seeking and
+  // looping. The file is streamed from disk (never read into a Buffer) and only for an item id in
+  // the scan index; the renderer cannot name a path.
+  const serveVideo = async (request, item) => {
+    if (!item.videoFile) return new Response('Not found', { status: 404 });
+    let stats;
+    try {
+      stats = await fsp.stat(item.videoFile);
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+    if (!stats.isFile() || stats.size <= 0) return new Response('Not found', { status: 404 });
+    const size = Number(stats.size);
+    const headers = {
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'no-store',
+      'Content-Type': item.videoMimeType || 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+    };
+    const range = request.headers.get('range');
+    if (range) {
+      const match = /^bytes=(\d*)-(\d*)$/i.exec(String(range).trim());
+      if (!match) {
+        return new Response('Range not satisfiable', {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${size}` },
+        });
+      }
+      let start;
+      let end;
+      if (!match[1] && match[2]) {
+        // Suffix range: "bytes=-1024" means the last 1024 bytes.
+        const suffix = Number(match[2]);
+        if (!Number.isSafeInteger(suffix) || suffix <= 0) {
+          return new Response('Range not satisfiable', {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${size}` },
+          });
+        }
+        start = Math.max(0, size - suffix);
+        end = size - 1;
+      } else {
+        start = match[1] ? Number(match[1]) : 0;
+        end = match[2] ? Number(match[2]) : size - 1;
+      }
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
+        return new Response('Range not satisfiable', {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${size}` },
+        });
+      }
+      end = Math.min(end, size - 1);
+      const length = end - start + 1;
+      const rangeHeaders = {
+        ...headers,
+        'Content-Length': String(length),
+        'Content-Range': `bytes ${start}-${end}/${size}`,
+      };
+      if (request.method === 'HEAD') return new Response(null, { status: 206, headers: rangeHeaders });
+      const stream = fs.createReadStream(item.videoFile, { start, end });
+      return new Response(Readable.toWeb(stream), { status: 206, headers: rangeHeaders });
+    }
+    const fullHeaders = { ...headers, 'Content-Length': String(size) };
+    if (request.method === 'HEAD') return new Response(null, { status: 200, headers: fullHeaders });
+    const stream = fs.createReadStream(item.videoFile);
+    return new Response(Readable.toWeb(stream), { status: 200, headers: fullHeaders });
+  };
+
+  // folia-we://preview/<itemId> serves the preview thumbnail of an already-indexed project;
+  // folia-we://media/<itemId> streams a video project. The renderer never supplies a path: the item
+  // id is resolved against the scan index, so only files inside a discovered Wallpaper Engine
+  // project directory can ever be read.
   const registerProtocolHandler = (protocol, net) => {
     protocol.handle(WALLPAPER_ENGINE_PROTOCOL_SCHEME, async (request) => {
+      let hostname = '';
       let itemId = '';
       try {
         const url = new URL(request.url);
-        if (url.hostname !== 'preview') throw new Error('Invalid wallpaper engine host');
+        hostname = url.hostname;
         itemId = decodeURIComponent(url.pathname.replace(/^\//, ''));
+        if (hostname !== 'preview' && hostname !== 'media') throw new Error('Invalid wallpaper engine host');
       } catch {
         return new Response('Bad request', { status: 400 });
       }
       const item = getItem(itemId);
-      if (!item || !item.previewFile) return new Response('Not found', { status: 404 });
+      if (!item) return new Response('Not found', { status: 404 });
+      if (hostname === 'media') return serveVideo(request, item);
+      if (!item.previewFile) return new Response('Not found', { status: 404 });
       const fileResponse = await net.fetch(pathToFileURL(item.previewFile).toString());
       if (!fileResponse.ok || !fileResponse.body) return new Response('Not found', { status: 404 });
       return new Response(fileResponse.body, {

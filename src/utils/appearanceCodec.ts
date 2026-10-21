@@ -346,6 +346,7 @@ const compressWeBackground = (t: any): any => ({
 });
 const decompressWeBackground = (o: any): any => ({
     itemId: '',
+    itemKind: '',
     itemTitle: typeof o.it === 'string' ? o.it : DEFAULT_WE_BACKGROUND_TUNING.itemTitle,
     autoStart: o.as !== undefined ? o.as : DEFAULT_WE_BACKGROUND_TUNING.autoStart,
     muteAudio: o.ma !== undefined ? o.ma : DEFAULT_WE_BACKGROUND_TUNING.muteAudio,

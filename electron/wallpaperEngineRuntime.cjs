@@ -29,6 +29,15 @@ const CONTROL_POLL_INTERVAL_MS = 400;
 const MAX_MUTE_PROPERTIES = 256;
 const MIN_PLAYBACK_SIZE = 480;
 const MAX_PLAYBACK_SIZE = 3840;
+
+// Every playback window is titled with this prefix. It is how the runtime finds orphaned windows
+// from a crashed/rebuilt session and how the native manager lists the ones it must repair.
+const WALLPAPER_ENGINE_LOCATION_PREFIX = 'Folia Wallpaper ';
+// The engine can move/resize its playback window after openWallpaper returns (observed on a real
+// session: park 3711,1524 -> engine moved it to 3999,2036). A fast, cheap native watch is what
+// keeps it parked; PowerShell is only the fallback and does not run this watch.
+const WINDOW_WATCH_INTERVAL_MS = 750;
+const WINDOW_LOST_GRACE_MS = 6000;
 const SAFE_PROPERTY_KEY = /^[a-z0-9_.-]{1,128}$/i;
 const BLOCKED_PROPERTY_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -62,7 +71,7 @@ try {
 const buildLocationTitle = (seed) => {
   const token = String(seed || '').replace(/[^a-z0-9]/gi, '').slice(0, 12).toLowerCase() || 'session';
   const nonce = Math.random().toString(16).slice(2, 8);
-  return 'Folia Wallpaper ' + token + nonce;
+  return WALLPAPER_ENGINE_LOCATION_PREFIX + token + nonce;
 };
 
 const clampPlaybackSize = (value, fallback) => {
@@ -173,7 +182,7 @@ function createWallpaperEngineRuntime(options = {}) {
     windowHelper = null,
     getVirtualDesktopBounds = () => null,
     emitStatus = () => {},
-    timers = { setTimeout, clearTimeout },
+    timers = { setTimeout, clearTimeout, setInterval, clearInterval },
     delay = (ms) => new Promise((resolve) => { timers.setTimeout(resolve, ms); }),
   } = options;
   const fsp = fs.promises;
@@ -188,6 +197,9 @@ function createWallpaperEngineRuntime(options = {}) {
   // Physical-pixel corner learned from the window helper; null until the first successful park.
   let parkTarget = null;
   let disposed = false;
+  let watchTimer = null;
+  let watchBusy = false;
+  let watchMisses = 0;
 
   const status = {
     phase: 'idle',
@@ -205,6 +217,9 @@ function createWallpaperEngineRuntime(options = {}) {
     mutedPropertyCount: 0,
     startedAt: 0,
     error: '',
+    windowManaged: false,
+    windowWatchActive: false,
+    windowLost: false,
   };
 
   const publishStatus = (patch = {}) => {
@@ -313,6 +328,18 @@ function createWallpaperEngineRuntime(options = {}) {
       return false;
     }
     await delay(ENGINE_PROCESS_STABLE_MS);
+    // A no-argument launch can bring up the engine's main UI, which is another taskbar entry and
+    // another surface that can cover the player. We only get here after the control channel was
+    // silent, i.e. this is an engine Folia just started; hide that window, never touch a window
+    // the user opened themselves while the engine was already running.
+    if (windowHelper && typeof windowHelper.hideEngineMainWindow === 'function') {
+      try {
+        const hidden = windowHelper.hideEngineMainWindow();
+        if (hidden && hidden.ok) log('[wallpaper-engine] hid engine main window', hidden.hwnd);
+      } catch (error) {
+        logWarn('[wallpaper-engine] hide engine main window failed', error && error.message);
+      }
+    }
     return true;
   };
 
@@ -421,16 +448,160 @@ function createWallpaperEngineRuntime(options = {}) {
     };
   };
 
+  const stopWindowWatch = ({ silent = false } = {}) => {
+    if (watchTimer) timers.clearInterval(watchTimer);
+    watchTimer = null;
+    watchBusy = false;
+    watchMisses = 0;
+    if (status.windowWatchActive) {
+      if (silent) status.windowWatchActive = false;
+      else publishStatus({ windowWatchActive: false });
+    }
+  };
+
+  const startWindowWatch = () => {
+    stopWindowWatch({ silent: true });
+    if (disposed) return false;
+    if (!windowHelper || typeof windowHelper.monitorWindow !== 'function') return false;
+    if (typeof timers.setInterval !== 'function' || typeof timers.clearInterval !== 'function') return false;
+    if (!status.locationTitle) return false;
+    watchMisses = 0;
+    watchTimer = timers.setInterval(() => { void runWindowWatch(); }, WINDOW_WATCH_INTERVAL_MS);
+    return true;
+  };
+
+  const handleWindowLost = (reason) => {
+    if (disposed) return;
+    stopWindowWatch({ silent: true });
+    clearMuteTimers();
+    currentItem = null;
+    logWarn('[wallpaper-engine] playback window lost, resetting session', reason || 'not-found');
+    publishStatus({
+      phase: 'idle',
+      locationTitle: '',
+      itemId: '',
+      title: '',
+      muted: false,
+      mutedPropertyCount: 0,
+      audioPropertyCount: 0,
+      startedAt: 0,
+      error: '',
+      windowManaged: false,
+      windowWatchActive: false,
+      windowLost: true,
+    });
+    // The engine may have re-created the playback window under a title the watcher no longer
+    // knows. Close every Folia-prefixed leftover so it cannot sit in the taskbar while auto-start
+    // is off; a session that auto-restarts will skip its own title.
+    void cleanupOrphanWindows();
+  };
+
+  // Runs on the native manager's cheap timer. It never throws into the interval: a failed repair
+  // is retried on the next tick, and only a sustained loss resets the session.
+  const runWindowWatch = async () => {
+    if (disposed || watchBusy || !status.locationTitle) return;
+    watchBusy = true;
+    try {
+      const result = await windowHelper.monitorWindow({ title: status.locationTitle });
+      if (!result || !result.ok) {
+        watchMisses += 1;
+        if (watchMisses === 1) logWarn('[wallpaper-engine] window monitor lost', (result && result.reason) || 'unknown');
+        if (watchMisses * WINDOW_WATCH_INTERVAL_MS >= WINDOW_LOST_GRACE_MS) {
+          handleWindowLost((result && result.reason) || 'not-found');
+        }
+        return;
+      }
+      if (watchMisses > 0) {
+        log('[wallpaper-engine] window monitor reacquired', result.hwnd);
+        watchMisses = 0;
+      }
+      if (result.styleApplied || result.restoredVisible || result.moved || result.foreground) {
+        log('[wallpaper-engine] window monitor repaired', JSON.stringify(result));
+      }
+      if (!status.windowManaged) publishStatus({ windowManaged: true });
+    } catch (error) {
+      watchMisses += 1;
+      logWarn('[wallpaper-engine] window monitor error', error && error.message);
+      if (watchMisses * WINDOW_WATCH_INTERVAL_MS >= WINDOW_LOST_GRACE_MS) {
+        handleWindowLost('monitor-error');
+      }
+    } finally {
+      watchBusy = false;
+    }
+  };
+
+  const hideWindowSafe = (title) => {
+    if (!windowHelper || typeof windowHelper.hideWindow !== 'function' || !title) return false;
+    try {
+      const result = windowHelper.hideWindow({ title });
+      if (result && result.ok) {
+        log('[wallpaper-engine] hid playback window', title, result.hwnd);
+        return true;
+      }
+      logWarn('[wallpaper-engine] hide playback window failed', title, result && result.reason);
+    } catch (error) {
+      logWarn('[wallpaper-engine] hide playback window threw', error && error.message);
+    }
+    return false;
+  };
+
+  // Windows from a crashed/killed session keep their titles for the lifetime of the engine. Close
+  // every one that belongs to an earlier session before opening a new one; if the engine refuses,
+  // at least hide it so it cannot surface over the player.
+  const cleanupOrphanWindows = async () => {
+    if (!windowHelper || typeof windowHelper.listSessionWindows !== 'function') {
+      return { checked: 0, closed: 0, hidden: 0 };
+    }
+    let entries = [];
+    try {
+      entries = windowHelper.listSessionWindows({ prefix: WALLPAPER_ENGINE_LOCATION_PREFIX }) || [];
+    } catch (error) {
+      logWarn('[wallpaper-engine] orphan scan failed', error && error.message);
+      return { checked: 0, closed: 0, hidden: 0 };
+    }
+    let closed = 0;
+    let hidden = 0;
+    for (const entry of entries) {
+      const title = entry && entry.title ? String(entry.title) : '';
+      if (!title || title === status.locationTitle) continue;
+      const result = await spawnControl(['-control', 'closeWallpaper', '-location', title], CONTROL_TIMEOUT_MS);
+      if (result.ok) {
+        closed += 1;
+        continue;
+      }
+      logWarn('[wallpaper-engine] orphan close failed', title, result.code);
+      if (hideWindowSafe(title)) hidden += 1;
+    }
+    if (entries.length) {
+      log('[wallpaper-engine] orphan windows', entries.length, 'closed', closed, 'hidden', hidden);
+    }
+    return { checked: entries.length, closed, hidden };
+  };
+
   const stop = async ({ reason = 'stop' } = {}) => {
+    stopWindowWatch({ silent: true });
     clearMuteTimers();
     const locationTitle = status.locationTitle;
     currentItem = null;
     if (!locationTitle) {
-      publishStatus({ phase: 'idle', locationTitle: '', itemId: '', title: '', muted: false });
+      publishStatus({
+        phase: 'idle',
+        locationTitle: '',
+        itemId: '',
+        title: '',
+        muted: false,
+        windowManaged: false,
+        windowWatchActive: false,
+        windowLost: false,
+      });
       return { ok: true };
     }
     publishStatus({ phase: 'stopping' });
     const result = await spawnControl(['-control', 'closeWallpaper', '-location', locationTitle], CONTROL_TIMEOUT_MS);
+    // A failed close is exactly how a playback window becomes an orphan (and how multiple taskbar
+    // entries accumulate). Hiding it is an immediate, reversible containment; the next start also
+    // retries the engine-side close during orphan cleanup.
+    if (!result.ok) hideWindowSafe(locationTitle);
     publishStatus({
       phase: 'idle',
       locationTitle: '',
@@ -441,6 +612,9 @@ function createWallpaperEngineRuntime(options = {}) {
       audioPropertyCount: 0,
       startedAt: 0,
       error: result.ok ? '' : 'close-failed',
+      windowManaged: false,
+      windowWatchActive: false,
+      windowLost: false,
     });
     log('[wallpaper-engine] playback stopped', reason, result.ok ? 'ok' : 'close-failed');
     return { ok: result.ok };
@@ -449,19 +623,34 @@ function createWallpaperEngineRuntime(options = {}) {
   const start = async ({ item, muteAudio = true } = {}) => {
     if (disposed) return { ok: false, error: 'disposed' };
     if (!item || !item.enginePlayable || !item.projectFile) {
-      publishStatus({ phase: 'error', error: 'item-not-playable' });
+      publishStatus({
+        phase: 'error',
+        error: 'item-not-playable',
+        windowManaged: false,
+        windowWatchActive: false,
+        windowLost: false,
+      });
       return { ok: false, error: 'item-not-playable' };
     }
     if (status.phase === 'starting') return { ok: false, error: 'busy' };
     if (status.locationTitle) await stop({ reason: 'restart' });
-    publishStatus({ phase: 'starting', error: '', muted: false });
+    publishStatus({ phase: 'starting', error: '', muted: false, windowLost: false });
     currentItem = item;
     try {
       if (!(await ensureControlReady())) {
         currentItem = null;
-        publishStatus({ phase: 'error', error: status.error || 'engine-not-ready' });
+        publishStatus({
+          phase: 'error',
+          error: status.error || 'engine-not-ready',
+          windowManaged: false,
+          windowWatchActive: false,
+          windowLost: false,
+        });
         return { ok: false, error: status.error || 'engine-not-ready' };
       }
+      // Previous sessions may have left playback windows behind (engine restart, failed close,
+      // killed Folia). Close them before opening the new one so the taskbar cannot accumulate.
+      await cleanupOrphanWindows();
       const geometry = resolvePlaybackGeometry();
       const locationTitle = buildLocationTitle(item.id);
       publishStatus({ locationTitle, itemId: item.id, title: item.title, width: geometry.width, height: geometry.height, parkX: geometry.parkX, parkY: geometry.parkY });
@@ -489,25 +678,49 @@ function createWallpaperEngineRuntime(options = {}) {
       }
       if (!opened.ok) {
         currentItem = null;
-        publishStatus({ phase: 'error', locationTitle: '', itemId: '', title: '', error: 'open-failed' });
+        publishStatus({
+          phase: 'error',
+          locationTitle: '',
+          itemId: '',
+          title: '',
+          error: 'open-failed',
+          windowManaged: false,
+          windowWatchActive: false,
+          windowLost: false,
+        });
         return { ok: false, error: 'open-failed' };
       }
-      publishStatus({ phase: 'running', startedAt: Date.now() });
+      let parkedResult = null;
       if (windowHelper) {
-        const parked = await windowHelper.parkWindow({ title: locationTitle });
-        if (parked && parked.ok && parked.target) {
+        parkedResult = await windowHelper.parkWindow({ title: locationTitle });
+        if (parkedResult && parkedResult.ok && parkedResult.target) {
           // The helper reports the OS's own virtual-screen corner; reuse it so the next window is
           // opened at the right place instead of relying on the DIP approximation.
-          parkTarget = { x: Number(parked.target.x), y: Number(parked.target.y) };
+          parkTarget = { x: Number(parkedResult.target.x), y: Number(parkedResult.target.y) };
           publishStatus({ parkX: parkTarget.x, parkY: parkTarget.y });
         }
-        log('[wallpaper-engine] park check', JSON.stringify(parked));
+        log('[wallpaper-engine] park check', JSON.stringify(parkedResult));
       }
+      const watchActive = startWindowWatch();
+      publishStatus({
+        phase: 'running',
+        startedAt: Date.now(),
+        windowManaged: Boolean(parkedResult && parkedResult.ok),
+        windowWatchActive: watchActive,
+        windowLost: false,
+      });
       if (muteAudio) scheduleMute();
       return { ok: true, locationTitle, width: geometry.width, height: geometry.height };
     } catch (error) {
+      stopWindowWatch({ silent: true });
       currentItem = null;
-      publishStatus({ phase: 'error', error: 'start-failed' });
+      publishStatus({
+        phase: 'error',
+        error: 'start-failed',
+        windowManaged: false,
+        windowWatchActive: false,
+        windowLost: false,
+      });
       logWarn('[wallpaper-engine] start threw', error && error.message);
       return { ok: false, error: 'start-failed' };
     }
@@ -515,11 +728,22 @@ function createWallpaperEngineRuntime(options = {}) {
 
   const dispose = async () => {
     disposed = true;
+    stopWindowWatch({ silent: true });
     clearMuteTimers();
     if (status.locationTitle) {
-      await spawnControl(['-control', 'closeWallpaper', '-location', status.locationTitle], CONTROL_TIMEOUT_MS);
+      const result = await spawnControl(['-control', 'closeWallpaper', '-location', status.locationTitle], CONTROL_TIMEOUT_MS);
+      if (!result.ok) hideWindowSafe(status.locationTitle);
     }
-    publishStatus({ phase: 'idle', locationTitle: '', itemId: '', title: '', muted: false });
+    publishStatus({
+      phase: 'idle',
+      locationTitle: '',
+      itemId: '',
+      title: '',
+      muted: false,
+      windowManaged: false,
+      windowWatchActive: false,
+      windowLost: false,
+    });
   };
 
   return {
@@ -543,6 +767,9 @@ module.exports = {
   MUTE_SCHEDULE_MS,
   SIGNATURE_SCRIPT,
   WALLPAPER_ENGINE_EXECUTABLES,
+  WALLPAPER_ENGINE_LOCATION_PREFIX,
+  WINDOW_LOST_GRACE_MS,
+  WINDOW_WATCH_INTERVAL_MS,
   buildApplyPropertiesArgs,
   buildLocationTitle,
   buildOpenWallpaperArgs,

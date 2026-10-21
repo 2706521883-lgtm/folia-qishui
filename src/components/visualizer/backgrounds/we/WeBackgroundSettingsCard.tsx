@@ -102,17 +102,23 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
     const borderColor = colorWithAlpha(theme.secondaryColor, isDaylight ? 0.18 : 0.16);
     const sessionRunning = phase === 'running' && Boolean(tuning.itemId);
     const busy = phase === 'starting' || phase === 'stopping';
+    // Empty itemKind is the legacy value and could only name a scene (the old picker filtered to
+    // engine-playable scenes), so it follows the engine path.
+    const itemKind = tuning.itemKind || 'scene';
+    const builtinVideo = itemKind === 'video';
     const statusText = !supported
         ? t('options.weUnsupported')
-        : runtimeError
-            ? t('options.weError').replace('{error}', runtimeError)
-            : sessionRunning
-                ? (tuning.muteAudio ? t('options.weStatusMuted') : t('options.weStatusPlaying'))
-                : engineReady
-                    ? t('options.weStatusReady')
-                    : hasScanned && steamRoots.length === 0
-                        ? t('options.weStatusNoSteam')
-                        : t('options.weStatusIdle');
+        : builtinVideo && tuning.itemId
+            ? t('options.weStatusBuiltinVideo')
+            : runtimeError
+                ? t('options.weError').replace('{error}', runtimeError)
+                : sessionRunning
+                    ? (tuning.muteAudio ? t('options.weStatusMuted') : t('options.weStatusPlaying'))
+                    : engineReady
+                        ? t('options.weStatusReady')
+                        : hasScanned && steamRoots.length === 0
+                            ? t('options.weStatusNoSteam')
+                            : t('options.weStatusIdle');
 
     const actionButton = (label: string, onClick: () => void, icon: React.ReactNode, disabled: boolean) => (
         <button
@@ -148,7 +154,7 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                     <RefreshCw size={13} />,
                     !supported,
                 )}
-                {sessionRunning
+                {builtinVideo ? null : sessionRunning
                     ? actionButton(t('options.weStop'), () => void stopSession(), <Square size={13} />, busy)
                     : actionButton(
                         t('options.weStart'),
@@ -160,7 +166,7 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                     type="button"
                     onClick={() => {
                         void stopSession();
-                        onTuningChange?.({ itemId: '', itemTitle: '' });
+                        onTuningChange?.({ itemId: '', itemTitle: '', itemKind: '' });
                     }}
                     disabled={!tuning.itemId && phase === 'idle'}
                     className="h-8 rounded-lg border px-3 text-xs transition-opacity disabled:opacity-40"
@@ -182,7 +188,11 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                             {tuning.itemTitle || tuning.itemId}
                         </div>
                         <div className="text-[11px] opacity-60" style={{ color: theme.secondaryColor }}>
-                            {t('options.weSceneType')}
+                            {builtinVideo
+                                ? t('options.weBuiltinVideoType')
+                                : itemKind === 'web'
+                                    ? t('options.weWebType')
+                                    : t('options.weSceneType')}
                         </div>
                     </div>
                 </div>
@@ -196,23 +206,28 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                     theme={theme}
                     isDaylight={isDaylight}
                     selectedId={tuning.itemId}
-                    onSelect={(itemId, itemTitle) => {
-                        onTuningChange?.({ itemId, itemTitle });
-                        void startSession(itemId, tuning.muteAudio);
+                    onSelect={(itemId, itemTitle, itemKind) => {
+                        onTuningChange?.({ itemId, itemTitle, itemKind });
+                        // A video starts itself through the <video> layer; make sure a scene session
+                        // from the previously selected wallpaper is closed.
+                        if (itemKind === 'video') void stopSession();
+                        else void startSession(itemId, tuning.muteAudio);
                     }}
                 />
             ) : null}
 
-            <BackgroundToggleRow
-                label={t('options.weAutoStart')}
-                description={t('options.weAutoStartDesc')}
-                checked={tuning.autoStart}
-                onChange={autoStart => onTuningChange?.({ autoStart })}
-                theme={theme}
-            />
+            {builtinVideo ? null : (
+                <BackgroundToggleRow
+                    label={t('options.weAutoStart')}
+                    description={t('options.weAutoStartDesc')}
+                    checked={tuning.autoStart}
+                    onChange={autoStart => onTuningChange?.({ autoStart })}
+                    theme={theme}
+                />
+            )}
             <BackgroundToggleRow
                 label={t('options.weMuteAudio')}
-                description={t('options.weMuteAudioDesc')}
+                description={builtinVideo ? t('options.weMuteVideoDesc') : t('options.weMuteAudioDesc')}
                 checked={tuning.muteAudio}
                 onChange={muteAudio => onTuningChange?.({ muteAudio })}
                 theme={theme}
@@ -271,19 +286,21 @@ const WeBackgroundSettingsCard: React.FC<WeBackgroundSettingsCardProps> = ({
                     onPointerDown={onSliderPointerDown}
                     onPointerUp={onSliderCommit}
                 />
-                <SliderRow
-                    label={t('options.weFrameRate')}
-                    value={tuning.frameRate}
-                    min={15}
-                    max={60}
-                    step={5}
-                    format={value => `${value} fps`}
-                    theme={theme}
-                    rangeInputClass={rangeInputClass}
-                    onChange={frameRate => onTuningChange?.({ frameRate })}
-                    onPointerDown={onSliderPointerDown}
-                    onPointerUp={onSliderCommit}
-                />
+                {builtinVideo ? null : (
+                    <SliderRow
+                        label={t('options.weFrameRate')}
+                        value={tuning.frameRate}
+                        min={15}
+                        max={60}
+                        step={5}
+                        format={value => `${value} fps`}
+                        theme={theme}
+                        rangeInputClass={rangeInputClass}
+                        onChange={frameRate => onTuningChange?.({ frameRate })}
+                        onPointerDown={onSliderPointerDown}
+                        onPointerUp={onSliderCommit}
+                    />
+                )}
             </div>
 
         </div>

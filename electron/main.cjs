@@ -39,7 +39,7 @@ const {
   createWallpaperEngineLibrary,
 } = require('./wallpaperEngineLibrary.cjs');
 const { createWallpaperEngineRuntime } = require('./wallpaperEngineRuntime.cjs');
-const { createWallpaperEngineWindowHelper } = require('./wallpaperEngineWindow.cjs');
+const { createWallpaperEngineWindowManager } = require('./wallpaperEngineWindow.cjs');
 const { createKugouApiBridge } = require('./kugouApiBridge.cjs');
 const { createBodianApiBridge } = require('./bodianApiBridge.cjs');
 const { createBodianMediaPolicy } = require('./bodian/mediaCors.cjs');
@@ -525,10 +525,12 @@ const wallpaperEngineLibrary = createWallpaperEngineLibrary({
   logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
 });
 
-const wallpaperEngineWindow = createWallpaperEngineWindowHelper({
+const wallpaperEngineWindow = createWallpaperEngineWindowManager({
   spawn,
+  log: (...args) => console.log('[WallpaperEngine]', ...args),
   logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
 });
+console.log('[WallpaperEngine] window manager backend:', wallpaperEngineWindow.backend || 'unknown');
 
 const wallpaperEngineRuntime = createWallpaperEngineRuntime({
   fs,
@@ -6739,6 +6741,8 @@ ipcMain.handle('wallpaper-engine-scan', async (event, force) => {
         sourceKind: item.sourceKind,
         workshopId: item.workshopId,
         enginePlayable: item.enginePlayable,
+        builtinPlayable: Boolean(item.builtinPlayable),
+        builtinKind: item.builtinKind || '',
         hasPreview: Boolean(item.previewFile),
         audioPropertyCount: item.audioPropertyCount,
       })),

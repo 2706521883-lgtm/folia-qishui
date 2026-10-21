@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import type { WeBackgroundTuning } from '../../../../types';
 import { subscribeWallpaperEngineStatus, useWallpaperEngineStore } from '../../../../stores/useWallpaperEngineStore';
 import WeBackgroundLayer from './WeBackgroundLayer';
+import WeBuiltinVideoLayer from './WeBuiltinVideoLayer';
 
 // src/components/visualizer/backgrounds/we/WeBackground.tsx
 // Container for the Wallpaper Engine background: owns the main-process status subscription and the
@@ -63,14 +64,19 @@ const WeBackground: React.FC<WeBackgroundProps> = ({ tuning, enabled, paused = f
     }, []);
 
     const sessionRunning = phase === 'running' && activeItemId === tuning.itemId && Boolean(tuning.itemId);
+    // Empty itemKind is the legacy value; the old picker could only select scenes, so it is safe to
+    // treat it as a scene. Video projects are the only kind rendered without the engine.
+    const builtinVideo = tuning.itemKind === 'video';
 
     // Auto-start is opt-in and only fires once per (mode, wallpaper) pair: the phase leaves 'idle'
-    // as soon as the main process acknowledges, so this cannot loop on a failing wallpaper.
+    // as soon as the main process acknowledges, so this cannot loop on a failing wallpaper. A video
+    // project has no engine session to start; the <video> layer below plays whenever it is visible.
     useEffect(() => {
+        if (builtinVideo) return;
         if (!enabled || !supported || !tuning.autoStart || !tuning.itemId) return;
         if (phase !== 'idle') return;
         void startSession(tuning.itemId, tuning.muteAudio);
-    }, [enabled, supported, tuning.autoStart, tuning.itemId, tuning.muteAudio, phase, startSession]);
+    }, [builtinVideo, enabled, supported, tuning.autoStart, tuning.itemId, tuning.muteAudio, phase, startSession]);
 
     // Leaving the mode (or hiding the background) closes the playback window so no captured
     // wallpaper keeps rendering behind the player.
@@ -79,7 +85,26 @@ const WeBackground: React.FC<WeBackgroundProps> = ({ tuning, enabled, paused = f
         void stopSession();
     }, [enabled, phase, stopSession]);
 
+    // Switching from a scene to a video keeps this component mounted; stop the engine session so
+    // the two backgrounds do not render at once.
+    useEffect(() => {
+        if (!builtinVideo) return;
+        if (phase === 'idle' || phase === 'stopping') return;
+        void stopSession();
+    }, [builtinVideo, phase, stopSession]);
+
     if (!enabled || !tuning.itemId) return null;
+
+    if (builtinVideo) {
+        return (
+            <WeBuiltinVideoLayer
+                tuning={tuning}
+                active={enabled}
+                paused={paused}
+                posterUrl={`folia-we://preview/${tuning.itemId}`}
+            />
+        );
+    }
 
     return (
         <WeBackgroundLayer

@@ -927,11 +927,18 @@ export const readStoredSoraBackgroundTuning = (): SoraBackgroundTuning => {
     }
 };
 
+const WE_BACKGROUND_ITEM_KINDS = new Set(['scene', 'video', 'web', 'unknown', '']);
+
 export const resolveStoredWeBackgroundTuning = (
     parsed: Partial<WeBackgroundTuning>,
 ): WeBackgroundTuning => ({
     itemId: typeof parsed.itemId === 'string' ? parsed.itemId.slice(0, 64) : DEFAULT_WE_BACKGROUND_TUNING.itemId,
     itemTitle: typeof parsed.itemTitle === 'string' ? parsed.itemTitle.slice(0, 200) : DEFAULT_WE_BACKGROUND_TUNING.itemTitle,
+    // Legacy records have no itemKind but could only ever name a scene, because the old picker
+    // listed engine-playable scenes exclusively. Keep empty as the legacy/scene value.
+    itemKind: typeof parsed.itemKind === 'string' && WE_BACKGROUND_ITEM_KINDS.has(parsed.itemKind)
+        ? parsed.itemKind
+        : DEFAULT_WE_BACKGROUND_TUNING.itemKind,
     autoStart: typeof parsed.autoStart === 'boolean' ? parsed.autoStart : DEFAULT_WE_BACKGROUND_TUNING.autoStart,
     muteAudio: typeof parsed.muteAudio === 'boolean' ? parsed.muteAudio : DEFAULT_WE_BACKGROUND_TUNING.muteAudio,
     opacity: clampLatentNumber(parsed.opacity, DEFAULT_WE_BACKGROUND_TUNING.opacity, 0.15, 1),

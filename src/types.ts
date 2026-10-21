@@ -992,11 +992,19 @@ export interface SoraBackgroundTuning {
   blank: boolean;
 }
 
+export type WeBackgroundItemKind = 'scene' | 'video' | 'web' | 'unknown' | '';
+
 export interface WeBackgroundTuning {
   /** workshop item id of the selected Wallpaper Engine scene; empty means nothing is selected yet. */
   itemId: string;
   /** Cached title so the player console can name the wallpaper without a library scan. */
   itemTitle: string;
+  /**
+   * Project type of the selected item. Video projects play natively in the renderer; scene (and,
+   * when the engine supports it, web) projects use the hardened Wallpaper Engine capture path.
+   * Empty is the legacy value and means scene.
+   */
+  itemKind: WeBackgroundItemKind;
   /** Opens the playback window and captures it as soon as the mode is shown. */
   autoStart: boolean;
   /** Camera and dialogue audio of the scene are suppressed through applyProperties. */
@@ -1090,6 +1098,7 @@ export const DEFAULT_SORA_BACKGROUND_TUNING: SoraBackgroundTuning = {
 export const DEFAULT_WE_BACKGROUND_TUNING: WeBackgroundTuning = {
   itemId: '',
   itemTitle: '',
+  itemKind: '',
   autoStart: true,
   muteAudio: true,
   opacity: 1,
