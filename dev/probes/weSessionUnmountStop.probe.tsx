@@ -26,6 +26,9 @@ const RUNNING_STATUS: ElectronWallpaperEngineStatus = {
     mutedPropertyCount: 0,
     startedAt: 0,
     error: '',
+    windowManaged: true,
+    windowWatchActive: true,
+    windowLost: false,
 };
 
 interface ProbeHooks {

@@ -302,6 +302,8 @@ declare global {
     sourceKind: 'workshop' | 'myprojects';
     workshopId: string;
     enginePlayable: boolean;
+    builtinPlayable: boolean;
+    builtinKind: 'video' | 'web' | '';
     hasPreview: boolean;
     audioPropertyCount: number;
   }
@@ -358,6 +360,9 @@ declare global {
     mutedPropertyCount: number;
     startedAt: number;
     error: string;
+    windowManaged: boolean;
+    windowWatchActive: boolean;
+    windowLost: boolean;
   }
 
   interface ElectronWallpaperEngineRuntimeStatus {
