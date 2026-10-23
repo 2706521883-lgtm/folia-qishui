@@ -19,6 +19,7 @@ const {
   primaryScreenCorner,
   rectHeight,
   rectWidth,
+  virtualDesktopCorner,
 } = require('../../../electron/wallpaperEngineWindowNative.cjs') as {
   PARK_TOLERANCE_PX: number;
   PARK_VISIBLE_INSET_PX: number;
@@ -32,6 +33,7 @@ const {
   primaryScreenCorner: (bounds: { width: number; height: number }) => { x: number; y: number };
   rectHeight: (rect: { top: number; bottom: number }) => number;
   rectWidth: (rect: { left: number; right: number }) => number;
+  virtualDesktopCorner: (bounds: { x: number; y: number; width: number; height: number }) => { x: number; y: number };
 };
 
 const {
@@ -72,14 +74,19 @@ describe('wallpaperEngineWindowNative', () => {
     });
   });
 
-  describe('primaryScreenCorner', () => {
-    it('leaves a small visible inset at the primary screen bottom-right', () => {
+  describe('parking corners', () => {
+    it('defaults to the virtual desktop corner with a small inset, so the body stays outside every monitor', () => {
       expect(PARK_VISIBLE_INSET_PX).toBe(4);
+      expect(virtualDesktopCorner({ x: 0, y: 0, width: 2560, height: 1440 })).toEqual({ x: 2556, y: 1436 });
+      expect(virtualDesktopCorner({ x: -1920, y: 0, width: 3840, height: 1080 })).toEqual({ x: 1916, y: 1076 });
+    });
+
+    it('keeps a primary-screen fallback for capture failures', () => {
       expect(primaryScreenCorner({ width: 2560, height: 1440 })).toEqual({ x: 2556, y: 1436 });
       expect(primaryScreenCorner({ width: 1920, height: 1080 })).toEqual({ x: 1916, y: 1076 });
     });
 
-    it('never produces a negative corner for tiny screens', () => {
+    it('never produces a negative primary corner for tiny screens', () => {
       expect(primaryScreenCorner({ width: 2, height: 2 })).toEqual({ x: 0, y: 0 });
       expect(primaryScreenCorner({ width: 0, height: 0 })).toEqual({ x: 0, y: 0 });
     });

@@ -40,10 +40,14 @@ const SW_HIDE = 0;
 const SW_SHOWNOACTIVATE = 4;
 const SW_RESTORE = 9;
 
-// Primary-screen metrics. The virtual desktop's bottom-right corner can live on a secondary
-// monitor that is off/asleep or not composited; DWM then refuses to provide frames and
-// desktopCapturer fails with NotReadableError. The primary screen is always composed, so the
-// playback window is parked just inside its bottom-right corner instead.
+// Virtual-desktop metrics: the default park target is just inside the bottom-right of the union of
+// all monitors, so the oversized playback window extends outside every screen and cannot leak a
+// strip onto a neighbour. If capture still fails (the corner monitor may be off/asleep), the
+// runtime switches to the primary-screen corner as a last resort.
+const SM_XVIRTUALSCREEN = 76;
+const SM_YVIRTUALSCREEN = 77;
+const SM_CXVIRTUALSCREEN = 78;
+const SM_CYVIRTUALSCREEN = 79;
 const SM_CXSCREEN = 0;
 const SM_CYSCREEN = 1;
 // Leave a few pixels visible so the window is never treated as fully off-screen. The sliver sits
@@ -69,9 +73,17 @@ const hasManagedExStyle = (exStyle) => {
     && (value & WS_EX_APPWINDOW) === 0;
 };
 
-// The park target is a few pixels inside the primary screen's bottom-right corner. Window
-// coordinates are relative to the primary monitor, whose origin is always (0, 0). Keeping the
-// window on the primary display avoids capturing a window parked on an inactive secondary monitor.
+// Default target: just inside the virtual desktop's bottom-right corner. The window body extends
+// outside the union of all monitors, so it cannot show a strip on a neighbouring display.
+const virtualDesktopCorner = ({ x, y, width, height }) => ({
+  x: Math.round(Number(x) + Number(width) - PARK_VISIBLE_INSET_PX),
+  y: Math.round(Number(y) + Number(height) - PARK_VISIBLE_INSET_PX),
+});
+
+// Fallback target: a few pixels inside the primary screen's bottom-right corner. Window coordinates
+// are relative to the primary monitor, whose origin is always (0, 0). This guarantees DWM composes
+// the window, at the cost of a thin strip on any monitor to its right/below; used only after the
+// renderer reports a capture failure.
 const primaryScreenCorner = ({ width, height }) => ({
   x: Math.max(0, Math.round(Number(width) - PARK_VISIBLE_INSET_PX)),
   y: Math.max(0, Math.round(Number(height) - PARK_VISIBLE_INSET_PX)),
@@ -189,10 +201,27 @@ const loadNativeApi = () => {
     };
   };
 
-  const currentParkTarget = () => primaryScreenCorner({
-    width: GetSystemMetrics(SM_CXSCREEN),
-    height: GetSystemMetrics(SM_CYSCREEN),
-  });
+  let parkMode = 'virtual';
+  const setParkMode = (mode) => {
+    if (mode !== 'virtual' && mode !== 'primary') return false;
+    parkMode = mode;
+    return true;
+  };
+  const getParkMode = () => parkMode;
+  const currentParkTarget = () => {
+    if (parkMode === 'primary') {
+      return primaryScreenCorner({
+        width: GetSystemMetrics(SM_CXSCREEN),
+        height: GetSystemMetrics(SM_CYSCREEN),
+      });
+    }
+    return virtualDesktopCorner({
+      x: GetSystemMetrics(SM_XVIRTUALSCREEN),
+      y: GetSystemMetrics(SM_YVIRTUALSCREEN),
+      width: GetSystemMetrics(SM_CXVIRTUALSCREEN),
+      height: GetSystemMetrics(SM_CYVIRTUALSCREEN),
+    });
+  };
 
   const enumerateWindows = () => {
     const entries = [];
@@ -304,6 +333,8 @@ const loadNativeApi = () => {
     getExStyle,
     getRect,
     currentParkTarget,
+    getParkMode,
+    setParkMode,
     ShowWindow,
     IsIconic,
     GetForegroundWindow,
@@ -479,6 +510,12 @@ function createWallpaperEngineNativeWindow(options = {}) {
     };
   };
 
+  const setParkMode = ({ mode } = {}) => {
+    if (!api.setParkMode(mode)) return { ok: false, reason: 'invalid-mode' };
+    log('[wallpaper-engine] park mode', mode);
+    return { ok: true, mode };
+  };
+
   const listSessionWindows = ({ prefix } = {}) => {
     const titlePrefix = String(prefix || '');
     if (!titlePrefix) return [];
@@ -536,6 +573,7 @@ function createWallpaperEngineNativeWindow(options = {}) {
     backend: 'native',
     parkWindow,
     monitorWindow,
+    setParkMode,
     listSessionWindows,
     hideWindow,
     neutraliseWindow,
@@ -565,4 +603,5 @@ module.exports = {
   rectHeight,
   rectWidth,
   primaryScreenCorner,
+  virtualDesktopCorner,
 };

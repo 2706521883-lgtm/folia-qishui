@@ -52,16 +52,25 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
     // Incremented when the live stream ends (engine window re-created / style repair). The effect
     // below then re-fetches the capture source instead of leaving the layer on the poster forever.
     const [captureEpoch, setCaptureEpoch] = useState(0);
+    const retryCountRef = useRef(0);
+    const retryItemRef = useRef('');
 
     useEffect(() => {
         if (!active) {
+            retryCountRef.current = 0;
+            retryItemRef.current = '';
             setStreamReady(false);
             return undefined;
+        }
+        if (retryItemRef.current !== tuning.itemId) {
+            retryItemRef.current = tuning.itemId;
+            retryCountRef.current = 0;
         }
         let disposed = false;
         let stream: MediaStream | null = null;
         let endedTrack: MediaStreamTrack | null = null;
         let endedHandler: (() => void) | null = null;
+        let retryTimer: ReturnType<typeof setTimeout> | null = null;
         setStreamReady(hasLiveWallpaperEngineCapture(frameRate));
 
         // Attaches the capture, retrying the source lookup until the engine's window shows up.
@@ -88,8 +97,17 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                     console.warn('[WallpaperEngine] Capture failed', error);
                     api.reportWallpaperEngineLog?.(
                         `Capture failed: ${error instanceof Error ? error.message : String(error)}`,
+                        'capture-failed',
                     );
                     if (!disposed) setStreamReady(false);
+                    // The main process moves the window to the primary-screen fallback when it
+                    // receives 'capture-failed'; retry shortly so the capture can attach there.
+                    if (!disposed && retryCountRef.current < 2) {
+                        retryCountRef.current += 1;
+                        retryTimer = setTimeout(() => {
+                            if (!disposed) setCaptureEpoch(epoch => epoch + 1);
+                        }, 1800);
+                    }
                     return;
                 }
                 if (disposed) {
@@ -109,7 +127,10 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                     // A capture that lands while the window is minimized stays paused; the
                     // visibility effect below starts it when the window returns.
                     if (!pausedRef.current) await video.play().catch(() => undefined);
-                    if (!disposed) setStreamReady(true);
+                    if (!disposed) {
+                        retryCountRef.current = 0;
+                        setStreamReady(true);
+                    }
                 }
                 return;
             }
@@ -119,13 +140,14 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
 
         return () => {
             disposed = true;
+            if (retryTimer) clearTimeout(retryTimer);
             if (endedTrack && endedHandler) endedTrack.removeEventListener('ended', endedHandler);
             releaseWallpaperEngineCapture(stream);
             stream = null;
             const video = videoRef.current;
             if (video) video.srcObject = null;
         };
-    }, [active, captureEpoch, frameRate]);
+    }, [active, captureEpoch, frameRate, tuning.itemId]);
 
     useEffect(() => {
         const video = videoRef.current;

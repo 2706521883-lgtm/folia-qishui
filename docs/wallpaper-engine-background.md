@@ -71,20 +71,20 @@
 - **窗口管理（原生优先）**：`electron/wallpaperEngineWindowNative.cjs` 用 koffi 直接调 `user32.dll`，`createWallpaperEngineWindowManager()` 优先选它，PowerShell helper 只在 koffi/原生加载失败时兜底。
   - **找窗口**：`EnumWindows` + `GetWindowTextW` 逐字比较标题（默认最多 8s、每 80ms 一次），再用 `QueryFullProcessImageNameW` 校验属主确实是 `wallpaper64.exe`/`wallpaper32.exe`（**属主不对就不碰**）。
   - **藏窗口**：`GetWindowLongPtrW(GWL_EXSTYLE)` → 加 `WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE`、清 `WS_EX_APPWINDOW` → hide/show 一次（让 shell 删掉已注册的任务栏按钮）→ `SWP_FRAMECHANGED` 生效。任务栏和 Alt+Tab 里都不再有它，点击也不会激活/抢焦点。
-  - **Park**：目标角是主屏右下角向内 4px（`GetSystemMetrics(0/1) - 4`）；`SetWindowPos(HWND_BOTTOM, ...)` 同时移动、把窗口压到 Z 序底部，**尺寸沿用引擎实际量到的 width/height**（引擎会夹/忽略请求的几何；实测请求 `3712×2049 @ (3711,1629)`，实际拿到 `2982×1670 @ (3481,1199)`）。
-    - 为什么不用虚拟屏右下角：多屏机器上那个角可能落在已经关闭/休眠的副屏，DWM 不再合成，`desktopCapturer` 会报 `NotReadableError: Could not start video source`。主屏一定在合成，留 4px 可见也避免窗口被当成完全离屏。
+  - **Park**：默认目标是虚拟桌面右下角向内 4px（`GetSystemMetrics(76..79) - 4`），窗口主体落在所有显示器并集之外，不会在相邻副屏上漏出一条实时画面；`SetWindowPos(HWND_BOTTOM, ...)` 同时移动、把窗口压到 Z 序底部，**尺寸沿用引擎实际量到的 width/height**（引擎会夹/忽略请求的几何；实测请求 `3712×2049 @ (3711,1629)`，实际拿到 `2982×1670 @ (3481,1199)`）。
+    - 虚拟角可能落在已经关闭/休眠的副屏，DWM 不再合成，`desktopCapturer` 报 `NotReadableError: Could not start video source`。这时渲染端通过 `wallpaper-engine-log` 的 `capture-failed` 事件通知主进程，runtime 调 `setParkMode('primary')`，改停到**主屏右下角向内 4px**；主屏一定在合成，代价是相邻副屏上可能有一条 4px 细边，只在采集失败的机器上启用。
     - 同一窗口的样式修复不再 hide/show：hide/show 只用于新窗口/首次 park；否则会在采集过程中把窗口藏一下，同样触发 `NotReadableError`。新窗口（句柄变化）仍然 hide/show 以移除任务栏按钮。
   - **守护**：会话期间每 750ms 调一次 `monitorWindow()`；样式被重置就重新套用，位置漂移/尺寸被改就重新 park，被前台激活就重新压到底部；目标角每次重新计算，所以改分辨率/显示器布局也会跟着走。实测把窗口手动移到 `(10,10)` 并改成 800×600 后，下一次 tick 就恢复到原尺寸和 `(3711,1524)`。
   - **孤儿清理**：`start()` 在打开新窗口前枚举所有以 `Folia Wallpaper` 为前缀的引擎窗口，逐个 `closeWallpaper`；关不掉就 `ShowWindow(SW_HIDE)`。`stop()` 的 `closeWallpaper` 失败也会走同样的 hide 兜底，避免多个任务栏项越积越多。
-  - **不依赖会话的孤儿守护**：第一次进入引擎采集路径后，主进程每 5s 扫一次 `Folia Wallpaper` 前缀窗口；只要不是当前 `locationTitle` 就关闭/隐藏。它不随 `stop()` 或窗口丢失重置而停止，专门兜住「引擎在会话结束后才重建窗口」和「窗口标题变了」这两类迟到残留。视频壁纸不启动引擎，不会触发这条。
-  - **诊断日志**：所有 `[WallpaperEngine]` 主进程日志同时追加到 `%APPDATA%\Folia\wallpaper-engine.log`（超过 2MB 启动时轮转为 `.1`），开头记录 Folia/Electron/平台版本。日志包含后端类型（native/powershell）、park 的 target/before/after、守护修复、孤儿清理；现场复发时直接取这个文件即可。
+  - **不依赖会话的孤儿守护**：第一次进入引擎采集路径后，主进程每 5s 扫一次 `Folia Wallpaper` 前缀窗口；只要不是当前 `locationTitle`、且窗口仍可见，就关闭/隐藏。它不随 `stop()` 或窗口丢失重置而停止，专门兜住「引擎在会话结束后才重建窗口」和「窗口标题变了」这两类迟到残留。已被隐藏的窗口会被跳过（`EnumWindows` 仍能枚举隐藏窗口，重复关闭只会每 5s 拉起一次控制进程）；关闭+隐藏都失败的窗口按 10s→5min 指数退避，不会无限刷。视频壁纸不启动引擎，不会触发这条。
+  - **诊断日志**：所有 `[WallpaperEngine]` 主进程日志同时追加到 `%APPDATA%\Folia\wallpaper-engine.log`，运行期超过 2MB 也会轮转为 `.1`；开头记录 Folia/Electron/平台版本。日志包含后端类型（native/powershell）、park 的 target/before/after、守护修复、孤儿清理和渲染端 `capture-failed`；现场复发时直接取这个文件即可。
   - **自举主界面**：只有控制通道静默、Folia 自己启动引擎时才把 `Wallpaper Engine` 主窗口 hide 掉；引擎已经在跑时不动用户自己打开的窗口。
   - **PowerShell 兜底**：`electron/wallpaperEngineWindow.cjs` 的旧 helper 仍保留（`-EncodedCommand`、逐字标题、超时 16s、永不抛错），只负责一次性 park，没有守护/样式管理。
 - **状态**：`{phase, engineReady, executable, locationTitle, itemId, title, width, height, parkX, parkY, muted, audioPropertyCount, mutedPropertyCount, startedAt, error, windowManaged, windowWatchActive, windowLost}`，每次变化通过 `wallpaper-engine-changed` 推给渲染端。
 
 ### 3. `electron/main.cjs`（接线）
 
-- 5 个 IPC（全部带 `isTrustedMainWindowContents` 门）：`wallpaper-engine-scan`（返回**裁剪过的目录**：id/标题/类型/来源/创意工坊 id/引擎可播放/内置可播放/内置类型/有无预览/音频属性数，**不含任何路径**）、`-start`、`-stop`、`-status`（带 `supported: platform === 'win32'`）、`-get-capture-source`。
+- 6 个 IPC（全部带 `isTrustedMainWindowContents` 门）：5 个 `ipcMain.handle`——`wallpaper-engine-scan`（返回**裁剪过的目录**：id/标题/类型/来源/创意工坊 id/引擎可播放/内置可播放/内置类型/有无预览/音频属性数，**不含任何路径**）、`-start`、`-stop`、`-status`（带 `supported: platform === 'win32'`）、`-get-capture-source`；再加一个 `ipcMain.on('wallpaper-engine-log')`，接收渲染端诊断与 `capture-failed` 事件（后者触发主屏停靠回退）。
 - `before-quit` 里 `teardownWallpaperEngineSession()` 紧挨 `windowsWallpaper.detach()`：关掉采集窗口，不留孤儿置顶窗口。
 
 ## 三、渲染端

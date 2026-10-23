@@ -243,8 +243,8 @@ describe('wallpaperEngineWindow', () => {
             // capture would come back empty — the call has to keep the size it measured.
             expect(SWP_FLAGS & 0x0001).toBe(0);
             expect(WINDOW_HELPER_SCRIPT).toMatch(/SetWindowPos\(\$hwnd, \[IntPtr\]::Zero, \$targetX, \$targetY, \$before\.width, \$before\.height, \d+\)/);
-            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(0)');
-            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(1)');
+            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(76)');
+            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(79)');
         });
 
         it('polls for the window the engine creates asynchronously', () => {

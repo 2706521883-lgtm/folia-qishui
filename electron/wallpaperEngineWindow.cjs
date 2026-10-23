@@ -75,11 +75,11 @@ public class FoliaWeWindow {
   }
 }
 '@
-  # Park just inside the primary screen's bottom-right corner. The virtual-desktop corner can be
-  # on a secondary monitor that is off/asleep; DWM then stops providing frames and desktop capture
-  # fails with NotReadableError. The few visible pixels sit under the taskbar in the usual layout.
-  $targetX = [FoliaWeWindow]::GetSystemMetrics(0) - ${PARK_VISIBLE_INSET_PX}
-  $targetY = [FoliaWeWindow]::GetSystemMetrics(1) - ${PARK_VISIBLE_INSET_PX}
+  # Park just inside the virtual desktop's bottom-right corner. The window body extends outside
+  # every monitor, so it cannot leak a visible strip onto a neighbouring display; the few visible
+  # pixels keep DWM composing it for desktop capture.
+  $targetX = [FoliaWeWindow]::GetSystemMetrics(76) + [FoliaWeWindow]::GetSystemMetrics(78) - ${PARK_VISIBLE_INSET_PX}
+  $targetY = [FoliaWeWindow]::GetSystemMetrics(77) + [FoliaWeWindow]::GetSystemMetrics(79) - ${PARK_VISIBLE_INSET_PX}
   $waitMs = ${WINDOW_WAIT_DEFAULT_MS}
   if ($env:FOLIA_WE_WINDOW_WAIT_MS -match '^\d+$') { $waitMs = [int]$env:FOLIA_WE_WINDOW_WAIT_MS }
   $startedAt = Get-Date

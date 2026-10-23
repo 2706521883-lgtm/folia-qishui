@@ -206,6 +206,10 @@ function createWallpaperEngineRuntime(options = {}) {
   let watchMisses = 0;
   let orphanWatchTimer = null;
   let orphanWatchBusy = false;
+  // title -> earliest next close attempt. A window that survives both closeWallpaper and hide is
+  // retried with exponential backoff instead of spawning a control process every 5 seconds.
+  const orphanRetryAt = new Map();
+  const orphanFailures = new Map();
 
   const status = {
     phase: 'idle',
@@ -449,8 +453,9 @@ function createWallpaperEngineRuntime(options = {}) {
     return {
       width,
       height,
-      // Open-time hint only; the native helper re-parks on the primary screen with a small visible
-      // inset (the virtual corner can sit on an inactive secondary and break desktop capture).
+      // Open-time hint only; the native helper re-parks at the virtual desktop corner with a small
+      // visible inset. The body then extends outside every monitor, so no strip can leak onto a
+      // neighbouring display; a capture failure switches to the primary-screen fallback.
       parkX: parkTarget ? parkTarget.x : Math.round(bounds.x + bounds.width - 4),
       parkY: parkTarget ? parkTarget.y : Math.round(bounds.y + bounds.height - 4),
     };
@@ -538,6 +543,27 @@ function createWallpaperEngineRuntime(options = {}) {
     }
   };
 
+  // Last-resort parking when the renderer reports that desktopCapturer cannot start: the virtual
+  // corner may be on an inactive/asleep monitor, while the primary screen is always composed. The
+  // primary corner can leak a thin strip onto a neighbouring display, so it is used only here.
+  const fallbackToPrimaryPark = () => {
+    if (disposed) return { ok: false, reason: 'disposed' };
+    if (!windowHelper || typeof windowHelper.setParkMode !== 'function') {
+      return { ok: false, reason: 'unsupported' };
+    }
+    const mode = windowHelper.setParkMode({ mode: 'primary' });
+    if (!mode || !mode.ok) return { ok: false, reason: 'mode-failed' };
+    logWarn('[wallpaper-engine] capture failed; parking on the primary screen');
+    if (status.locationTitle && typeof windowHelper.monitorWindow === 'function') {
+      try {
+        windowHelper.monitorWindow({ title: status.locationTitle });
+      } catch (error) {
+        logWarn('[wallpaper-engine] primary fallback park failed', error && error.message);
+      }
+    }
+    return { ok: true, mode: 'primary' };
+  };
+
   const hideWindowSafe = (title) => {
     if (!windowHelper || typeof windowHelper.hideWindow !== 'function' || !title) return false;
     try {
@@ -612,10 +638,30 @@ function createWallpaperEngineRuntime(options = {}) {
         logWarn('[wallpaper-engine] orphan watch scan failed', error && error.message);
         return;
       }
-      const stale = entries.filter((entry) => entry && entry.title && entry.title !== status.locationTitle);
+      const now = Date.now();
+      const stale = entries.filter((entry) => {
+        if (!entry || !entry.title || entry.title === status.locationTitle) return false;
+        // hideWindow leaves the window alive but hidden; EnumWindows still lists it. Re-closing it
+        // every tick would spawn a control process and write logs forever. A hidden orphan is
+        // already removed from the taskbar/screen; the next start() retries closeWallpaper.
+        if (entry.visible === false) return false;
+        return (orphanRetryAt.get(entry.title) || 0) <= now;
+      });
       if (!stale.length) return;
       log('[wallpaper-engine] orphan watch found', stale.map((entry) => entry.title).join(' | '));
-      for (const entry of stale) await closeOrphanWindow(entry.title);
+      for (const entry of stale) {
+        const outcome = await closeOrphanWindow(entry.title);
+        if (outcome === 'closed' || outcome === 'hidden') {
+          orphanRetryAt.delete(entry.title);
+          orphanFailures.delete(entry.title);
+          continue;
+        }
+        const failures = (orphanFailures.get(entry.title) || 0) + 1;
+        orphanFailures.set(entry.title, failures);
+        const delay = Math.min(300000, ORPHAN_WATCH_INTERVAL_MS * (2 ** Math.min(failures, 6)));
+        orphanRetryAt.set(entry.title, now + delay);
+        logWarn('[wallpaper-engine] orphan retry backoff', entry.title, delay);
+      }
     } finally {
       orphanWatchBusy = false;
     }
@@ -811,6 +857,7 @@ function createWallpaperEngineRuntime(options = {}) {
   return {
     dispose,
     ensureControlReady,
+    fallbackToPrimaryPark,
     getStatus: () => ({ ...status }),
     resolveExecutable,
     start,

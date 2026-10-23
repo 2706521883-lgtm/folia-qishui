@@ -524,13 +524,23 @@ function rebuildWindowsWallpaperSession() {
 // reports a stray scene window can send that file instead of reproducing with a debugger attached.
 const WALLPAPER_ENGINE_LOG_LIMIT_BYTES = 2 * 1024 * 1024;
 let wallpaperEngineLogFile = '';
+let wallpaperEngineLogBytes = 0;
+let wallpaperEngineLogRotationBlockedUntil = 0;
+const rotateWallpaperEngineLog = () => {
+  try {
+    try { fs.rmSync(wallpaperEngineLogFile + '.1', { force: true }); } catch { /* best effort */ }
+    fs.renameSync(wallpaperEngineLogFile, wallpaperEngineLogFile + '.1');
+    wallpaperEngineLogBytes = 0;
+    return true;
+  } catch {
+    return false;
+  }
+};
 try {
   wallpaperEngineLogFile = path.join(app.getPath('userData'), 'wallpaper-engine.log');
   const stats = fs.statSync(wallpaperEngineLogFile);
-  if (stats.size > WALLPAPER_ENGINE_LOG_LIMIT_BYTES) {
-    try { fs.rmSync(wallpaperEngineLogFile + '.1', { force: true }); } catch { /* best effort */ }
-    fs.renameSync(wallpaperEngineLogFile, wallpaperEngineLogFile + '.1');
-  }
+  wallpaperEngineLogBytes = stats.size;
+  if (wallpaperEngineLogBytes > WALLPAPER_ENGINE_LOG_LIMIT_BYTES) rotateWallpaperEngineLog();
 } catch {
   // No log yet, or userData is not writable; console logging still works.
 }
@@ -542,7 +552,15 @@ const formatWallpaperEngineLogValue = (value) => {
 const appendWallpaperEngineLog = (level, args) => {
   if (!wallpaperEngineLogFile) return;
   const line = `${new Date().toISOString()} [${level}] ${args.map(formatWallpaperEngineLogValue).join(' ')}\n`;
-  try { fs.appendFileSync(wallpaperEngineLogFile, line); } catch { /* best effort */ }
+  const bytes = Buffer.byteLength(line);
+  if (wallpaperEngineLogBytes + bytes > WALLPAPER_ENGINE_LOG_LIMIT_BYTES
+    && Date.now() >= wallpaperEngineLogRotationBlockedUntil) {
+    if (!rotateWallpaperEngineLog()) wallpaperEngineLogRotationBlockedUntil = Date.now() + 60000;
+  }
+  try {
+    fs.appendFileSync(wallpaperEngineLogFile, line);
+    wallpaperEngineLogBytes += bytes;
+  } catch { /* best effort */ }
 };
 const wallpaperEngineLog = (...args) => {
   console.log('[WallpaperEngine]', ...args);
@@ -6836,9 +6854,15 @@ ipcMain.handle('wallpaper-engine-get-capture-source', async (event) => {
 // Renderer-side capture failures (getUserMedia NotReadableError etc.) are part of the same
 // diagnostic trail as the main-process park/watch logs. The renderer cannot write files directly;
 // it sends the line here, and it lands in %APPDATA%\Folia\wallpaper-engine.log.
-ipcMain.on('wallpaper-engine-log', (event, message) => {
+ipcMain.on('wallpaper-engine-log', (event, payload) => {
   if (!isTrustedMainWindowContents(event.sender)) return;
-  wallpaperEngineLog('renderer', String(message || '').slice(0, 2000));
+  const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : { message: payload };
+  const message = String(record.message || '').slice(0, 2000);
+  const kind = typeof record.event === 'string' ? record.event.slice(0, 64) : '';
+  wallpaperEngineLog('renderer', kind ? `[${kind}] ${message}` : message);
+  // NotReadableError on the virtual-corner park means DWM is not composing that monitor. Move the
+  // window to the primary-screen fallback; the renderer retries the capture shortly afterwards.
+  if (kind === 'capture-failed') wallpaperEngineRuntime.fallbackToPrimaryPark();
 });
 
 ipcMain.handle('video-export-prepare-window', (event, size) => {
