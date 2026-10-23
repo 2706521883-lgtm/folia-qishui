@@ -25,6 +25,7 @@ export type QishuiOperation =
     | 'track.like'
     | 'playlist.collect'
     | 'playlist.addSong'
+    | 'playlist.create'
     | 'album.collect'
     | 'report.play'
     | 'comments'

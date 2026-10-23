@@ -89,7 +89,7 @@ export type PlayerPanelDeps = {
     togglePlay: UnifiedPanelProps['playback']['onTogglePlay'];
     handlePreviewVolume: UnifiedPanelProps['playback']['onVolumePreview'];
     isNowPlayingControlDisabled: boolean;
-    openCommandPalette?: UnifiedPanelProps['playback']['onOpenCommandPalette'];
+    openMusicSearch?: UnifiedPanelProps['playback']['onOpenMusicSearch'];
     isCommandPaletteOpen?: boolean;
     playQueue: UnifiedPanelProps['queue']['playQueue'];
     playSong: UnifiedPanelProps['queue']['onPlaySong'];
@@ -169,7 +169,7 @@ export const buildPlayerPanelModel = ({
     hideToggleButton,
     activePlaybackContext,
     isNowPlayingControlDisabled,
-    openCommandPalette,
+    openMusicSearch,
     isCommandPaletteOpen,
     playQueue,
     playSong,
@@ -261,7 +261,7 @@ export const buildPlayerPanelModel = ({
             onOpenSettings: () => {
                 openSettings('options');
             },
-            onOpenCommandPalette: openCommandPalette,
+            onOpenMusicSearch: openMusicSearch,
             isCommandPaletteOpen,
         },
         queue: {

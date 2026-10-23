@@ -1,7 +1,7 @@
 import React from 'react';
 import { PANEL_SLIDE_CLAMP_PX, PANEL_SLIDE_TRACK_BASE_PX, PANEL_SLIDE_TRACK_FULL_PX, PANEL_SLIDE_TRIGGER_PX } from '../utils/panelSlideGesture';
 import { motion, AnimatePresence, useTransform } from 'framer-motion';
-import { Settings, Settings2, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, Command, ChevronLeft, Palette, Puzzle } from 'lucide-react';
+import { Settings, Settings2, Search, X, Disc, SlidersHorizontal, ListMusic, User as UserIcon, Home as HomeIcon, FileAudio, FileText, Radio, Cloud, Star, ChevronLeft, Palette, Puzzle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Album, Artist, SongResult, Theme, PlayerState, ReplayGainMode, ThemeMode, VisualizerMode } from '../types';
 import type { ProviderUser } from '../types/onlineMusic';
@@ -96,7 +96,7 @@ type UnifiedPanelPlaybackProps = {
     isStageContext?: boolean;
     playbackControlsDisabled?: boolean;
     onOpenSettings?: () => void;
-    onOpenCommandPalette?: () => void;
+    onOpenMusicSearch?: () => void;
     isCommandPaletteOpen?: boolean;
     transparentPlayerBackground: boolean;
     onToggleTransparentPlayerBackground: (enable: boolean) => void;
@@ -212,7 +212,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         isStageContext = false,
         playbackControlsDisabled = false,
         onOpenSettings,
-        onOpenCommandPalette,
+        onOpenMusicSearch,
         isCommandPaletteOpen = false,
     } = playback;
     const { playQueue, onPlaySong, queueScrollRef, onShuffle, onRemoveSong, onMoveSongToEnd, onMoveSongToNext } = queue;
@@ -320,8 +320,8 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     const placeholderBg = isDaylight ? 'bg-stone-200' : 'bg-zinc-900';
     const activeTabBg = isDaylight ? 'bg-black/10' : 'bg-white/10';
     const tabSwitcherBg = isDaylight ? 'bg-black/5' : 'bg-white/5';
-    const canSlideOpenCommandPalette = !isOpen && Boolean(onOpenCommandPalette);
-    const isGuideLineVisible = canSlideOpenCommandPalette && (showGuideLine || isPanelGuideHotspotActive);
+    const canSlideOpenSearch = !isOpen && Boolean(onOpenMusicSearch);
+    const isGuideLineVisible = canSlideOpenSearch && (showGuideLine || isPanelGuideHotspotActive);
     const toggleButtonMotionClass = (isOpen || isGuideLineVisible || isDragging)
         ? 'translate-x-0 opacity-100'
         : (supportsHover && isWideLayout)
@@ -503,7 +503,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         }
     };
     const handleToggleButtonPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-        if (!canSlideOpenCommandPalette) {
+        if (!canSlideOpenSearch) {
             return;
         }
 
@@ -521,7 +521,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
     };
     const handleToggleButtonPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
         const gesture = commandSlideRef.current;
-        if (!canSlideOpenCommandPalette || !gesture || gesture.triggered) {
+        if (!canSlideOpenSearch || !gesture || gesture.triggered) {
             return;
         }
 
@@ -533,11 +533,11 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
             suppressToggleClickRef.current = true;
             event.preventDefault();
             resetToggleButtonDragFeedback('trigger', deltaX);
-            onOpenCommandPalette?.();
+            onOpenMusicSearch?.();
         }
     };
     const handleToggleButtonMouseEnter = () => {
-        if (supportsHover && canSlideOpenCommandPalette) {
+        if (supportsHover && canSlideOpenSearch) {
             setShowGuideLine(true);
         }
     };
@@ -547,7 +547,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
         }
     };
     const handleToggleHotspotPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (event.pointerType !== 'touch' || !canSlideOpenCommandPalette) {
+        if (event.pointerType !== 'touch' || !canSlideOpenSearch) {
             return;
         }
 
@@ -1024,7 +1024,7 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                         }}
                                         className="w-full h-full flex items-center justify-center"
                                     >
-                                        <Command size={14} />
+                                        <Search size={14} />
                                     </div>
                                 </motion.div>
 
@@ -1048,7 +1048,9 @@ const UnifiedPanel: React.FC<UnifiedPanelProps> = ({
                                 onPointerUp={clearToggleButtonGesture}
                                 onPointerCancel={clearToggleButtonGesture}
                                 onClick={handleToggleButtonClick}
-                                style={{ touchAction: canSlideOpenCommandPalette ? 'none' : undefined }}
+                                title={isOpen ? t('ui.close', '关闭播放器面板') : t('panel.openPanelSearchHint', '打开面板 · 左滑搜索音乐')}
+                                aria-label={isOpen ? t('ui.close', '关闭播放器面板') : t('panel.openPanelSearchHint', '打开面板 · 左滑搜索音乐')}
+                                style={{ touchAction: canSlideOpenSearch ? 'none' : undefined }}
                                 className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg backdrop-blur-md transform
                                     border-none absolute right-0 top-0 z-10 ${isOpen ? 'bg-white text-black' : (isDaylight ? 'bg-white/70 text-zinc-900' : 'bg-black/40 text-white')}`}
                             >

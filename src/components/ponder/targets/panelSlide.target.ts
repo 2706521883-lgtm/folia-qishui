@@ -8,7 +8,7 @@ import type { PonderSceneScript, PonderTargetDefinition } from '../../../types/p
 
 // src/components/ponder/targets/panelSlide.target.ts
 // 侧边面板切换按钮：一个看起来只是普通按钮、实际上还能向左滑的控件。
-// 三个场景对应三条真实路径：鼠标左滑、触屏边缘热区、键盘 S。
+// 两个场景对应两条真实路径：鼠标左滑、触屏边缘热区。左滑现在打开音乐搜索。
 //
 // 锚点里只有 toggle 是量真实 DOM 的（连圆角一起量，所以骨架是个圆按钮而不是方块）。
 // 滑轨虽然在 DOM 里，但常态 opacity-0、宽度写死，几何完全由按钮决定 ——
@@ -35,7 +35,7 @@ const SLIDE_ANCHORS = {
         // 滑轨包着按钮，两个标签都放上方会叠字。
         labelPlacement: 'below',
     },
-    /** 滑轨左端那枚半透明 Command 图标。 */
+    /** 滑轨左端的半透明搜索图标。 */
     trackGlyph: {
         kind: 'derived',
         from: 'track',
@@ -53,20 +53,20 @@ const SLIDE_ANCHORS = {
         // 不标名字：它和按钮、滑轨挤在同一小块地方，三个标签必然叠字。
         // 这根线是什么，由指着它的那句字幕讲。
     },
-    /** 命令面板此刻不在场，按视口比例合成。 */
-    palette: {
+    /** 搜索页此刻不在场，按视口比例合成。 */
+    search: {
         kind: 'synthetic',
         rect: { left: 0.5, top: 0.2, width: 0.44, height: 0.3, anchorX: 'center' },
         role: 'surface',
-        surfaceKind: 'palette',
+        surfaceKind: 'plain',
         labelKey: 'ponder.anchors.panelSlide.palette',
-        // 面板是滑动越线或按 S 之后才打开的，一进场就摆着的话字幕在讲一件已经发生的事。
+        // 搜索页是滑动越线之后才打开的，一进场就摆着的话字幕在讲一件已经发生的事。
         startsHidden: true,
     },
 } satisfies PonderSceneScript['anchors'];
 
-const slideToPalette: PonderSceneScript = {
-    id: 'panel-slide-to-palette',
+const slideToSearch: PonderSceneScript = {
+    id: 'panel-slide-to-search',
     titleKey: 'ponder.scenes.panelSlideToPalette',
     anchors: SLIDE_ANCHORS,
     steps: [
@@ -114,13 +114,13 @@ const slideToPalette: PonderSceneScript = {
         { kind: 'pause', id: 'atThreshold', dwellMs: 1600 },
 
         { kind: 'cursor', id: 'release', to: { anchor: 'toggle', offset: { x: -PANEL_SLIDE_CLAMP_PX } }, press: 'up', durationMs: 200 },
-        { kind: 'reveal', id: 'paletteOpens', anchor: 'palette', transition: 'zoom', durationMs: 460, keyframe: true },
+        { kind: 'reveal', id: 'searchOpens', anchor: 'search', transition: 'zoom', durationMs: 460, keyframe: true },
         {
             kind: 'caption',
             id: 'outcome',
             at: 'bottom',
             textKey: 'ponder.captions.panelSlide.outcome',
-            pointTo: { anchor: 'palette', y: 1 },
+            pointTo: { anchor: 'search', y: 1 },
             durationMs: 3000,
             withPrevious: true,
         },
@@ -157,36 +157,14 @@ const touchEdgeHotspot: PonderSceneScript = {
     ],
 };
 
-const keyboardShortcut: PonderSceneScript = {
-    id: 'panel-slide-keyboard',
-    titleKey: 'ponder.scenes.panelSlideKeyboard',
-    anchors: SLIDE_ANCHORS,
-    steps: [
-        { kind: 'caption', id: 'intro', at: 'bottom', textKey: 'ponder.captions.panelSlide.keyboardIntro', durationMs: 2400 },
-        { kind: 'pause', id: 'readIntro' },
-        { kind: 'keypress', id: 'pressS', keys: ['Mod K'], at: 'bottom', durationMs: 1400, keyframe: true },
-        { kind: 'reveal', id: 'paletteOpens', anchor: 'palette', transition: 'zoom', durationMs: 460 },
-        {
-            kind: 'caption',
-            id: 'outcome',
-            at: 'bottom',
-            textKey: 'ponder.captions.panelSlide.keyboardOutcome',
-            pointTo: { anchor: 'palette', y: 1 },
-            durationMs: 3000,
-            withPrevious: true,
-        },
-        { kind: 'pause', id: 'settle' },
-    ],
-};
-
 export default {
     id: 'panel-slide',
     titleKey: 'ponder.targets.panelSlide',
     category: 'playback',
     summaryKey: 'ponder.summaries.panel_slide',
     hoverSelector: '[data-testid="panel-toggle"]',
-    // canSlideOpenCommandPalette = !isOpen && ...（UnifiedPanel.tsx:300）。
+    // canSlideOpenSearch = !isOpen && ...（UnifiedPanel.tsx）。
     // 面板展开时这条手势本身是关的，此时教它等于教一个按不动的东西。
     isAvailable: () => !useAppViewStore.getState().isPanelOpen,
-    scenes: [slideToPalette, touchEdgeHotspot, keyboardShortcut],
+    scenes: [slideToSearch, touchEdgeHotspot],
 } satisfies PonderTargetDefinition;

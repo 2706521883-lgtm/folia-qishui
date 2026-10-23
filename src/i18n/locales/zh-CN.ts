@@ -3915,7 +3915,7 @@ export default {
       "queue_settings": "「加入队列」到底加到哪儿，全应用一起变。",
       "lyrics_settings": "自动择优会盖掉手动选的来源，两个偏移量会相加。",
       "grid_palette_hotkey": "网格页上按 S 是打开命令窗口还是进筛选框。",
-      "panel_slide": "那颗按钮还能往左滑，打开的是命令窗口。",
+      "panel_slide": "按住按钮往左滑，打开音乐搜索。",
       "panel_source_tab": "跟着来源走的那一格：音频增益、歌词来源、时间轴偏移。",
       "lyric_export": "把本机缓存的歌词批量导成 .fia 和增强型 LRC，打成一个 zip。",
       "player_bar": "整条胶囊上有什么，以及右边那两个可换的位置。",
@@ -4386,7 +4386,7 @@ export default {
         "toggle": "面板开关",
         "track": "隐藏的滑轨",
         "threshold": "触发线",
-        "palette": "命令面板"
+        "palette": "搜索结果"
       },
       "grid": {
         "help": "Folia 与帮助入口",
@@ -4428,7 +4428,7 @@ export default {
       "replayGainSettings": "音频增益（ReplayGain）",
       "importExportSettings": "备份与导入",
       "playerBar": "底部控制条",
-      "panelSlide": "侧边面板开关",
+      "panelSlide": "搜索音乐",
       "gridPage": "海报墙页面",
       "gridViewPage": "集合网格页面",
       "playerPage": "播放器页面",
@@ -4616,7 +4616,7 @@ export default {
       "playerBarSlots": "右边两个位置可以换",
       "playerBarShuffle": "随机只洗一次牌",
       "playerBarVolume": "音量在命令面板里",
-      "panelSlideToPalette": "滑动打开命令面板",
+      "panelSlideToPalette": "滑动搜索音乐",
       "panelSlideEdgeHotspot": "从边缘唤出手柄",
       "panelSlideKeyboard": "用键盘打开"
     },
@@ -5062,9 +5062,9 @@ export default {
       },
       "panelSlide": {
         "grabbed": "按住这个按钮不放，它背后的滑轨就亮起来了。",
-        "intro": "这个按钮底下藏着一条滑轨。按住它，滑轨就会显出来。",
+        "intro": "这个按钮除了点按打开面板，还能往左滑搜索音乐。",
         "threshold": "往左拖。36 像素就够了 —— 到 44 像素按钮便不再跟手。",
-        "outcome": "越过那条线松手，命令面板就打开了。",
+        "outcome": "越过那条线松手，音乐搜索就打开了。",
         "hotspotIntro": "触屏上没有悬停这回事，所以屏幕边缘本身就是入口。",
         "hotspotRevealed": "在右边缘附近点一下，手柄会自己出来。",
         "keyboardIntro": "也可以完全不用指针。",
