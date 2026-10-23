@@ -16,6 +16,7 @@ import type {
     OmniSongReplacement,
     OmniUser,
     OnlineMusicProvider,
+    PersonalFmModeCatalog,
     PersonalFmRequestOptions,
     ProviderCatalogEntityKind,
     LoginSelfCheckResult,
@@ -460,6 +461,13 @@ export const omni = {
 
     async getPersonalFm(options?: PersonalFmRequestOptions): Promise<UnifiedSong[]> {
         return withActiveProvider(async provider => provider.recommendations?.getPersonalFm?.(options) ?? []);
+    },
+
+    async getPersonalFmModes(): Promise<PersonalFmModeCatalog> {
+        return withActiveProvider(async (provider) => {
+            const catalog = await provider.recommendations?.getPersonalFmModes?.();
+            return catalog ?? { provider: provider.id, configured: false, modes: [], scenes: [] };
+        });
     },
 
     async getDailySongs(refresh?: boolean): Promise<UnifiedSong[]> {

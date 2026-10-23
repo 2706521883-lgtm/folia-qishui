@@ -43,6 +43,10 @@ const api = require('../../../electron/qishui/qishui-api.js') as {
         QISHUI_FEED_TOTAL_CAP: number;
         qishuiRecommendFlow: (value: unknown) => string;
         qishuiRecommendFeedSessions: Map<string, Record<string, any>>;
+        qishuiFeedPreference: (value: unknown) => Record<string, unknown> | null;
+        qishuiFeedPreferenceKey: (value: unknown) => string;
+        qishuiModeEntryFromPayload: (mode: unknown, index: number) => Record<string, any> | null;
+        qishuiModeIconUrl: (urlInfo: unknown) => string;
     };
 };
 
@@ -337,11 +341,81 @@ describe('Qishui feed collection card', () => {
     });
 });
 
+describe('Qishui listening mode preference', () => {
+    it('normalizes the official feed_preference shapes', () => {
+        expect(t.qishuiFeedPreference({ scene_mode_id: 4 })).toEqual({ scene_mode_id: 4 });
+        expect(t.qishuiFeedPreference({ preference_mode: 'familiar' })).toEqual({ preference_mode: 'familiar' });
+        expect(t.qishuiFeedPreference({ preference_mode: 'fresh' })).toEqual({ preference_mode: 'fresh' });
+        // 默认模式就是不带 feed_preference；官方客户端也不发这个字段。
+        expect(t.qishuiFeedPreference({ preference_mode: 'default' })).toBeNull();
+        expect(t.qishuiFeedPreference({ scene_mode_id: 0 })).toBeNull();
+        expect(t.qishuiFeedPreference('scene_mode_emo')).toBeNull();
+    });
+
+    it('adds feed_preference to the signed web payload only when a mode is selected', () => {
+        const base = { pages: 0, playedMedia: [], cursor: '', cursorKey: '' };
+        expect(t.buildQishuiFeedWebPayload({ ...base, feedPreference: { scene_mode_id: 4 } }))
+            .toMatchObject({ feed_preference: { scene_mode_id: 4 } });
+        expect(t.buildQishuiFeedWebPayload({ ...base, feedPreference: { preference_mode: 'fresh' } }))
+            .toMatchObject({ feed_preference: { preference_mode: 'fresh' } });
+        expect(t.buildQishuiFeedWebPayload(base)).not.toHaveProperty('feed_preference');
+    });
+
+    it('keys sessions by mode so switching never reuses the previous queue', () => {
+        expect(t.qishuiFeedPreferenceKey({ scene_mode_id: 4 })).toBe('scene:4');
+        expect(t.qishuiFeedPreferenceKey({ preference_mode: 'familiar' })).toBe('pref:familiar');
+        expect(t.qishuiFeedPreferenceKey(null)).toBe('default');
+    });
+
+    it('maps a scene payload and builds the CDN icon URL', () => {
+        const entry = t.qishuiModeEntryFromPayload({
+            type: 'scene_mode',
+            text: '深夜 EMO',
+            entity: { feed_scene_mode: { scene_mode_id: 4, sub_queue_type: 'scene_mode_emo' } },
+            url_info: {
+                uri: 'tos-cn-i-x/a.png',
+                urls: ['https://p3-luna.douyinpic.com/img/'],
+                template_prefix: 'tplv-x',
+            },
+        }, 3);
+        expect(entry).toMatchObject({
+            id: 'scene:4',
+            kind: 'scene',
+            text: '深夜 EMO',
+            sceneModeId: 4,
+            subQueueType: 'scene_mode_emo',
+            order: 3,
+        });
+        expect(entry?.iconUrl).toBe('https://p3-luna.douyinpic.com/img/tos-cn-i-x/a.png~tplv-x-resize:400:400.webp');
+    });
+
+    it('creates an independent FM session for each mode', async () => {
+        let fetches = 0;
+        const fetchPage = async () => {
+            fetches += 1;
+            return pageOf([String(fetches)]);
+        };
+        const plain = await handleQishuiRecommendFeed(
+            { limit: 1, flow: 'fm', advance: true }, cookie, { status, fetchPage },
+        );
+        const scene = await handleQishuiRecommendFeed(
+            { limit: 1, flow: 'fm', advance: true, feedPreference: { scene_mode_id: 4 } },
+            cookie,
+            { status, fetchPage },
+        );
+        expect(plain.songs[0].id).toBe('1');
+        // 新会话从新游标开始，而不是复用 default 会话的缓冲。
+        expect(scene.songs[0].id).toBe('2');
+        expect([...t.qishuiRecommendFeedSessions.keys()].some(key => key.includes('|scene:4'))).toBe(true);
+    });
+});
+
 describe('Qishui feed bridge contract', () => {
-    it('registers feed.recommend and treats an empty page without error as success', () => {
+    it('registers feed.recommend and feed.mode and treats an empty page without error as success', () => {
         // QISHUI_OPERATIONS 同时是 desktop IPC 与 qishui-server /rpc 的白名单：
         // 缺了它，server 形态会直接 404。
         expect(bridge.QISHUI_OPERATIONS).toContain('feed.recommend');
+        expect(bridge.QISHUI_OPERATIONS).toContain('feed.mode');
         expect(new Set(bridge.QISHUI_OPERATIONS).size).toBe(bridge.QISHUI_OPERATIONS.length);
 
         const fails = bridge._test.QISHUI_RESULT_FAILURES['feed.recommend'];
@@ -349,5 +423,9 @@ describe('Qishui feed bridge contract', () => {
         expect(fails({ songs: [], error: 'QISHUI_COOKIE_REQUIRED' })).toBe(true);
         // 有歌时的非致命 warning 不能把整页判失败。
         expect(fails({ songs: [{ id: '1' }], error: 'warning' })).toBe(false);
+
+        const modeFails = bridge._test.QISHUI_RESULT_FAILURES['feed.mode'];
+        expect(modeFails({ modes: [{ id: 'scene:4' }], scenes: [] })).toBe(false);
+        expect(modeFails({ modes: [], scenes: [], error: 'QISHUI_COOKIE_REQUIRED' })).toBe(true);
     });
 });

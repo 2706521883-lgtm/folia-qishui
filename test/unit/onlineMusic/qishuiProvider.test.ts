@@ -18,6 +18,7 @@ import { clearQishuiLibraryCache } from '@/services/onlineMusic/qishuiLibrary';
 import { QISHUI_FEED_PLAYLIST_ID, QISHUI_LIKED_PLAYLIST_ID } from '@/services/onlineMusic/qishuiCatalog';
 import { normalizeQishuiCollection, normalizeQishuiSong } from '@/services/onlineMusic/qishuiNormalize';
 import { throwQishuiDataError, toQishuiErrorCode } from '@/services/onlineMusic/qishuiTransport';
+import { useQishuiFeedModeStore } from '@/stores/useQishuiFeedModeStore';
 
 // 形状取自真实抓包（`_probe/qishui-shapes.json`）：时长是秒，封面是绝对 https，未登录时 playable=false。
 const track = {
@@ -32,6 +33,7 @@ const qishuiSong = () => normalizeQishuiSong(track);
 beforeEach(() => {
     request.mockReset();
     clearQishuiLibraryCache();
+    useQishuiFeedModeStore.setState({ selection: null });
 });
 
 describe('Qishui bridge error codes', () => {
@@ -429,5 +431,45 @@ describe('Qishui recommendations', () => {
 
         request.mockRejectedValueOnce(new Error('feed unavailable'));
         await expect(qishuiProvider.recommendations!.getPersonalFm!()).resolves.toEqual([]);
+    });
+
+    it('sends the selected listening mode as feed_preference', async () => {
+        useQishuiFeedModeStore.setState({
+            selection: { id: 'familiar', kind: 'preference', text: '熟悉模式', preferenceMode: 'familiar' },
+        });
+        request.mockResolvedValueOnce({ songs: [] });
+        await qishuiProvider.recommendations!.getPersonalFm!();
+        expect(request).toHaveBeenLastCalledWith('feed.recommend', expect.objectContaining({
+            limit: 20,
+            flow: 'fm',
+            advance: true,
+            feedPreference: { preference_mode: 'familiar' },
+        }));
+
+        request.mockClear();
+        useQishuiFeedModeStore.setState({
+            selection: { id: 'scene:4', kind: 'scene', text: '深夜 EMO', sceneModeId: 4 },
+        });
+        request.mockResolvedValueOnce({ songs: [] });
+        await qishuiProvider.recommendations!.getPersonalFm!();
+        expect(request).toHaveBeenLastCalledWith('feed.recommend', expect.objectContaining({
+            feedPreference: { scene_mode_id: 4 },
+        }));
+    });
+
+    it('exposes the listening-mode catalogue through feed.mode', async () => {
+        request.mockResolvedValueOnce({
+            provider: 'qishui',
+            configured: true,
+            modes: [
+                { id: 'default', kind: 'preference', text: '推荐', preferenceMode: 'default' },
+                { id: 'scene:4', kind: 'scene', text: '深夜 EMO', sceneModeId: 4 },
+            ],
+            scenes: [{ id: 'scene:4', kind: 'scene', text: '深夜 EMO', sceneModeId: 4 }],
+        });
+        const catalog = await qishuiProvider.recommendations!.getPersonalFmModes!();
+        expect(request).toHaveBeenLastCalledWith('feed.mode', {});
+        expect(catalog).toMatchObject({ provider: 'qishui', configured: true });
+        expect(catalog.scenes).toHaveLength(1);
     });
 });

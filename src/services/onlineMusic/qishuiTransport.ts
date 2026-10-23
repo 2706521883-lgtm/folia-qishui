@@ -17,6 +17,7 @@ export type QishuiOperation =
     | 'lyric'
     | 'song.url'
     | 'feed'
+    | 'feed.mode'
     | 'feed.recommend'
     | 'user.playlists'
     | 'playlist.tracks'

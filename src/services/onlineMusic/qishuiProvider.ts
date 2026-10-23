@@ -1,6 +1,7 @@
 import type { UnifiedSong } from '../../types';
-import type { OnlineMusicProvider, ProviderAudioSource, ProviderCollection } from '../../types/onlineMusic';
+import type { OnlineMusicProvider, PersonalFmModeCatalog, ProviderAudioSource, ProviderCollection } from '../../types/onlineMusic';
 import { OnlineProviderError } from '../../types/onlineMusic';
+import { getQishuiFeedPreference } from '../../stores/useQishuiFeedModeStore';
 import { createProviderSongMetadata } from '../../utils/songMetadata';
 import { parseQishuiLyrics } from '../../utils/lyrics/qishuiLyrics';
 import { getQishuiTransportAvailability, requestQishui, throwQishuiDataError } from './qishuiTransport';
@@ -207,9 +208,12 @@ export const qishuiProvider: OnlineMusicProvider = {
         },
         async getPersonalFm() {
             // 每次调用推进 FM 会话的一批；播放队列剩两首时会自动用新批次续歌。
+            // 模式选择存在独立 store 里，队列补歌/首页预览不需要把参数一路传下来。
             try {
+                const preference = getQishuiFeedPreference();
                 const data = await requestQishui<any>('feed.recommend', {
                     limit: QISHUI_FEED_PAGE_SIZE, flow: 'fm', advance: true,
+                    ...(preference ? { feedPreference: preference } : {}),
                 });
                 return Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
             } catch (error) {
@@ -220,13 +224,26 @@ export const qishuiProvider: OnlineMusicProvider = {
         async getPersonalFmPreview() {
             // 首页封面用的只读 peek：不消费 FM 的下一批，避免进一次电台页就少一批歌。
             try {
+                const preference = getQishuiFeedPreference();
                 const data = await requestQishui<any>('feed.recommend', {
                     limit: 1, flow: 'fm', advance: false,
+                    ...(preference ? { feedPreference: preference } : {}),
                 });
                 return Array.isArray(data?.songs) ? data.songs.map(normalizeQishuiSong) : [];
             } catch {
                 return [];
             }
+        },
+        async getPersonalFmModes(): Promise<PersonalFmModeCatalog> {
+            const data = await requestQishui<PersonalFmModeCatalog>('feed.mode', {});
+            return {
+                provider: 'qishui',
+                configured: data?.configured !== false,
+                modes: Array.isArray(data?.modes) ? data.modes : [],
+                scenes: Array.isArray(data?.scenes) ? data.scenes : [],
+                error: data?.error,
+                message: data?.message,
+            };
         },
     },
 };

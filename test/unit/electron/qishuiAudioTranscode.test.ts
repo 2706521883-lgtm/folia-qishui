@@ -101,6 +101,8 @@ describe('hasEncoder', () => {
 });
 
 describe('resolveMp3Ffmpeg', () => {
+    // The resolver probes the platform's PATH command name; keep the stub and expectation in sync.
+    const pathFfmpeg = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
     const execFileStub = (table: Record<string, string | null>) => (
         command: string,
         _args: string[],
@@ -115,7 +117,7 @@ describe('resolveMp3Ffmpeg', () => {
     it('QISHUI_SERVER_FFMPEG 指的那台能用就用它', async () => {
         const resolved = await resolveMp3Ffmpeg({
             env: { QISHUI_SERVER_FFMPEG: 'D:/tools/ffmpeg.exe' },
-            execFileImpl: execFileStub({ 'D:/tools/ffmpeg.exe': ENCODERS_OUTPUT, 'ffmpeg.exe': ENCODERS_OUTPUT }),
+            execFileImpl: execFileStub({ 'D:/tools/ffmpeg.exe': ENCODERS_OUTPUT, [pathFfmpeg]: ENCODERS_OUTPUT }),
         });
         expect(resolved).toEqual({ path: 'D:/tools/ffmpeg.exe', source: 'QISHUI_SERVER_FFMPEG' });
     });
@@ -125,15 +127,15 @@ describe('resolveMp3Ffmpeg', () => {
         const flacOnly = ' A....D flac  FLAC';
         const resolved = await resolveMp3Ffmpeg({
             env: { QISHUI_SERVER_FFMPEG: 'D:/bundled/ffmpeg.exe' },
-            execFileImpl: execFileStub({ 'D:/bundled/ffmpeg.exe': flacOnly, 'ffmpeg.exe': ENCODERS_OUTPUT }),
+            execFileImpl: execFileStub({ 'D:/bundled/ffmpeg.exe': flacOnly, [pathFfmpeg]: ENCODERS_OUTPUT }),
         });
-        expect(resolved).toEqual({ path: 'ffmpeg.exe', source: 'PATH' });
+        expect(resolved).toEqual({ path: pathFfmpeg, source: 'PATH' });
     });
 
     it('都编不了就老实返回 null（调用方原样回退 AAC）', async () => {
         const resolved = await resolveMp3Ffmpeg({
             env: {},
-            execFileImpl: execFileStub({ 'ffmpeg.exe': ' A....D flac  FLAC' }),
+            execFileImpl: execFileStub({ [pathFfmpeg]: ' A....D flac  FLAC' }),
         });
         expect(resolved).toBeNull();
     });

@@ -122,6 +122,7 @@ const QISHUI_RESULT_FAILURES = {
   'comment.create': result => !!(result && (result.ok === false || result.success === false)),
   // 空列表且没有 error 是合法末页；只有「带 error 且一首歌都没有」才算失败。
   'feed.recommend': result => !result || (!!result.error && !(Array.isArray(result.songs) && result.songs.length)),
+  'feed.mode': result => !result || (!!result.error && !(Array.isArray(result.modes) && result.modes.length)),
 };
 
 const QISHUI_OPERATIONS = Object.freeze([
@@ -136,6 +137,7 @@ const QISHUI_OPERATIONS = Object.freeze([
   'lyric',
   'song.url',
   'feed',
+  'feed.mode',
   'feed.recommend',
   'user.playlists',
   'playlist.tracks',
@@ -580,6 +582,9 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
 
     feed: params => qishuiApi().handleQishuiFeed(qishuiClampInt((params || {}).limit, 8, 4, 12), readQishuiCookie()),
 
+    // The "listening mode" catalogue (scene_mode_id + labels/icons) from the signed PC endpoint.
+    'feed.mode': () => qishuiApi().handleQishuiFeedModes(readQishuiCookie()),
+
     // 推荐流分页：advance 默认 false，只有 Personal FM 显式传 true 才推进会话；
     // 首页封面/推荐卡预览永远走 offset 切片，不会消耗 FM 的下一批。
     'feed.recommend': params => {
@@ -591,6 +596,7 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
         ...(p.offset == null ? {} : { offset: qishuiClampInt(p.offset, 0, 0, 1000) }),
         flow: /^[a-z0-9_-]{1,24}$/.test(flow) ? flow : 'playlist',
         advance: p.advance === true,
+        ...(p.feedPreference && typeof p.feedPreference === 'object' ? { feedPreference: p.feedPreference } : {}),
       }, readQishuiCookie());
     },
 
