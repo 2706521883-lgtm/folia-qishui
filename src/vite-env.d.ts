@@ -355,6 +355,8 @@ declare global {
     height: number;
     parkX: number;
     parkY: number;
+    /** Decimal HWND of the parked playback window; empty until the first successful park. */
+    hwnd: string;
     muted: boolean;
     audioPropertyCount: number;
     mutedPropertyCount: number;
@@ -1071,6 +1073,10 @@ declare global {
       stopWallpaperEngine: () => Promise<{ ok: boolean }>;
       getWallpaperEngineStatus: () => Promise<ElectronWallpaperEngineRuntimeStatus>;
       getWallpaperEngineCaptureSource: () => Promise<ElectronWindowCaptureSource | null>;
+      /** Reports that the first capture stream is live; the main process hides the taskbar entry. */
+      reportWallpaperEngineCaptureLive?: () => void;
+      /** Clears the taskbar-hiding style before the renderer opens a fresh capture stream. */
+      releaseWallpaperEngineCapture?: () => Promise<unknown>;
       /** Appends a renderer-side capture diagnostic to the main-process log file. */
       reportWallpaperEngineLog?: (message: string, event?: string) => void;
       onWallpaperEngineChanged: (

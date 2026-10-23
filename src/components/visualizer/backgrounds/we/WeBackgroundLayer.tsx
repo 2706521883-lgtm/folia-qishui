@@ -117,7 +117,7 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                 endedTrack = stream.getVideoTracks()[0] || null;
                 endedHandler = () => {
                     if (disposed) return;
-                    api.reportWallpaperEngineLog?.('Capture stream ended; re-acquiring');
+                    api.reportWallpaperEngineLog?.('Capture stream ended; re-acquiring', 'capture-ended');
                     setCaptureEpoch(epoch => epoch + 1);
                 };
                 endedTrack?.addEventListener('ended', endedHandler);
@@ -130,6 +130,9 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                     if (!disposed) {
                         retryCountRef.current = 0;
                         setStreamReady(true);
+                        // Only now is it safe for the main process to hide the playback window from
+                        // the taskbar: those style bits make WGC refuse a new capture item.
+                        api.reportWallpaperEngineCaptureLive?.();
                     }
                 }
                 return;

@@ -19,6 +19,7 @@ const {
   buildLocationTitle,
   buildOpenWallpaperArgs,
   buildVerbatimControlInvocation,
+  buildWallpaperEngineCaptureSource,
   clampPlaybackSize,
   quoteWindowsArgument,
   sanitizeMuteProperties,
@@ -33,6 +34,7 @@ const {
   buildApplyPropertiesArgs: (input: { locationTitle: string; properties: unknown }) => string[];
   buildLocationTitle: (seed: unknown) => string;
   buildOpenWallpaperArgs: (input: Record<string, unknown>) => string[];
+  buildWallpaperEngineCaptureSource: (input?: { hwnd?: unknown; title?: unknown }) => { id: string; name: string } | null;
   buildVerbatimControlInvocation: (executable: string, args: string[]) => {
     file: string;
     args: string[];
@@ -125,12 +127,31 @@ describe('wallpaperEngineRuntime', () => {
             });
 
             expect(args.slice(0, 2)).toEqual(['-control', 'openWallpaper']);
-            expect(args).toContain('-borderless');
+            // The engine must create a framed window: WGC refuses a window created borderless.
+            // The window manager strips the frame right after creation instead.
+            expect(args).not.toContain('-borderless');
             expect(args[args.indexOf('-playInWindow') + 1]).toBe('Folia Wallpaper abc123def456');
             expect(args[args.indexOf('-width') + 1]).toBe('1920');
             expect(args[args.indexOf('-height') + 1]).toBe('1080');
             expect(args[args.indexOf('-x') + 1]).toBe('-1919');
             expect(args[args.indexOf('-y') + 1]).toBe('0');
+        });
+    });
+
+    describe('buildWallpaperEngineCaptureSource', () => {
+        it('addresses the parked window by handle, without desktopCapturer enumeration', () => {
+            expect(buildWallpaperEngineCaptureSource({ hwnd: '656038', title: 'Folia Wallpaper abc' }))
+                .toEqual({ id: 'window:656038:0', name: 'Folia Wallpaper abc' });
+            expect(buildWallpaperEngineCaptureSource({ hwnd: 1900906, title: 't' }))
+                .toEqual({ id: 'window:1900906:0', name: 't' });
+        });
+
+        it('returns null until a real handle is known, so the caller can enumerate by title', () => {
+            expect(buildWallpaperEngineCaptureSource({ hwnd: '', title: 't' })).toBeNull();
+            expect(buildWallpaperEngineCaptureSource({ hwnd: 0, title: 't' })).toBeNull();
+            expect(buildWallpaperEngineCaptureSource({ hwnd: -1, title: 't' })).toBeNull();
+            expect(buildWallpaperEngineCaptureSource({ hwnd: 'abc', title: 't' })).toBeNull();
+            expect(buildWallpaperEngineCaptureSource()).toBeNull();
         });
     });
 

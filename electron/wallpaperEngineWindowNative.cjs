@@ -1,20 +1,18 @@
 // electron/wallpaperEngineWindowNative.cjs
 // Native (koffi + user32.dll) manager for the Wallpaper Engine "play in window" surface.
 //
-// The engine creates that window as an ordinary top-level window: it gets a taskbar button, it
-// appears in Alt+Tab, and clicking it activates a full-size window that is only parked a few pixels
-// inside the primary screen's bottom-right corner. Moving it off-screen is not enough, so this
-// module also:
+// Windows Graphics Capture (the backend behind Chromium's window capture) refuses a window that
+// was *created* borderless, and it also refuses a window carrying WS_EX_TOOLWINDOW or
+// WS_EX_NOACTIVATE when the capture item is created. That leaves a narrow window shape to work
+// with: let the engine create an ordinary framed window (DWM builds the frame), strip the frame
+// afterwards, and only add the taskbar-hiding bits once the capture stream is already live.
 //
-//   1. makes it a tool window (WS_EX_TOOLWINDOW) and non-activatable (WS_EX_NOACTIVATE),
-//   2. removes the taskbar button that already exists by hiding/showing it once,
-//   3. keeps it just inside the primary screen's bottom-right corner and at the bottom of the Z order,
-//   4. exposes a cheap monitor() the runtime calls on a timer, so an engine restart, a display
-//      change or a window move is repaired before the user can see it.
-//
-// Koffi is already a production dependency (used by the macOS wallpaper controller), and its
-// prebuilt win32-x64 binary is covered by electron-builder's asarUnpack rule. If koffi or user32
-// cannot be loaded, the caller falls back to the PowerShell helper in wallpaperEngineWindow.cjs.
+//   1. parkWindow() strips the frame (0x94000000) and keeps the window's ex-style clear,
+//   2. markCaptureLive() re-adds the tool-window / no-activate bits and does one hide/show cycle
+//      to remove the taskbar button; an existing capture item survives this (verified on Windows
+//      10 22H2 + RTX 2060),
+//   3. markCaptureStopped() clears those bits again so the next getUserMedia can start,
+//   4. monitor() keeps the window parked and re-applies the phase-appropriate style every tick.
 //
 // The window is still a real Wallpaper Engine window: this module never reparents it (SetParent
 // tears it out of the engine's render loop) and never touches the wallpaper project on disk.
@@ -26,7 +24,11 @@ const WS_EX_TOOLWINDOW = 0x00000080;
 const WS_EX_APPWINDOW = 0x00040000;
 const WS_EX_NOACTIVATE = 0x08000000;
 
+const GWL_STYLE = -16;
 const GWL_EXSTYLE = -20;
+// WS_POPUP | WS_VISIBLE | WS_CLIPSIBLINGS: the shape Wallpaper Engine itself uses for
+// -borderless. Stripping to this exact value is what the capture path was verified against.
+const FRAMELESS_STYLE = 0x94000000;
 const SWP_NOSIZE = 0x0001;
 const SWP_NOMOVE = 0x0002;
 const SWP_NOZORDER = 0x0004;
@@ -62,16 +64,29 @@ const PARK_TOLERANCE_PX = 2;
 
 // Pure style/geometry helpers are exported so the tests can lock the contract without loading
 // user32 or opening a real window.
-const computeManagedExStyle = (exStyle) => (
+//
+// Frameless phase: the capture item is created in this shape, so none of the capture-hostile bits
+// may be present.
+const computeFramelessExStyle = (exStyle) => (
+  (Number(exStyle) & ~(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_APPWINDOW)) >>> 0
+);
+
+// Hidden phase: only applied after the capture stream is live. The hide/show cycle is what makes
+// the shell drop a taskbar button it already registered.
+const computeHiddenExStyle = (exStyle) => (
   ((Number(exStyle) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE) & ~WS_EX_APPWINDOW) >>> 0
 );
 
-const hasManagedExStyle = (exStyle) => {
+const hasHiddenExStyle = (exStyle) => {
   const value = Number(exStyle) >>> 0;
   return (value & WS_EX_TOOLWINDOW) !== 0
     && (value & WS_EX_NOACTIVATE) !== 0
     && (value & WS_EX_APPWINDOW) === 0;
 };
+
+// Compatibility aliases for callers/tests that still use the pre-0.6.7 names.
+const computeManagedExStyle = computeHiddenExStyle;
+const hasManagedExStyle = hasHiddenExStyle;
 
 // Default target: just inside the virtual desktop's bottom-right corner. The window body extends
 // outside the union of all monitors, so it cannot show a strip on a neighbouring display.
@@ -189,6 +204,7 @@ const loadNativeApi = () => {
   };
 
   const getExStyle = (hwnd) => Number(GetWindowLongPtrW(hwnd, GWL_EXSTYLE)) >>> 0;
+  const getStyle = (hwnd) => Number(GetWindowLongPtrW(hwnd, GWL_STYLE)) >>> 0;
 
   const getRect = (hwnd) => {
     const rect = {};
@@ -289,24 +305,27 @@ const loadNativeApi = () => {
     return { moved: true, before, after: getRect(hwnd) };
   };
 
-  // Setting WS_EX_TOOLWINDOW on an already-created window does not necessarily remove the taskbar
-  // button that the shell has already registered. A single hide/show cycle (before the renderer
-  // starts capturing) makes the shell rebuild the button set; the window is then put back with
-  // SW_SHOWNOACTIVATE so it never steals focus.
-  const applyManagedStyle = (hwnd, { hideShow = true } = {}) => {
-    const previous = getExStyle(hwnd);
-    const next = computeManagedExStyle(previous);
-    if (next === previous && hasManagedExStyle(previous)) {
-      return { changed: false, previous, next };
+  // Strips the frame DWM created when the window was opened. The engine now creates the popout
+  // with a frame (the runtime stopped passing -borderless): that is what makes WGC accept the
+  // window. This must run *after* creation; a window created borderless can never be repaired.
+  const applyFramelessStyle = (hwnd) => {
+    const previousStyle = getStyle(hwnd);
+    const previousEx = getExStyle(hwnd);
+    const nextEx = computeFramelessExStyle(previousEx);
+    const styleChanged = previousStyle !== FRAMELESS_STYLE;
+    const exChanged = previousEx !== nextEx;
+    if (!styleChanged && !exChanged) {
+      return {
+        phase: 'frameless',
+        changed: false,
+        previousStyle,
+        previousEx,
+        style: previousStyle,
+        exStyle: previousEx,
+      };
     }
-    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
-    // The hide/show cycle is what makes the shell drop an already-registered taskbar button. It
-    // must only run for a newly created window or during the initial park: doing it while the
-    // renderer is capturing the same window can make getUserMedia fail with NotReadableError.
-    if (hideShow) {
-      ShowWindow(hwnd, SW_HIDE);
-      ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-    }
+    if (styleChanged) SetWindowLongPtrW(hwnd, GWL_STYLE, FRAMELESS_STYLE);
+    if (exChanged) SetWindowLongPtrW(hwnd, GWL_EXSTYLE, nextEx);
     SetWindowPos(
       hwnd,
       null,
@@ -316,7 +335,83 @@ const loadNativeApi = () => {
       0,
       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
     );
-    return { changed: true, previous, next: getExStyle(hwnd), hideShow };
+    return {
+      phase: 'frameless',
+      changed: true,
+      styleChanged,
+      exChanged,
+      previousStyle,
+      previousEx,
+      style: getStyle(hwnd),
+      exStyle: getExStyle(hwnd),
+    };
+  };
+
+  // Re-adds the taskbar-hiding bits once a capture stream is already live. Applying them earlier
+  // makes WGC refuse to create the capture item (E_INVALIDARG -> NotReadableError). The hide/show
+  // cycle is what removes a button the shell registered at creation; a live capture item survives
+  // it (verified against a real engine window).
+  const applyHiddenStyle = (hwnd, { hideShow = true } = {}) => {
+    const previousStyle = getStyle(hwnd);
+    const previousEx = getExStyle(hwnd);
+    const nextEx = computeHiddenExStyle(previousEx);
+    const styleChanged = previousStyle !== FRAMELESS_STYLE;
+    const exChanged = previousEx !== nextEx;
+    if (styleChanged) SetWindowLongPtrW(hwnd, GWL_STYLE, FRAMELESS_STYLE);
+    if (exChanged) SetWindowLongPtrW(hwnd, GWL_EXSTYLE, nextEx);
+    if (exChanged && hideShow) {
+      ShowWindow(hwnd, SW_HIDE);
+      ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
+    if (styleChanged || exChanged) {
+      SetWindowPos(
+        hwnd,
+        null,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+      );
+    }
+    return {
+      phase: 'hidden',
+      changed: styleChanged || exChanged,
+      styleChanged,
+      exChanged,
+      hideShow: exChanged && hideShow,
+      previousStyle,
+      previousEx,
+      style: getStyle(hwnd),
+      exStyle: getExStyle(hwnd),
+    };
+  };
+
+  // Removes the capture-hostile bits again, for a fresh getUserMedia (frame-rate change, remount
+  // after the release grace, recovery after a failed capture).
+  const clearHiddenStyle = (hwnd) => {
+    const previousEx = getExStyle(hwnd);
+    const nextEx = computeFramelessExStyle(previousEx);
+    if (previousEx === nextEx) {
+      return { phase: 'frameless', changed: false, previousEx, style: getStyle(hwnd), exStyle: previousEx };
+    }
+    SetWindowLongPtrW(hwnd, GWL_EXSTYLE, nextEx);
+    SetWindowPos(
+      hwnd,
+      null,
+      0,
+      0,
+      0,
+      0,
+      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+    );
+    return {
+      phase: 'frameless',
+      changed: true,
+      previousEx,
+      style: getStyle(hwnd),
+      exStyle: getExStyle(hwnd),
+    };
   };
 
   nativeApi = {
@@ -330,6 +425,7 @@ const loadNativeApi = () => {
     processBaseName,
     processNameForPid,
     isEngineProcess,
+    getStyle,
     getExStyle,
     getRect,
     currentParkTarget,
@@ -342,7 +438,9 @@ const loadNativeApi = () => {
     findExactTitle,
     pushToBottom,
     moveToParkTarget,
-    applyManagedStyle,
+    applyFramelessStyle,
+    applyHiddenStyle,
+    clearHiddenStyle,
   };
   return nativeApi;
 };
@@ -375,6 +473,9 @@ function createWallpaperEngineNativeWindow(options = {}) {
   // re-created the window, so the hide/show cycle is needed again; the same handle only needs the
   // style bits re-applied, which must not interrupt a live capture.
   let lastManagedHwnd = '';
+  // Whether the capture stream is live and the taskbar-hiding bits are applied. parkWindow() and
+  // a re-created window reset it; markCaptureLive()/markCaptureStopped() toggle it.
+  let captureHidden = false;
 
   const verifyEngineWindow = (entry) => {
     if (!entry) return { ok: false, reason: 'not-found' };
@@ -397,7 +498,12 @@ function createWallpaperEngineNativeWindow(options = {}) {
       title: entry.title,
       pid: entry.pid,
       processName: verification.processName || api.processNameForPid(entry.pid),
+      // `style` historically carried the extended style; keep it for existing log consumers and
+      // expose both values under explicit names.
       style: entry.style,
+      exStyle: entry.style,
+      windowStyle: api.getStyle(entry.hwnd),
+      captureHidden,
       rect: entry.rect,
       visible: entry.visible,
       engineProcess: verification.ok,
@@ -435,7 +541,10 @@ function createWallpaperEngineNativeWindow(options = {}) {
     }
     const entry = found.entry;
     const target = api.currentParkTarget();
-    const style = api.applyManagedStyle(entry.hwnd);
+    // The engine created this window with a frame; strip it now. The capture item is created
+    // afterwards, in this frameless/no-tool-style shape.
+    captureHidden = false;
+    const style = api.applyFramelessStyle(entry.hwnd);
     lastManagedHwnd = String(entry.hwnd);
     const measured = api.getRect(entry.hwnd);
     lastParkedSize = {
@@ -449,7 +558,9 @@ function createWallpaperEngineNativeWindow(options = {}) {
       title: entry.title,
       hwnd: String(entry.hwnd),
       processName: api.processNameForPid(entry.pid),
-      styleChanged: style.changed,
+      frameStripped: style.changed,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
       moved: parked.moved,
       target,
       before: parked.before,
@@ -460,7 +571,11 @@ function createWallpaperEngineNativeWindow(options = {}) {
       hwnd: String(entry.hwnd),
       processName: api.processNameForPid(entry.pid),
       moved: parked.moved,
+      frameStripped: style.changed,
+      // Kept for the existing status/log consumers; the frame is what changed after 0.6.7.
       styleApplied: style.changed,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
       target,
       before: parked.before,
       after,
@@ -479,6 +594,9 @@ function createWallpaperEngineNativeWindow(options = {}) {
     }
 
     const sameWindow = lastManagedHwnd === String(entry.hwnd);
+    // A re-created window is a new capture source: its stream is gone, so the renderer has to
+    // re-acquire and the capture-hostile bits must be gone before it does.
+    if (!sameWindow) captureHidden = false;
     let restoredVisible = false;
     if (api.IsIconic(entry.hwnd)) {
       // A minimized window is still IsWindowVisible=true, but Chromium cannot capture it.
@@ -490,7 +608,11 @@ function createWallpaperEngineNativeWindow(options = {}) {
     }
 
     const target = api.currentParkTarget();
-    const style = api.applyManagedStyle(entry.hwnd, { hideShow: !sameWindow });
+    // During a live capture only re-assert the bits; never run the hide/show cycle here, because
+    // hiding the captured window can interrupt the stream.
+    const style = captureHidden
+      ? api.applyHiddenStyle(entry.hwnd, { hideShow: false })
+      : api.applyFramelessStyle(entry.hwnd);
     lastManagedHwnd = String(entry.hwnd);
     const parked = api.moveToParkTarget(entry.hwnd, target, lastParkedSize);
     const foreground = String(api.GetForegroundWindow()) === String(entry.hwnd);
@@ -501,12 +623,69 @@ function createWallpaperEngineNativeWindow(options = {}) {
       hwnd: String(entry.hwnd),
       processName: verification.processName,
       styleApplied: style.changed,
+      captureHidden,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
       restoredVisible,
       moved: parked.moved,
       foreground,
       target,
       before: parked.before,
       after,
+    };
+  };
+
+  // Called after the renderer reports its first live capture. The capture item already exists, so
+  // the tool-window bits and the hide/show cycle no longer block WGC; they remove the taskbar
+  // button that the shell registered when the framed window was created.
+  const markCaptureLive = ({ title } = {}) => {
+    const entry = api.findExactTitle(String(title || ''));
+    if (!entry) return { ok: false, reason: 'not-found' };
+    const verification = verifyEngineWindow(entry);
+    if (!verification.ok) return { ok: false, reason: verification.reason };
+    const style = api.applyHiddenStyle(entry.hwnd);
+    captureHidden = true;
+    lastManagedHwnd = String(entry.hwnd);
+    log('[wallpaper-engine] capture live; taskbar hidden', JSON.stringify({
+      hwnd: String(entry.hwnd),
+      styleChanged: style.changed,
+      hideShow: style.hideShow,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
+    }));
+    return {
+      ok: true,
+      hwnd: String(entry.hwnd),
+      processName: verification.processName,
+      styleApplied: style.changed,
+      hideShow: style.hideShow,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
+    };
+  };
+
+  // Called before a fresh getUserMedia or when the stream ended. The bits must be gone before the
+  // next capture item is created, otherwise WGC answers with NotReadableError again.
+  const markCaptureStopped = ({ title } = {}) => {
+    captureHidden = false;
+    const entry = api.findExactTitle(String(title || ''));
+    if (!entry) return { ok: false, reason: 'not-found' };
+    const verification = verifyEngineWindow(entry);
+    if (!verification.ok) return { ok: false, reason: verification.reason };
+    const style = api.clearHiddenStyle(entry.hwnd);
+    log('[wallpaper-engine] capture stopped; taskbar style cleared', JSON.stringify({
+      hwnd: String(entry.hwnd),
+      styleChanged: style.changed,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
+    }));
+    return {
+      ok: true,
+      hwnd: String(entry.hwnd),
+      processName: verification.processName,
+      styleApplied: style.changed,
+      windowStyle: style.style,
+      exStyle: style.exStyle,
     };
   };
 
@@ -533,7 +712,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
     if (!entry) return { ok: false, reason: 'not-found' };
     const verification = verifyEngineWindow(entry);
     if (!verification.ok) return { ok: false, reason: verification.reason };
-    api.applyManagedStyle(entry.hwnd);
+    captureHidden = false;
+    api.applyFramelessStyle(entry.hwnd);
     api.moveToParkTarget(entry.hwnd, api.currentParkTarget());
     api.ShowWindow(entry.hwnd, SW_HIDE);
     return { ok: true, hwnd: String(entry.hwnd), processName: verification.processName };
@@ -544,7 +724,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
     if (!entry) return { ok: false, reason: 'not-found' };
     const verification = verifyEngineWindow(entry);
     if (!verification.ok) return { ok: false, reason: verification.reason };
-    api.applyManagedStyle(entry.hwnd);
+    captureHidden = false;
+    api.applyFramelessStyle(entry.hwnd);
     const target = api.currentParkTarget();
     api.moveToParkTarget(entry.hwnd, target, lastParkedSize);
     api.pushToBottom(entry.hwnd);
@@ -573,6 +754,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
     backend: 'native',
     parkWindow,
     monitorWindow,
+    markCaptureLive,
+    markCaptureStopped,
     setParkMode,
     listSessionWindows,
     hideWindow,
@@ -585,7 +768,9 @@ function createWallpaperEngineNativeWindow(options = {}) {
 
 module.exports = {
   ENGINE_MAIN_WINDOW_TITLE,
+  FRAMELESS_STYLE,
   GWL_EXSTYLE,
+  GWL_STYLE,
   HWND_BOTTOM,
   PARK_TOLERANCE_PX,
   PARK_VISIBLE_INSET_PX,
@@ -596,8 +781,11 @@ module.exports = {
   WS_EX_APPWINDOW,
   WS_EX_NOACTIVATE,
   WS_EX_TOOLWINDOW,
+  computeFramelessExStyle,
+  computeHiddenExStyle,
   computeManagedExStyle,
   createWallpaperEngineNativeWindow,
+  hasHiddenExStyle,
   hasManagedExStyle,
   isRectAtTarget,
   rectHeight,

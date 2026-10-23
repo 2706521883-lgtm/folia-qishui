@@ -94,6 +94,8 @@ contextBridge.exposeInMainWorld('electron', {
     stopWallpaperEngine: () => ipcRenderer.invoke('wallpaper-engine-stop'),
     getWallpaperEngineStatus: () => ipcRenderer.invoke('wallpaper-engine-status'),
     getWallpaperEngineCaptureSource: () => ipcRenderer.invoke('wallpaper-engine-get-capture-source'),
+    reportWallpaperEngineCaptureLive: () => ipcRenderer.send('wallpaper-engine-capture-live'),
+    releaseWallpaperEngineCapture: () => ipcRenderer.invoke('wallpaper-engine-capture-release'),
     reportWallpaperEngineLog: (message, event) => ipcRenderer.send('wallpaper-engine-log', { message, event }),
     onWallpaperEngineChanged: (callback) => {
         const listener = (_event, status) => callback(status);

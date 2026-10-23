@@ -7,13 +7,18 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const {
+  FRAMELESS_STYLE,
+  GWL_STYLE,
   PARK_TOLERANCE_PX,
   PARK_VISIBLE_INSET_PX,
   WALLPAPER_ENGINE_PROCESS_NAMES,
   WS_EX_APPWINDOW,
   WS_EX_NOACTIVATE,
   WS_EX_TOOLWINDOW,
+  computeFramelessExStyle,
+  computeHiddenExStyle,
   computeManagedExStyle,
+  hasHiddenExStyle,
   hasManagedExStyle,
   isRectAtTarget,
   primaryScreenCorner,
@@ -21,13 +26,18 @@ const {
   rectWidth,
   virtualDesktopCorner,
 } = require('../../../electron/wallpaperEngineWindowNative.cjs') as {
+  FRAMELESS_STYLE: number;
+  GWL_STYLE: number;
   PARK_TOLERANCE_PX: number;
   PARK_VISIBLE_INSET_PX: number;
   WALLPAPER_ENGINE_PROCESS_NAMES: string[];
   WS_EX_APPWINDOW: number;
   WS_EX_NOACTIVATE: number;
   WS_EX_TOOLWINDOW: number;
+  computeFramelessExStyle: (exStyle: unknown) => number;
+  computeHiddenExStyle: (exStyle: unknown) => number;
   computeManagedExStyle: (exStyle: unknown) => number;
+  hasHiddenExStyle: (exStyle: unknown) => boolean;
   hasManagedExStyle: (exStyle: unknown) => boolean;
   isRectAtTarget: (rect: { left: number; top: number } | null, target: { x: number; y: number } | null, tolerance?: number) => boolean;
   primaryScreenCorner: (bounds: { width: number; height: number }) => { x: number; y: number };
@@ -43,34 +53,52 @@ const {
 };
 
 describe('wallpaperEngineWindowNative', () => {
-  describe('computeManagedExStyle', () => {
-    it('adds the tool-window and no-activate bits and clears app-window', () => {
-      expect(computeManagedExStyle(0)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
-      expect(computeManagedExStyle(WS_EX_APPWINDOW)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
-      expect(computeManagedExStyle(WS_EX_TOOLWINDOW)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+  describe('capture style phases', () => {
+    it('keeps the capture-time shape free of the bits WGC rejects', () => {
+      expect(GWL_STYLE).toBe(-16);
+      expect(FRAMELESS_STYLE).toBe(0x94000000);
+      expect(computeFramelessExStyle(0)).toBe(0);
+      expect(computeFramelessExStyle(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_APPWINDOW)).toBe(0);
+      // WS_EX_WINDOWEDGE (0x100) was present on the framed window and survives the strip.
+      expect(computeFramelessExStyle(0x00000100)).toBe(0x00000100);
     });
 
-    it('is idempotent and preserves unrelated style bits', () => {
+    it('adds the taskbar-hiding bits only for the post-capture phase', () => {
+      expect(computeHiddenExStyle(0)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+      expect(computeHiddenExStyle(WS_EX_APPWINDOW)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+      expect(computeHiddenExStyle(WS_EX_TOOLWINDOW)).toBe(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+      expect(computeHiddenExStyle(0x00000100)).toBe(0x08000080 | 0x00000100);
+    });
+
+    it('is idempotent and preserves unrelated style bits in both phases', () => {
       const unrelated = 0x00010000; // WS_EX_CONTROLPARENT
-      const once = computeManagedExStyle(unrelated);
-      const twice = computeManagedExStyle(once);
-      expect(twice).toBe(once);
-      expect(once & unrelated).toBe(unrelated);
+      const hidden = computeHiddenExStyle(unrelated);
+      expect(computeHiddenExStyle(hidden)).toBe(hidden);
+      expect(hidden & unrelated).toBe(unrelated);
+
+      const frameless = computeFramelessExStyle(hidden);
+      expect(frameless & unrelated).toBe(unrelated);
+      expect(computeFramelessExStyle(frameless)).toBe(frameless);
     });
 
-    it('never lets the app-window bit survive', () => {
-      const style = computeManagedExStyle(WS_EX_APPWINDOW | WS_EX_TOOLWINDOW | 0x00010000);
-      expect(style & WS_EX_APPWINDOW).toBe(0);
+    it('never lets the app-window bit survive either phase', () => {
+      expect(computeFramelessExStyle(WS_EX_APPWINDOW | WS_EX_TOOLWINDOW)).toBe(0);
+      expect(computeHiddenExStyle(WS_EX_APPWINDOW | WS_EX_TOOLWINDOW) & WS_EX_APPWINDOW).toBe(0);
+    });
+
+    it('keeps the pre-0.6.7 export names as aliases of the hidden phase', () => {
+      expect(computeManagedExStyle).toBe(computeHiddenExStyle);
+      expect(hasManagedExStyle).toBe(hasHiddenExStyle);
     });
   });
 
-  describe('hasManagedExStyle', () => {
-    it('accepts only the fully managed combination', () => {
-      expect(hasManagedExStyle(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)).toBe(true);
-      expect(hasManagedExStyle(WS_EX_TOOLWINDOW)).toBe(false);
-      expect(hasManagedExStyle(WS_EX_NOACTIVATE)).toBe(false);
-      expect(hasManagedExStyle(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_APPWINDOW)).toBe(false);
-      expect(hasManagedExStyle(0)).toBe(false);
+  describe('hasHiddenExStyle', () => {
+    it('accepts only the fully hidden combination', () => {
+      expect(hasHiddenExStyle(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)).toBe(true);
+      expect(hasHiddenExStyle(WS_EX_TOOLWINDOW)).toBe(false);
+      expect(hasHiddenExStyle(WS_EX_NOACTIVATE)).toBe(false);
+      expect(hasHiddenExStyle(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_APPWINDOW)).toBe(false);
+      expect(hasHiddenExStyle(0)).toBe(false);
     });
   });
 
