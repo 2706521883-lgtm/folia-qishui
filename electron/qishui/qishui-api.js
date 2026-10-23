@@ -2101,9 +2101,12 @@ function extractQishuiPlaylistCards(payload) {
       const id = qishuiPlaylistIdFromItem(item);
       const name = qishuiPlaylistNameFromItem(item);
       const count = qishuiPlaylistTrackCountFromItem(item);
+      const rawPlaylistType = Number(item.type || item.card_type || item.resource_type || node.type || 0) || 0;
       const type = normalizeText(item.type || item.card_type || item.resource_type || node.type || '');
       if (!id || !name) return;
-      if (!count && !qishuiPlaylistLikeName(name) && !/playlist|collection|fav|songlist|歌单/i.test(type + ' ' + name)) return;
+      // A freshly-created empty playlist has count 0 and a name that may not contain "歌单";
+      // its numeric type is the only thing that identifies it.
+      if (!count && !qishuiPlaylistLikeName(name) && !rawPlaylistType && !/playlist|collection|fav|songlist|歌单/i.test(type + ' ' + name)) return;
       const key = id + '|' + name;
       if (seen.has(key)) return;
       seen.add(key);
@@ -2121,6 +2124,9 @@ function extractQishuiPlaylistCards(payload) {
         virtual: false,
         webSession: true,
         isLiked: qishuiPlaylistLikeName(name),
+        // Official PC sidebar types: 1 = liked, 4 = Douyin favourites, 2/3/11 = self-created.
+        // Keep the number so the player sidebar can group the same way the official client does.
+        ...(rawPlaylistType ? { qishuiPlaylistType: rawPlaylistType } : {}),
         playbackMode: 'recommend-match',
       });
     });
@@ -3928,6 +3934,39 @@ async function handleQishuiPlaylistAddSong(playlistId, track, cookieText) {
   };
 }
 
+async function handleQishuiCreatePlaylist(name, opts, cookieText) {
+  const playlistName = normalizeText(name);
+  if (!playlistName) {
+    const err = new Error('Missing Qishui playlist name');
+    err.code = 'QISHUI_PLAYLIST_NAME_REQUIRED';
+    throw err;
+  }
+  const payload = { name: playlistName };
+  if (opts && opts.isPrivate === true) payload.is_private = true;
+  const json = await qishuiPcPostJson('/luna/pc/me/playlist', payload, cookieText, {
+    errorCode: 'QISHUI_PLAYLIST_CREATE_FAILED',
+  });
+  invalidateQishuiLibraryCaches();
+  const cards = extractQishuiPlaylistCards(json);
+  const raw = (json && (json.playlist || (json.data && json.data.playlist))) || null;
+  const id = (cards[0] && cards[0].id) || qishuiPlaylistIdFromItem(raw);
+  const playlist = id ? Object.assign({}, cards[0] || {}, {
+    provider: 'qishui',
+    source: 'qishui',
+    type: 'playlist',
+    id,
+    name: (cards[0] && cards[0].name) || qishuiPlaylistNameFromItem(raw) || playlistName,
+    cover: (cards[0] && cards[0].cover) || qishuiPlaylistCoverFromItem(raw),
+    trackCount: (cards[0] && cards[0].trackCount) || 0,
+    subscribed: false,
+    owned: true,
+    virtual: false,
+    webSession: true,
+    playbackMode: 'recommend-match',
+  }) : null;
+  return { provider: 'qishui', loggedIn: true, ok: true, playlist, raw: json };
+}
+
 async function handleQishuiSetAlbumCollected(albumId, collected, cookieText) {
   const id = normalizeText(albumId);
   if (!id) throw new Error('Missing Qishui album id');
@@ -4889,6 +4928,7 @@ module.exports = {
   handleQishuiSetTrackLiked,
   handleQishuiSetPlaylistCollected,
   handleQishuiPlaylistAddSong,
+  handleQishuiCreatePlaylist,
   handleQishuiSetAlbumCollected,
   handleQishuiReportRecentlyPlayed,
   handleQishuiComments,
@@ -4930,6 +4970,7 @@ module.exports = {
     qishuiFeedPreferenceKey,
     qishuiModeIconUrl,
     qishuiModeEntryFromPayload,
+    extractQishuiPlaylistCards,
     extractQishuiFeedPageMeta,
     mapQishuiFeedItems,
     buildQishuiFeedPlaylist,

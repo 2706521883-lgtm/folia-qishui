@@ -95,6 +95,7 @@ export const normalizeQishuiCollection = (raw: unknown, type = 'playlist'): Prov
             ...(item.subscribed === undefined ? {} : { subscribed: Boolean(item.subscribed) }),
             ...(item.owned === undefined ? {} : { owned: Boolean(item.owned) }),
             ...(item.shelfPane ? { shelfPane: text(item.shelfPane) } : {}),
+            ...(item.qishuiPlaylistType ? { qishuiPlaylistType: Number(item.qishuiPlaylistType) } : {}),
             ...(item.playbackMode ? { playbackMode: text(item.playbackMode) } : {}),
         },
     };

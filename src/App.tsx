@@ -72,6 +72,7 @@ import { resolveSongCatalogRef } from './services/onlineMusic/catalogRefs';
 import { omni } from './services/onlineMusic/omni';
 import { getQishuiModeLabel } from './services/onlineMusic/qishuiFeedModes';
 import QishuiFeedModeGrid from './components/qishui/QishuiFeedModeGrid';
+import QishuiPlayerNav from './components/qishui/QishuiPlayerNav';
 import { useQishuiFeedModeStore } from './stores/useQishuiFeedModeStore';
 import { openQishuiFeedModeGrid } from './stores/useQishuiFeedModeGridStore';
 import { consumeProgrammaticPause, playbackFade } from './services/playbackFade';
@@ -86,7 +87,9 @@ import { useQishuiLibrary } from './hooks/useQishuiLibrary';
 import { useLibraryAccountController } from './library/app/useLibraryAccountController';
 import { createLibraryAccountSwitchCleanupPort } from './library/app/createLibraryAccountPort';
 import { useLibraryStageToolsPort } from './library/app/useLibraryStageToolsPort';
-import { useLibraryAccountProviders } from './library/core/bindings/useLibraryAccount';
+import { useLibraryAccountPendingSwitch, useLibraryAccountProviders } from './library/core/bindings/useLibraryAccount';
+import { canSwitchToProviderDirectly } from './library/core/model/onlineProviderAccountView';
+import ConfirmDialog from './components/shared/ConfirmDialog';
 import { resolveActiveProviderSummary } from './library/core/model/accountRules';
 import { useAppPreferences } from './hooks/useAppPreferences';
 import { useElectronPlaybackBridge } from './hooks/useElectronPlaybackBridge';
@@ -782,6 +785,7 @@ export default function App() {
         switchCleanup: providerSwitchCleanup,
     });
     const { providers: onlineProviders, activeProviderId } = useLibraryAccountProviders(accountController);
+    const pendingProviderSwitch = useLibraryAccountPendingSwitch(accountController);
     const activeProvider = useMemo(
         () => resolveActiveProviderSummary(onlineProviders, activeProviderId),
         [activeProviderId, onlineProviders],
@@ -989,6 +993,33 @@ export default function App() {
         (collection: GridViewCollectionDescriptor) => navigateToCollection(collection, 'home'),
         [navigateToCollection],
     );
+    // Player-page Qishui sidebar: open the same provider collections, but keep the player as the
+    // navigation origin so dismissing the grid returns to the lyrics page instead of the home wall.
+    const openQishuiPlayerCollection = useCallback(
+        (collection: ProviderCollection) => navigateToCollection(
+            createOnlineGridViewCollection(collection, 'qishui'),
+            'player',
+        ),
+        [navigateToCollection],
+    );
+    // A provider that needs a sign-in is handled on the home surface, where the account host and
+    // QR modal live; switching between already-signed-in providers can stay on the player page.
+    const selectOnlineProviderFromPlayer = useCallback((providerId: string) => {
+        const provider = onlineProviders.find(item => item.providerId === providerId);
+        if (!provider || !canSwitchToProviderDirectly(provider)) {
+            // The login surface lives on the home wall; the player page has no account host to
+            // render its QR modal. Send the listener there and say why.
+            navigateToHome();
+            setStatusMsg({
+                type: 'info',
+                text: provider
+                    ? `请先在首页登录 ${provider.shortName || provider.displayName}`
+                    : '该在线音乐平台当前不可用',
+            });
+            return;
+        }
+        void accountController.selectProvider(providerId);
+    }, [accountController, navigateToHome, onlineProviders, setStatusMsg]);
     const handleSaveLyricFilterPattern = useMemo(() => createLyricFilterPatternSaver({
         currentEffectivePattern: lyricFilterEnabled ? lyricFilterPattern : '',
         handleSetLyricFilterPattern,
@@ -1721,6 +1752,11 @@ export default function App() {
         searchSourceTab,
         activeProviderId,
     ), [activeProviderId, currentSong, searchSourceTab]);
+    // The bottom-right player button used to open the command palette by sliding left. It now
+    // opens the music search workspace; the palette keeps its own shortcuts.
+    const openMusicSearchFromPlayer = useCallback(() => {
+        navigateToSearch({ query: '', sourceTab: currentSearchSourceTabInPalette, returnView: 'player' });
+    }, [currentSearchSourceTabInPalette, navigateToSearch]);
     const toggleBrowserFullscreen = useCallback(async () => {
         if (typeof window !== 'undefined' && window.electron?.toggleFullscreenWindow) {
             return window.electron.toggleFullscreenWindow();
@@ -2300,7 +2336,7 @@ export default function App() {
         togglePlay,
         handlePreviewVolume,
         isNowPlayingControlDisabled,
-        openCommandPalette: commandPalette.open,
+        openMusicSearch: openMusicSearchFromPlayer,
         isCommandPaletteOpen: commandPalette.isOpen,
         playQueue: playerDisplayQueue,
         playSong,
@@ -2948,6 +2984,43 @@ export default function App() {
             {/* 思索教程。常驻的只有悬停探测和提示胶囊；教程层自己走 React.lazy，
                 animejs 不进 bootstrap chunk。 */}
             <PonderHost theme={theme} isDaylight={isDaylight} />
+
+            <QishuiPlayerNav
+                collections={activeProvider?.collections ?? []}
+                user={activeProvider?.user ?? null}
+                providers={onlineProviders}
+                activeProviderId={activeProviderId}
+                theme={theme}
+                onThemeChange={setTheme}
+                visualizerMode={visualizerMode}
+                onVisualizerModeChange={handleSetVisualizerMode}
+                isDaylight={isDaylight}
+                isVisible={
+                    currentView === 'player'
+                    && isQishuiProvider
+                    && !isPanelOpen
+                    && !wallpaperMode
+                    && !isMainWindowClickThroughEnabled
+                    && !isNowPlayingStageActive
+                }
+                isPlaying={playerState === PlayerState.PLAYING}
+                onOpenCollection={openQishuiPlayerCollection}
+                onSelectProvider={selectOnlineProviderFromPlayer}
+                onOpenModeGrid={openQishuiFeedModeGrid}
+                onRefresh={refreshQishuiLibrary}
+                onStatusMessage={setStatusMsg}
+            />
+
+            {currentView === 'player' && pendingProviderSwitch && (
+                <ConfirmDialog
+                    isOpen
+                    isDaylight={isDaylight}
+                    title={pendingProviderSwitch.title}
+                    description={pendingProviderSwitch.description}
+                    onConfirm={() => { void accountController.confirmSwitch(pendingProviderSwitch.request.id); }}
+                    onClose={() => { void accountController.cancelSwitch(pendingProviderSwitch.request.id); }}
+                />
+            )}
 
             {currentView === 'player' && !showLyricMatchModal && (
                 <PlayerPanel model={playerPanelModel} />

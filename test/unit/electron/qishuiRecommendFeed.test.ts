@@ -37,6 +37,7 @@ const api = require('../../../electron/qishui/qishui-api.js') as {
     _test: {
         clearQishuiRuntimeCaches: () => void;
         extractQishuiFeedPageMeta: (payload: unknown) => { nextCursor: string; hasMore?: boolean };
+        extractQishuiPlaylistCards: (payload: unknown) => Array<Record<string, any>>;
         mapQishuiFeedItems: (items: unknown[], query: string, directPlayable: boolean) => Array<{ id: string }>;
         buildQishuiFeedPlaylist: (songs: unknown[]) => Record<string, unknown>;
         buildQishuiFeedWebPayload: (session: Record<string, unknown>) => Record<string, unknown>;
@@ -427,5 +428,28 @@ describe('Qishui feed bridge contract', () => {
         const modeFails = bridge._test.QISHUI_RESULT_FAILURES['feed.mode'];
         expect(modeFails({ modes: [{ id: 'scene:4' }], scenes: [] })).toBe(false);
         expect(modeFails({ modes: [], scenes: [], error: 'QISHUI_COOKIE_REQUIRED' })).toBe(true);
+    });
+});
+
+describe('Qishui sidebar playlist contract', () => {
+    it('keeps the official type on empty playlists so the sidebar can group them', () => {
+        const cards = t.extractQishuiPlaylistCards({
+            data: {
+                playlists: [
+                    { id: 'douyin-1', title: '抖音收藏的音乐', type: 4, count_tracks: 0 },
+                    { id: 'created-1', title: '我的歌单', type: 2, count_tracks: 0 },
+                ],
+            },
+        });
+
+        expect(cards.find(card => card.id === 'douyin-1')?.qishuiPlaylistType).toBe(4);
+        expect(cards.find(card => card.id === 'created-1')?.qishuiPlaylistType).toBe(2);
+    });
+
+    it('registers playlist.create and treats a successful empty response as success', () => {
+        expect(bridge.QISHUI_OPERATIONS).toContain('playlist.create');
+        const fails = bridge._test.QISHUI_RESULT_FAILURES['playlist.create'];
+        expect(fails({ ok: true, playlist: null })).toBe(false);
+        expect(fails({ success: false, message: 'rejected' })).toBe(true);
     });
 });

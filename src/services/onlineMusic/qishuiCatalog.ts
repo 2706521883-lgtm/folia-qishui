@@ -8,6 +8,7 @@ import { requestQishui, throwQishuiDataError } from './qishuiTransport';
 
 // 协议层的虚拟歌单 id：我的喜欢 / 最近播放 / 推荐流。
 export const QISHUI_LIKED_PLAYLIST_ID = 'qishui-liked';
+export const QISHUI_RECENT_PLAYLIST_ID = 'qishui-recent';
 export const QISHUI_FEED_PLAYLIST_ID = 'qishui-feed';
 // 与 electron/qishui/qishui-api.js 的 QISHUI_FEED_TOTAL_CAP 保持一致。
 // Folia 首屏取 150、后台每页取 1000；必须给一个有限 total，后台补页才会自然停止。

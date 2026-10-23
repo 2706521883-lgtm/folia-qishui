@@ -117,6 +117,7 @@ const QISHUI_RESULT_FAILURES = {
   'track.like': result => !!(result && (result.ok === false || result.success === false)),
   'playlist.collect': result => !!(result && (result.ok === false || result.success === false)),
   'playlist.addSong': result => !!(result && (result.ok === false || result.success === false)),
+  'playlist.create': result => !!(result && (result.ok === false || result.success === false)),
   'album.collect': result => !!(result && (result.ok === false || result.success === false)),
   'report.play': result => !!(result && (result.ok === false || result.success === false)),
   'comment.create': result => !!(result && (result.ok === false || result.success === false)),
@@ -145,6 +146,7 @@ const QISHUI_OPERATIONS = Object.freeze([
   'track.like',
   'playlist.collect',
   'playlist.addSong',
+  'playlist.create',
   'album.collect',
   'report.play',
   'comments',
@@ -637,6 +639,11 @@ function createQishuiApiBridge({ userDataDir, warn = console.warn } = {}) {
     'playlist.addSong': params => {
       const p = params || {};
       return qishuiApi().handleQishuiPlaylistAddSong(String(p.playlistId || ''), String(p.trackId || ''), readQishuiCookie());
+    },
+
+    'playlist.create': params => {
+      const p = params || {};
+      return qishuiApi().handleQishuiCreatePlaylist(String(p.name || '').trim(), { isPrivate: p.isPrivate === true }, readQishuiCookie());
     },
 
     'album.collect': async params => {

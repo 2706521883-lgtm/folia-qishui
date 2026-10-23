@@ -3916,7 +3916,7 @@ export default {
       "queue_settings": "Where \u201cadd to queue\u201d actually puts things, everywhere at once.",
       "lyrics_settings": "Auto-pick overrides your manual source, and two offsets add up.",
       "grid_palette_hotkey": "On a grid page, does S open the command window or the filter.",
-      "panel_slide": "That button also slides left, and it opens the command window.",
+      "panel_slide": "Hold the button and slide left to open music search.",
       "panel_source_tab": "The source-specific cell: audio gain, lyric source, timeline offset.",
       "lyric_export": "Packs the lyrics cached on this device into one zip of .fia and enhanced LRC files.",
       "player_bar": "What is on the capsule, and the two slots you choose yourself.",
@@ -4387,7 +4387,7 @@ export default {
         "toggle": "Panel toggle",
         "track": "Hidden track",
         "threshold": "Trigger line",
-        "palette": "Command palette"
+        "palette": "Search results"
       },
       "grid": {
         "help": "Folia and Help entry",
@@ -4429,7 +4429,7 @@ export default {
       "replayGainSettings": "Audio gain (ReplayGain)",
       "importExportSettings": "Backup and import",
       "playerBar": "Bottom control bar",
-      "panelSlide": "Side panel toggle",
+      "panelSlide": "Music search",
       "gridPage": "Poster grid page",
       "gridViewPage": "Collection grid page",
       "playerPage": "Player page",
@@ -4617,7 +4617,7 @@ export default {
       "playerBarSlots": "The two slots can be swapped",
       "playerBarShuffle": "Shuffle deals once",
       "playerBarVolume": "Volume lives in the palette",
-      "panelSlideToPalette": "Slide to open the command palette",
+      "panelSlideToPalette": "Slide to search music",
       "panelSlideEdgeHotspot": "Summon the handle from the edge",
       "panelSlideKeyboard": "Open it from the keyboard"
     },
@@ -5063,9 +5063,9 @@ export default {
       },
       "panelSlide": {
         "grabbed": "Press and hold the button. The track behind it lights up.",
-        "intro": "This button hides a track. Press and hold it, and the track appears.",
+        "intro": "Besides opening the panel on click, this button slides left to search music.",
         "threshold": "Drag left. 36 pixels is enough \u2014 the button stops following at 44.",
-        "outcome": "Let go past that point and the command palette opens.",
+        "outcome": "Let go past that point and music search opens.",
         "hotspotIntro": "On a touch screen there is nothing to hover, so the edge itself is the affordance.",
         "hotspotRevealed": "Tap near the right edge and the handle comes out on its own.",
         "keyboardIntro": "No pointer needed either.",

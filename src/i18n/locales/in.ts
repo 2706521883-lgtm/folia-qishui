@@ -3801,7 +3801,7 @@ export default {
       "queue_settings": "Ke mana \u201ctambah ke antrean\u201d sebenarnya menaruh lagu, di semua tempat sekaligus.",
       "lyrics_settings": "Pilih-otomatis menimpa sumber manualmu, dan dua offset dijumlahkan.",
       "grid_palette_hotkey": "Di halaman kisi, S membuka jendela perintah atau penyaring.",
-      "panel_slide": "Tombol itu juga bisa digeser ke kiri, dan itu membuka jendela perintah.",
+      "panel_slide": "Tahan tombol dan geser ke kiri untuk membuka pencarian musik.",
       "panel_source_tab": "Kotak khusus sumber: gain audio, sumber lirik, offset linimasa.",
       "lyric_export": "Mengemas lirik yang tersimpan di perangkat ini menjadi satu zip berisi berkas .fia dan LRC enhanced.",
       "player_bar": "Apa yang ada di kapsul, dan dua slot yang kamu pilih sendiri.",
@@ -4272,7 +4272,7 @@ export default {
         "toggle": "Tombol panel",
         "track": "Lintasan tersembunyi",
         "threshold": "Garis pemicu",
-        "palette": "Command palette"
+        "palette": "Hasil pencarian"
       },
       "grid": {
         "help": "Folia dan Bantuan",
@@ -4314,7 +4314,7 @@ export default {
       "replayGainSettings": "Penguatan audio (ReplayGain)",
       "importExportSettings": "Cadangan dan impor",
       "playerBar": "Bilah kontrol bawah",
-      "panelSlide": "Tombol panel samping",
+      "panelSlide": "Cari musik",
       "gridPage": "Halaman kisi poster",
       "gridViewPage": "Halaman kisi koleksi",
       "playerPage": "Halaman pemutar",
@@ -4502,7 +4502,7 @@ export default {
       "playerBarSlots": "Dua slot kanan bisa diganti",
       "playerBarShuffle": "Acak hanya sekali kocok",
       "playerBarVolume": "Volume ada di command palette",
-      "panelSlideToPalette": "Geser untuk membuka command palette",
+      "panelSlideToPalette": "Geser untuk mencari musik",
       "panelSlideEdgeHotspot": "Panggil pegangan dari tepi",
       "panelSlideKeyboard": "Buka dari papan tombol"
     },
@@ -4948,9 +4948,9 @@ export default {
       },
       "panelSlide": {
         "grabbed": "Tekan dan tahan tombolnya. Lintasan di belakangnya menyala.",
-        "intro": "Tombol ini menyembunyikan sebuah lintasan. Tekan dan tahan, lintasannya muncul.",
+        "intro": "Selain membuka panel saat diklik, tombol ini digeser ke kiri untuk mencari musik.",
         "threshold": "Geser ke kiri. 36 piksel sudah cukup \u2014 tombol berhenti mengikuti di 44.",
-        "outcome": "Lepaskan setelah melewati titik itu dan command palette terbuka.",
+        "outcome": "Lepaskan setelah melewati titik itu dan pencarian musik terbuka.",
         "hotspotIntro": "Di layar sentuh tidak ada hover, jadi tepi layar itu sendiri yang menjadi petunjuknya.",
         "hotspotRevealed": "Ketuk dekat tepi kanan dan pegangannya keluar sendiri.",
         "keyboardIntro": "Tanpa penunjuk pun bisa.",
