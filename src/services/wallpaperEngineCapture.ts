@@ -82,17 +82,35 @@ export const acquireWallpaperEngineCapture = async ({
         stopStream(current.stream);
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-            mandatory: {
-                chromeMediaSource: 'desktop',
-                chromeMediaSourceId: sourceId,
-                minFrameRate: MIN_CAPTURE_FRAME_RATE,
-                maxFrameRate,
-            },
-        } as unknown as MediaTrackConstraints,
-    });
+    let stream: MediaStream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId,
+                    minFrameRate: MIN_CAPTURE_FRAME_RATE,
+                    maxFrameRate,
+                },
+            } as unknown as MediaTrackConstraints,
+        });
+    } catch (error) {
+        const name = error instanceof Error ? error.name : '';
+        // Some Windows 10/NVIDIA combinations refuse the legacy chromeMediaSource path with
+        // NotReadableError even though the window exists. The main process installs a
+        // getDisplayMedia handler that selects the same Folia playback window through the modern
+        // capturer, so retry once through that path before surfacing the failure.
+        if (name !== 'NotReadableError' && name !== 'NotFoundError') throw error;
+        window.electron?.reportWallpaperEngineLog?.(
+            `Legacy capture unavailable (${name}); trying getDisplayMedia`,
+            'capture-fallback',
+        );
+        stream = await navigator.mediaDevices.getDisplayMedia({
+            audio: false,
+            video: { frameRate: { max: maxFrameRate } },
+        });
+    }
 
     if (stream.getVideoTracks().length === 0) {
         stopStream(stream);

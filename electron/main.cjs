@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, screen, dialog, shell, nativeImage, desktopCapturer, Menu, Tray, nativeTheme, powerSaveBlocker, safeStorage, protocol, crashReporter, net: electronNet } = require('electron');
+const { app, BrowserWindow, ipcMain, session, screen, dialog, shell, nativeImage, desktopCapturer, webContents: electronWebContents, Menu, Tray, nativeTheme, powerSaveBlocker, safeStorage, protocol, crashReporter, net: electronNet } = require('electron');
 // 必须先于其它模块加载：TEMP / TMP 里没展开的 %USERPROFILE% 会让 os.tmpdir() 变成相对路径（#690）。
 for (const repair of require('./tempDirEnvironment.cjs').repairTempDirEnvironment()) {
   console.warn(`[TempDir] expanded ${repair.key}: ${repair.from} -> ${repair.to}`);
@@ -5088,6 +5088,30 @@ function createWindow(options = {}) {
   win.__wallpaperWindowTransparent = useTransparentWindow;
   win.__wallpaperGeometry = useWallpaperGeometry;
   win.__transparentFullscreen = false;
+
+  // Modern capture fallback for the Wallpaper Engine playback window. The legacy
+  // chromeMediaSource path can fail with NotReadableError on some Windows 10/NVIDIA setups;
+  // getDisplayMedia goes through the requested handler instead and uses a different capturer.
+  // Only the main window may ask, and only the current Folia playback title is returned.
+  win.webContents.session.setDisplayMediaRequestHandler(async (request, callback) => {
+    try {
+      const requester = request && request.frame ? electronWebContents.fromFrame(request.frame) : null;
+      const locationTitle = wallpaperEngineRuntime.getStatus().locationTitle;
+      if (!requester || requester !== win.webContents || !locationTitle) {
+        callback({});
+        return;
+      }
+      const sources = await desktopCapturer.getSources({
+        types: ['window'],
+        thumbnailSize: { width: 0, height: 0 },
+      });
+      const source = sources.find(entry => entry.name === locationTitle) || null;
+      callback(source ? { video: source } : {});
+    } catch (error) {
+      wallpaperEngineLogWarn('display-media handler failed', error);
+      callback({});
+    }
+  }, { useSystemPicker: false });
 
   if (process.platform === 'win32' && useTransparentWindow) {
     win.webContents.on('before-input-event', (event, input) => {
