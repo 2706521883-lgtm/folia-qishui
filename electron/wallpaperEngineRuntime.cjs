@@ -38,6 +38,10 @@ const WALLPAPER_ENGINE_LOCATION_PREFIX = 'Folia Wallpaper ';
 // keeps it parked; PowerShell is only the fallback and does not run this watch.
 const WINDOW_WATCH_INTERVAL_MS = 750;
 const WINDOW_LOST_GRACE_MS = 6000;
+// Engine restarts and graphics-settings changes can re-create the playback window after the
+// title-bound watcher has already reset. This slow, session-independent scan catches those late
+// orphans (and any window whose title changed) for the rest of the app's lifetime.
+const ORPHAN_WATCH_INTERVAL_MS = 5000;
 const SAFE_PROPERTY_KEY = /^[a-z0-9_.-]{1,128}$/i;
 const BLOCKED_PROPERTY_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -200,6 +204,12 @@ function createWallpaperEngineRuntime(options = {}) {
   let watchTimer = null;
   let watchBusy = false;
   let watchMisses = 0;
+  let orphanWatchTimer = null;
+  let orphanWatchBusy = false;
+  // title -> earliest next close attempt. A window that survives both closeWallpaper and hide is
+  // retried with exponential backoff instead of spawning a control process every 5 seconds.
+  const orphanRetryAt = new Map();
+  const orphanFailures = new Map();
 
   const status = {
     phase: 'idle',
@@ -437,14 +447,17 @@ function createWallpaperEngineRuntime(options = {}) {
     const bounds = getVirtualDesktopBounds() || { x: 0, y: 0, width: 1920, height: 1080 };
     const width = clampPlaybackSize(bounds.width, 1920);
     const height = clampPlaybackSize(bounds.height, 1080);
-    // Parked at the virtual desktop's bottom-right corner: only a 1px sliver stays on screen, which
-    // keeps the window capturable without it ever being visible or minimised. The first window uses
-    // this DIP approximation; every later one reuses the corner the helper read from the OS.
+    // Parked just inside the primary screen's bottom-right corner: a few pixels stay on screen,
+    // which keeps the window composed/capturable without it being noticeable. The first window uses
+    // this DIP approximation; the native helper then re-parks at the OS's primary-screen corner.
     return {
       width,
       height,
-      parkX: parkTarget ? parkTarget.x : Math.round(bounds.x + bounds.width - 1),
-      parkY: parkTarget ? parkTarget.y : Math.round(bounds.y + bounds.height - 1),
+      // Open-time hint only; the native helper re-parks at the virtual desktop corner with a small
+      // visible inset. The body then extends outside every monitor, so no strip can leak onto a
+      // neighbouring display; a capture failure switches to the primary-screen fallback.
+      parkX: parkTarget ? parkTarget.x : Math.round(bounds.x + bounds.width - 4),
+      parkY: parkTarget ? parkTarget.y : Math.round(bounds.y + bounds.height - 4),
     };
   };
 
@@ -530,6 +543,27 @@ function createWallpaperEngineRuntime(options = {}) {
     }
   };
 
+  // Last-resort parking when the renderer reports that desktopCapturer cannot start: the virtual
+  // corner may be on an inactive/asleep monitor, while the primary screen is always composed. The
+  // primary corner can leak a thin strip onto a neighbouring display, so it is used only here.
+  const fallbackToPrimaryPark = () => {
+    if (disposed) return { ok: false, reason: 'disposed' };
+    if (!windowHelper || typeof windowHelper.setParkMode !== 'function') {
+      return { ok: false, reason: 'unsupported' };
+    }
+    const mode = windowHelper.setParkMode({ mode: 'primary' });
+    if (!mode || !mode.ok) return { ok: false, reason: 'mode-failed' };
+    logWarn('[wallpaper-engine] capture failed; parking on the primary screen');
+    if (status.locationTitle && typeof windowHelper.monitorWindow === 'function') {
+      try {
+        windowHelper.monitorWindow({ title: status.locationTitle });
+      } catch (error) {
+        logWarn('[wallpaper-engine] primary fallback park failed', error && error.message);
+      }
+    }
+    return { ok: true, mode: 'primary' };
+  };
+
   const hideWindowSafe = (title) => {
     if (!windowHelper || typeof windowHelper.hideWindow !== 'function' || !title) return false;
     try {
@@ -543,6 +577,20 @@ function createWallpaperEngineRuntime(options = {}) {
       logWarn('[wallpaper-engine] hide playback window threw', error && error.message);
     }
     return false;
+  };
+
+  // Closes one Folia-prefixed playback window through the engine; if the engine refuses (or is
+  // not ready), it is hidden through the native manager instead. Returns 'closed' | 'hidden'.
+  const closeOrphanWindow = async (title) => {
+    const name = String(title || '');
+    if (!name || name === status.locationTitle) return 'skipped';
+    const result = await spawnControl(['-control', 'closeWallpaper', '-location', name], CONTROL_TIMEOUT_MS);
+    if (result.ok) {
+      log('[wallpaper-engine] orphan window closed', name);
+      return 'closed';
+    }
+    logWarn('[wallpaper-engine] orphan close failed', name, result.code);
+    return hideWindowSafe(name) ? 'hidden' : 'failed';
   };
 
   // Windows from a crashed/killed session keep their titles for the lifetime of the engine. Close
@@ -564,18 +612,74 @@ function createWallpaperEngineRuntime(options = {}) {
     for (const entry of entries) {
       const title = entry && entry.title ? String(entry.title) : '';
       if (!title || title === status.locationTitle) continue;
-      const result = await spawnControl(['-control', 'closeWallpaper', '-location', title], CONTROL_TIMEOUT_MS);
-      if (result.ok) {
-        closed += 1;
-        continue;
-      }
-      logWarn('[wallpaper-engine] orphan close failed', title, result.code);
-      if (hideWindowSafe(title)) hidden += 1;
+      const outcome = await closeOrphanWindow(title);
+      if (outcome === 'closed') closed += 1;
+      else if (outcome === 'hidden') hidden += 1;
     }
     if (entries.length) {
       log('[wallpaper-engine] orphan windows', entries.length, 'closed', closed, 'hidden', hidden);
     }
     return { checked: entries.length, closed, hidden };
+  };
+
+  // A slow scan that does not depend on the current session title. It catches the window that the
+  // engine re-creates after a graphics-settings change/restart (often later than the 6s title-bound
+  // watcher allows), and any window whose title changed. It runs for the app's lifetime once the
+  // feature has been used, so a late orphan is cleaned even when auto-start is off.
+  const runOrphanWatch = async () => {
+    if (disposed || orphanWatchBusy) return;
+    if (!windowHelper || typeof windowHelper.listSessionWindows !== 'function') return;
+    orphanWatchBusy = true;
+    try {
+      let entries = [];
+      try {
+        entries = windowHelper.listSessionWindows({ prefix: WALLPAPER_ENGINE_LOCATION_PREFIX }) || [];
+      } catch (error) {
+        logWarn('[wallpaper-engine] orphan watch scan failed', error && error.message);
+        return;
+      }
+      const now = Date.now();
+      const stale = entries.filter((entry) => {
+        if (!entry || !entry.title || entry.title === status.locationTitle) return false;
+        // hideWindow leaves the window alive but hidden; EnumWindows still lists it. Re-closing it
+        // every tick would spawn a control process and write logs forever. A hidden orphan is
+        // already removed from the taskbar/screen; the next start() retries closeWallpaper.
+        if (entry.visible === false) return false;
+        return (orphanRetryAt.get(entry.title) || 0) <= now;
+      });
+      if (!stale.length) return;
+      log('[wallpaper-engine] orphan watch found', stale.map((entry) => entry.title).join(' | '));
+      for (const entry of stale) {
+        const outcome = await closeOrphanWindow(entry.title);
+        if (outcome === 'closed' || outcome === 'hidden') {
+          orphanRetryAt.delete(entry.title);
+          orphanFailures.delete(entry.title);
+          continue;
+        }
+        const failures = (orphanFailures.get(entry.title) || 0) + 1;
+        orphanFailures.set(entry.title, failures);
+        const delay = Math.min(300000, ORPHAN_WATCH_INTERVAL_MS * (2 ** Math.min(failures, 6)));
+        orphanRetryAt.set(entry.title, now + delay);
+        logWarn('[wallpaper-engine] orphan retry backoff', entry.title, delay);
+      }
+    } finally {
+      orphanWatchBusy = false;
+    }
+  };
+
+  const startOrphanWatch = () => {
+    if (orphanWatchTimer || disposed) return false;
+    if (!windowHelper || typeof windowHelper.listSessionWindows !== 'function') return false;
+    if (typeof timers.setInterval !== 'function' || typeof timers.clearInterval !== 'function') return false;
+    orphanWatchTimer = timers.setInterval(() => { void runOrphanWatch(); }, ORPHAN_WATCH_INTERVAL_MS);
+    log('[wallpaper-engine] orphan watch started');
+    return true;
+  };
+
+  const stopOrphanWatch = () => {
+    if (orphanWatchTimer) timers.clearInterval(orphanWatchTimer);
+    orphanWatchTimer = null;
+    orphanWatchBusy = false;
   };
 
   const stop = async ({ reason = 'stop' } = {}) => {
@@ -633,6 +737,9 @@ function createWallpaperEngineRuntime(options = {}) {
       return { ok: false, error: 'item-not-playable' };
     }
     if (status.phase === 'starting') return { ok: false, error: 'busy' };
+    // Once the engine-capture path is used, keep a session-independent orphan scan alive for the
+    // rest of the process. It survives stop()/window-loss resets and catches late re-created wins.
+    startOrphanWatch();
     if (status.locationTitle) await stop({ reason: 'restart' });
     publishStatus({ phase: 'starting', error: '', muted: false, windowLost: false });
     currentItem = item;
@@ -694,7 +801,7 @@ function createWallpaperEngineRuntime(options = {}) {
       if (windowHelper) {
         parkedResult = await windowHelper.parkWindow({ title: locationTitle });
         if (parkedResult && parkedResult.ok && parkedResult.target) {
-          // The helper reports the OS's own virtual-screen corner; reuse it so the next window is
+          // The helper reports the OS's own primary-screen corner; reuse it so the next window is
           // opened at the right place instead of relying on the DIP approximation.
           parkTarget = { x: Number(parkedResult.target.x), y: Number(parkedResult.target.y) };
           publishStatus({ parkX: parkTarget.x, parkY: parkTarget.y });
@@ -728,6 +835,7 @@ function createWallpaperEngineRuntime(options = {}) {
 
   const dispose = async () => {
     disposed = true;
+    stopOrphanWatch();
     stopWindowWatch({ silent: true });
     clearMuteTimers();
     if (status.locationTitle) {
@@ -749,6 +857,7 @@ function createWallpaperEngineRuntime(options = {}) {
   return {
     dispose,
     ensureControlReady,
+    fallbackToPrimaryPark,
     getStatus: () => ({ ...status }),
     resolveExecutable,
     start,
@@ -765,6 +874,7 @@ module.exports = {
   INITIAL_MUTE_RETRY_DELAYS_MS,
   MUTE_REASSERT_DELAYS_MS,
   MUTE_SCHEDULE_MS,
+  ORPHAN_WATCH_INTERVAL_MS,
   SIGNATURE_SCRIPT,
   WALLPAPER_ENGINE_EXECUTABLES,
   WALLPAPER_ENGINE_LOCATION_PREFIX,

@@ -11,6 +11,7 @@ const {
   CONTROL_PROBE_ARGS,
   ENGINE_SIGNER_PATTERN,
   MUTE_SCHEDULE_MS,
+  ORPHAN_WATCH_INTERVAL_MS,
   WALLPAPER_ENGINE_LOCATION_PREFIX,
   WINDOW_LOST_GRACE_MS,
   WINDOW_WATCH_INTERVAL_MS,
@@ -25,6 +26,7 @@ const {
   CONTROL_PROBE_ARGS: string[];
   ENGINE_SIGNER_PATTERN: RegExp;
   MUTE_SCHEDULE_MS: number[];
+  ORPHAN_WATCH_INTERVAL_MS: number;
   WALLPAPER_ENGINE_LOCATION_PREFIX: string;
   WINDOW_LOST_GRACE_MS: number;
   WINDOW_WATCH_INTERVAL_MS: number;
@@ -87,6 +89,11 @@ describe('wallpaperEngineRuntime', () => {
             expect(WINDOW_WATCH_INTERVAL_MS).toBeGreaterThanOrEqual(250);
             expect(WINDOW_WATCH_INTERVAL_MS).toBeLessThanOrEqual(2000);
             expect(WINDOW_LOST_GRACE_MS).toBeGreaterThanOrEqual(WINDOW_WATCH_INTERVAL_MS * 4);
+        });
+
+        it('keeps the session-independent orphan scan cheap but responsive', () => {
+            expect(ORPHAN_WATCH_INTERVAL_MS).toBeGreaterThanOrEqual(2000);
+            expect(ORPHAN_WATCH_INTERVAL_MS).toBeLessThanOrEqual(15000);
         });
     });
 
@@ -236,7 +243,7 @@ describe('wallpaperEngineWindow', () => {
             // capture would come back empty — the call has to keep the size it measured.
             expect(SWP_FLAGS & 0x0001).toBe(0);
             expect(WINDOW_HELPER_SCRIPT).toMatch(/SetWindowPos\(\$hwnd, \[IntPtr\]::Zero, \$targetX, \$targetY, \$before\.width, \$before\.height, \d+\)/);
-            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(78)');
+            expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(76)');
             expect(WINDOW_HELPER_SCRIPT).toContain('GetSystemMetrics(79)');
         });
 

@@ -518,19 +518,75 @@ function rebuildWindowsWallpaperSession() {
 // The library indexes the local Steam workshop (431960) + myprojects content; the runtime opens one
 // scene project inside a parked playback window that the renderer captures through desktopCapturer.
 // Neither half replaces the user's desktop wallpaper nor writes to the workshop directory.
+//
+// The engine path is the only part that manipulates another process's windows, so its diagnostics
+// are also written to a user-readable file: %APPDATA%\Folia\wallpaper-engine.log. A machine that
+// reports a stray scene window can send that file instead of reproducing with a debugger attached.
+const WALLPAPER_ENGINE_LOG_LIMIT_BYTES = 2 * 1024 * 1024;
+let wallpaperEngineLogFile = '';
+let wallpaperEngineLogBytes = 0;
+let wallpaperEngineLogRotationBlockedUntil = 0;
+const rotateWallpaperEngineLog = () => {
+  try {
+    try { fs.rmSync(wallpaperEngineLogFile + '.1', { force: true }); } catch { /* best effort */ }
+    fs.renameSync(wallpaperEngineLogFile, wallpaperEngineLogFile + '.1');
+    wallpaperEngineLogBytes = 0;
+    return true;
+  } catch {
+    return false;
+  }
+};
+try {
+  wallpaperEngineLogFile = path.join(app.getPath('userData'), 'wallpaper-engine.log');
+  const stats = fs.statSync(wallpaperEngineLogFile);
+  wallpaperEngineLogBytes = stats.size;
+  if (wallpaperEngineLogBytes > WALLPAPER_ENGINE_LOG_LIMIT_BYTES) rotateWallpaperEngineLog();
+} catch {
+  // No log yet, or userData is not writable; console logging still works.
+}
+const formatWallpaperEngineLogValue = (value) => {
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.stack || value.message;
+  try { return JSON.stringify(value); } catch { return String(value); }
+};
+const appendWallpaperEngineLog = (level, args) => {
+  if (!wallpaperEngineLogFile) return;
+  const line = `${new Date().toISOString()} [${level}] ${args.map(formatWallpaperEngineLogValue).join(' ')}\n`;
+  const bytes = Buffer.byteLength(line);
+  if (wallpaperEngineLogBytes + bytes > WALLPAPER_ENGINE_LOG_LIMIT_BYTES
+    && Date.now() >= wallpaperEngineLogRotationBlockedUntil) {
+    if (!rotateWallpaperEngineLog()) wallpaperEngineLogRotationBlockedUntil = Date.now() + 60000;
+  }
+  try {
+    fs.appendFileSync(wallpaperEngineLogFile, line);
+    wallpaperEngineLogBytes += bytes;
+  } catch { /* best effort */ }
+};
+const wallpaperEngineLog = (...args) => {
+  console.log('[WallpaperEngine]', ...args);
+  appendWallpaperEngineLog('info', args);
+};
+const wallpaperEngineLogWarn = (...args) => {
+  console.warn('[WallpaperEngine]', ...args);
+  appendWallpaperEngineLog('warn', args);
+};
+appendWallpaperEngineLog('info', [
+  `Folia ${app.getVersion()} ${process.platform}-${process.arch} Electron ${process.versions.electron}`,
+]);
+
 const wallpaperEngineLibrary = createWallpaperEngineLibrary({
   fs,
   path,
   execFile,
-  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+  logWarn: wallpaperEngineLogWarn,
 });
 
 const wallpaperEngineWindow = createWallpaperEngineWindowManager({
   spawn,
-  log: (...args) => console.log('[WallpaperEngine]', ...args),
-  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+  log: wallpaperEngineLog,
+  logWarn: wallpaperEngineLogWarn,
 });
-console.log('[WallpaperEngine] window manager backend:', wallpaperEngineWindow.backend || 'unknown');
+wallpaperEngineLog('window manager backend:', wallpaperEngineWindow.backend || 'unknown');
 
 const wallpaperEngineRuntime = createWallpaperEngineRuntime({
   fs,
@@ -538,8 +594,8 @@ const wallpaperEngineRuntime = createWallpaperEngineRuntime({
   execFile,
   spawn,
   windowHelper: wallpaperEngineWindow,
-  log: (...args) => console.log('[WallpaperEngine]', ...args),
-  logWarn: (...args) => console.warn('[WallpaperEngine]', ...args),
+  log: wallpaperEngineLog,
+  logWarn: wallpaperEngineLogWarn,
   getVirtualDesktopBounds: () => {
     const displays = screen.getAllDisplays();
     if (!displays.length) return null;
@@ -568,7 +624,7 @@ const wallpaperEngineRuntime = createWallpaperEngineRuntime({
 // Renderer crash or a window rebuild must not leave an orphaned playback window behind.
 function teardownWallpaperEngineSession() {
   wallpaperEngineRuntime.dispose().catch((error) => {
-    console.warn('[WallpaperEngine] Failed to dispose the runtime', error);
+    wallpaperEngineLogWarn('Failed to dispose the runtime', error);
   });
 }
 
@@ -6748,7 +6804,7 @@ ipcMain.handle('wallpaper-engine-scan', async (event, force) => {
       })),
     };
   } catch (error) {
-    console.warn('[WallpaperEngine] Library scan failed', error);
+    wallpaperEngineLogWarn('Library scan failed', error);
     return { ok: false, error: 'scan-failed', total: 0, items: [] };
   }
 });
@@ -6793,6 +6849,20 @@ ipcMain.handle('wallpaper-engine-get-capture-source', async (event) => {
     throw new Error('Untrusted renderer attempted to read the Wallpaper Engine capture source.');
   }
   return getWallpaperEngineCaptureSource();
+});
+
+// Renderer-side capture failures (getUserMedia NotReadableError etc.) are part of the same
+// diagnostic trail as the main-process park/watch logs. The renderer cannot write files directly;
+// it sends the line here, and it lands in %APPDATA%\Folia\wallpaper-engine.log.
+ipcMain.on('wallpaper-engine-log', (event, payload) => {
+  if (!isTrustedMainWindowContents(event.sender)) return;
+  const record = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : { message: payload };
+  const message = String(record.message || '').slice(0, 2000);
+  const kind = typeof record.event === 'string' ? record.event.slice(0, 64) : '';
+  wallpaperEngineLog('renderer', kind ? `[${kind}] ${message}` : message);
+  // NotReadableError on the virtual-corner park means DWM is not composing that monitor. Move the
+  // window to the primary-screen fallback; the renderer retries the capture shortly afterwards.
+  if (kind === 'capture-failed') wallpaperEngineRuntime.fallbackToPrimaryPark();
 });
 
 ipcMain.handle('video-export-prepare-window', (event, size) => {
