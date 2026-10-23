@@ -1,16 +1,17 @@
 // electron/wallpaperEngineWindow.cjs
 // One-shot PowerShell bridge that locates the Wallpaper Engine playback window by its unique
 // title, refuses to touch any window that does not belong to wallpaper64/wallpaper32.exe, and
-// parks it on the virtual-desktop bottom-right corner (≤1px visible) so the renderer can capture
-// it without it overlapping the user's screen.
+// parks it just inside the primary screen's bottom-right corner (a few pixels visible) so the
+// renderer can capture it without it overlapping the user's screen.
 //
 // The park technique (SetWindowPos with SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOOWNERZORDER|
-// SWP_NOSENDCHANGING onto the virtual-screen corner) is ported from Mineradio (GPL-3.0-only)
+// SWP_NOSENDCHANGING onto the primary-screen corner) is ported from Mineradio (GPL-3.0-only)
 // desktop/wallpaper-engine-runtime.js, revision d43de565acabfdc1a9c9820a27e81a98ccbebcef.
 // This file is distributed with Folia under AGPL-3.0.
 
 const {
   createWallpaperEngineNativeWindow,
+  PARK_VISIBLE_INSET_PX,
 } = require('./wallpaperEngineWindowNative.cjs');
 
 const WALLPAPER_ENGINE_PROCESS_NAMES = ['wallpaper64', 'wallpaper32'];
@@ -74,11 +75,11 @@ public class FoliaWeWindow {
   }
 }
 '@
-  # SM_XVIRTUALSCREEN/SM_YVIRTUALSCREEN/SM_CXVIRTUALSCREEN/SM_CYVIRTUALSCREEN are already in
-  # physical pixels, which is exactly the coordinate space SetWindowPos expects — computing the
-  # corner here keeps a mixed-DPI multi-monitor layout from parking the window on a real screen.
-  $targetX = [FoliaWeWindow]::GetSystemMetrics(76) + [FoliaWeWindow]::GetSystemMetrics(78) - 1
-  $targetY = [FoliaWeWindow]::GetSystemMetrics(77) + [FoliaWeWindow]::GetSystemMetrics(79) - 1
+  # Park just inside the primary screen's bottom-right corner. The virtual-desktop corner can be
+  # on a secondary monitor that is off/asleep; DWM then stops providing frames and desktop capture
+  # fails with NotReadableError. The few visible pixels sit under the taskbar in the usual layout.
+  $targetX = [FoliaWeWindow]::GetSystemMetrics(0) - ${PARK_VISIBLE_INSET_PX}
+  $targetY = [FoliaWeWindow]::GetSystemMetrics(1) - ${PARK_VISIBLE_INSET_PX}
   $waitMs = ${WINDOW_WAIT_DEFAULT_MS}
   if ($env:FOLIA_WE_WINDOW_WAIT_MS -match '^\d+$') { $waitMs = [int]$env:FOLIA_WE_WINDOW_WAIT_MS }
   $startedAt = Get-Date
@@ -180,9 +181,9 @@ function createWallpaperEngineWindowHelper(options = {}) {
     timeoutMs = WINDOW_WAIT_DEFAULT_MS + 8000,
   } = options;
 
-  // Finds the playback window by title and moves it onto the true virtual-desktop corner when the
-  // engine ignored the open-time -x/-y. The returned `target` is authoritative and gets reused for
-  // the next openWallpaper, so only the first window pays for the geometry query.
+  // Finds the playback window by title and moves it to the primary-screen corner when the engine
+  // ignored the open-time -x/-y. The returned `target` is authoritative and gets reused for the
+  // next openWallpaper, so only the first window pays for the geometry query.
   // Never throws: the caller falls back to the open-time coordinates.
   const parkWindow = ({ title }) => new Promise((resolve) => {
     const env = { ...process.env, FOLIA_WE_TITLE: String(title) };

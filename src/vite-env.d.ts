@@ -1071,6 +1071,8 @@ declare global {
       stopWallpaperEngine: () => Promise<{ ok: boolean }>;
       getWallpaperEngineStatus: () => Promise<ElectronWallpaperEngineRuntimeStatus>;
       getWallpaperEngineCaptureSource: () => Promise<ElectronWindowCaptureSource | null>;
+      /** Appends a renderer-side capture diagnostic to the main-process log file. */
+      reportWallpaperEngineLog?: (message: string) => void;
       onWallpaperEngineChanged: (
         callback: (status: ElectronWallpaperEngineStatus) => void,
       ) => () => void;

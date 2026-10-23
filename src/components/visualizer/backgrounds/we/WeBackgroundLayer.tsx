@@ -49,6 +49,9 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
     // Seeded from the service so a remount that can adopt the running capture never paints the
     // poster first (effects run after paint, which would be a visible blurry frame).
     const [streamReady, setStreamReady] = useState(() => hasLiveWallpaperEngineCapture(frameRate));
+    // Incremented when the live stream ends (engine window re-created / style repair). The effect
+    // below then re-fetches the capture source instead of leaving the layer on the poster forever.
+    const [captureEpoch, setCaptureEpoch] = useState(0);
 
     useEffect(() => {
         if (!active) {
@@ -57,6 +60,8 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
         }
         let disposed = false;
         let stream: MediaStream | null = null;
+        let endedTrack: MediaStreamTrack | null = null;
+        let endedHandler: (() => void) | null = null;
         setStreamReady(hasLiveWallpaperEngineCapture(frameRate));
 
         // Attaches the capture, retrying the source lookup until the engine's window shows up.
@@ -81,6 +86,9 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                         continue;
                     }
                     console.warn('[WallpaperEngine] Capture failed', error);
+                    api.reportWallpaperEngineLog?.(
+                        `Capture failed: ${error instanceof Error ? error.message : String(error)}`,
+                    );
                     if (!disposed) setStreamReady(false);
                     return;
                 }
@@ -88,6 +96,13 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                     releaseWallpaperEngineCapture(stream);
                     return;
                 }
+                endedTrack = stream.getVideoTracks()[0] || null;
+                endedHandler = () => {
+                    if (disposed) return;
+                    api.reportWallpaperEngineLog?.('Capture stream ended; re-acquiring');
+                    setCaptureEpoch(epoch => epoch + 1);
+                };
+                endedTrack?.addEventListener('ended', endedHandler);
                 const video = videoRef.current;
                 if (video) {
                     video.srcObject = stream;
@@ -104,12 +119,13 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
 
         return () => {
             disposed = true;
+            if (endedTrack && endedHandler) endedTrack.removeEventListener('ended', endedHandler);
             releaseWallpaperEngineCapture(stream);
             stream = null;
             const video = videoRef.current;
             if (video) video.srcObject = null;
         };
-    }, [active, frameRate]);
+    }, [active, captureEpoch, frameRate]);
 
     useEffect(() => {
         const video = videoRef.current;

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const {
   PARK_TOLERANCE_PX,
+  PARK_VISIBLE_INSET_PX,
   WALLPAPER_ENGINE_PROCESS_NAMES,
   WS_EX_APPWINDOW,
   WS_EX_NOACTIVATE,
@@ -15,11 +16,12 @@ const {
   computeManagedExStyle,
   hasManagedExStyle,
   isRectAtTarget,
+  primaryScreenCorner,
   rectHeight,
   rectWidth,
-  virtualDesktopCorner,
 } = require('../../../electron/wallpaperEngineWindowNative.cjs') as {
   PARK_TOLERANCE_PX: number;
+  PARK_VISIBLE_INSET_PX: number;
   WALLPAPER_ENGINE_PROCESS_NAMES: string[];
   WS_EX_APPWINDOW: number;
   WS_EX_NOACTIVATE: number;
@@ -27,9 +29,9 @@ const {
   computeManagedExStyle: (exStyle: unknown) => number;
   hasManagedExStyle: (exStyle: unknown) => boolean;
   isRectAtTarget: (rect: { left: number; top: number } | null, target: { x: number; y: number } | null, tolerance?: number) => boolean;
+  primaryScreenCorner: (bounds: { width: number; height: number }) => { x: number; y: number };
   rectHeight: (rect: { top: number; bottom: number }) => number;
   rectWidth: (rect: { left: number; right: number }) => number;
-  virtualDesktopCorner: (bounds: { x: number; y: number; width: number; height: number }) => { x: number; y: number };
 };
 
 const {
@@ -70,10 +72,16 @@ describe('wallpaperEngineWindowNative', () => {
     });
   });
 
-  describe('virtualDesktopCorner', () => {
-    it('uses the virtual desktop bottom-right pixel, including negative origins', () => {
-      expect(virtualDesktopCorner({ x: 0, y: 0, width: 2560, height: 1440 })).toEqual({ x: 2559, y: 1439 });
-      expect(virtualDesktopCorner({ x: -1920, y: 0, width: 3840, height: 1080 })).toEqual({ x: 1919, y: 1079 });
+  describe('primaryScreenCorner', () => {
+    it('leaves a small visible inset at the primary screen bottom-right', () => {
+      expect(PARK_VISIBLE_INSET_PX).toBe(4);
+      expect(primaryScreenCorner({ width: 2560, height: 1440 })).toEqual({ x: 2556, y: 1436 });
+      expect(primaryScreenCorner({ width: 1920, height: 1080 })).toEqual({ x: 1916, y: 1076 });
+    });
+
+    it('never produces a negative corner for tiny screens', () => {
+      expect(primaryScreenCorner({ width: 2, height: 2 })).toEqual({ x: 0, y: 0 });
+      expect(primaryScreenCorner({ width: 0, height: 0 })).toEqual({ x: 0, y: 0 });
     });
   });
 

@@ -2,12 +2,13 @@
 // Native (koffi + user32.dll) manager for the Wallpaper Engine "play in window" surface.
 //
 // The engine creates that window as an ordinary top-level window: it gets a taskbar button, it
-// appears in Alt+Tab, and clicking it activates a full-size window that is only parked 1 px past
-// the virtual desktop corner. Moving it off-screen is not enough, so this module also:
+// appears in Alt+Tab, and clicking it activates a full-size window that is only parked a few pixels
+// inside the primary screen's bottom-right corner. Moving it off-screen is not enough, so this
+// module also:
 //
 //   1. makes it a tool window (WS_EX_TOOLWINDOW) and non-activatable (WS_EX_NOACTIVATE),
 //   2. removes the taskbar button that already exists by hiding/showing it once,
-//   3. keeps it at the true virtual-desktop corner and at the bottom of the Z order,
+//   3. keeps it just inside the primary screen's bottom-right corner and at the bottom of the Z order,
 //   4. exposes a cheap monitor() the runtime calls on a timer, so an engine restart, a display
 //      change or a window move is repaired before the user can see it.
 //
@@ -37,11 +38,17 @@ const HWND_BOTTOM = 1;
 
 const SW_HIDE = 0;
 const SW_SHOWNOACTIVATE = 4;
+const SW_RESTORE = 9;
 
-const SM_XVIRTUALSCREEN = 76;
-const SM_YVIRTUALSCREEN = 77;
-const SM_CXVIRTUALSCREEN = 78;
-const SM_CYVIRTUALSCREEN = 79;
+// Primary-screen metrics. The virtual desktop's bottom-right corner can live on a secondary
+// monitor that is off/asleep or not composited; DWM then refuses to provide frames and
+// desktopCapturer fails with NotReadableError. The primary screen is always composed, so the
+// playback window is parked just inside its bottom-right corner instead.
+const SM_CXSCREEN = 0;
+const SM_CYSCREEN = 1;
+// Leave a few pixels visible so the window is never treated as fully off-screen. The sliver sits
+// under the taskbar in the usual layout and is invisible in practice.
+const PARK_VISIBLE_INSET_PX = 4;
 
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
@@ -62,12 +69,12 @@ const hasManagedExStyle = (exStyle) => {
     && (value & WS_EX_APPWINDOW) === 0;
 };
 
-// The park target is the virtual desktop's bottom-right pixel, in physical pixels, exactly like
-// the PowerShell helper. Computing it from GetSystemMetrics keeps a mixed-DPI or multi-monitor
-// layout from parking the window on a real screen.
-const virtualDesktopCorner = ({ x, y, width, height }) => ({
-  x: Math.round(x + width - 1),
-  y: Math.round(y + height - 1),
+// The park target is a few pixels inside the primary screen's bottom-right corner. Window
+// coordinates are relative to the primary monitor, whose origin is always (0, 0). Keeping the
+// window on the primary display avoids capturing a window parked on an inactive secondary monitor.
+const primaryScreenCorner = ({ width, height }) => ({
+  x: Math.max(0, Math.round(Number(width) - PARK_VISIBLE_INSET_PX)),
+  y: Math.max(0, Math.round(Number(height) - PARK_VISIBLE_INSET_PX)),
 });
 
 const isRectAtTarget = (rect, target, tolerance = PARK_TOLERANCE_PX) => {
@@ -114,6 +121,7 @@ const loadNativeApi = () => {
   const GetWindowRect = user32.func('bool __stdcall GetWindowRect(void *hwnd, _Out_ FOLIA_WE_RECT *rect)');
   const ShowWindow = user32.func('bool __stdcall ShowWindow(void *hwnd, int cmd)');
   const IsWindowVisible = user32.func('bool __stdcall IsWindowVisible(void *hwnd)');
+  const IsIconic = user32.func('bool __stdcall IsIconic(void *hwnd)');
   const GetForegroundWindow = user32.func('void * __stdcall GetForegroundWindow()');
   const GetSystemMetrics = user32.func('int __stdcall GetSystemMetrics(int index)');
 
@@ -181,11 +189,9 @@ const loadNativeApi = () => {
     };
   };
 
-  const currentParkTarget = () => virtualDesktopCorner({
-    x: GetSystemMetrics(SM_XVIRTUALSCREEN),
-    y: GetSystemMetrics(SM_YVIRTUALSCREEN),
-    width: GetSystemMetrics(SM_CXVIRTUALSCREEN),
-    height: GetSystemMetrics(SM_CYVIRTUALSCREEN),
+  const currentParkTarget = () => primaryScreenCorner({
+    width: GetSystemMetrics(SM_CXSCREEN),
+    height: GetSystemMetrics(SM_CYSCREEN),
   });
 
   const enumerateWindows = () => {
@@ -258,15 +264,20 @@ const loadNativeApi = () => {
   // button that the shell has already registered. A single hide/show cycle (before the renderer
   // starts capturing) makes the shell rebuild the button set; the window is then put back with
   // SW_SHOWNOACTIVATE so it never steals focus.
-  const applyManagedStyle = (hwnd) => {
+  const applyManagedStyle = (hwnd, { hideShow = true } = {}) => {
     const previous = getExStyle(hwnd);
     const next = computeManagedExStyle(previous);
     if (next === previous && hasManagedExStyle(previous)) {
       return { changed: false, previous, next };
     }
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
-    ShowWindow(hwnd, SW_HIDE);
-    ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    // The hide/show cycle is what makes the shell drop an already-registered taskbar button. It
+    // must only run for a newly created window or during the initial park: doing it while the
+    // renderer is capturing the same window can make getUserMedia fail with NotReadableError.
+    if (hideShow) {
+      ShowWindow(hwnd, SW_HIDE);
+      ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+    }
     SetWindowPos(
       hwnd,
       null,
@@ -276,7 +287,7 @@ const loadNativeApi = () => {
       0,
       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
     );
-    return { changed: true, previous, next: getExStyle(hwnd) };
+    return { changed: true, previous, next: getExStyle(hwnd), hideShow };
   };
 
   nativeApi = {
@@ -294,6 +305,7 @@ const loadNativeApi = () => {
     getRect,
     currentParkTarget,
     ShowWindow,
+    IsIconic,
     GetForegroundWindow,
     enumerateWindows,
     findExactTitle,
@@ -328,6 +340,10 @@ function createWallpaperEngineNativeWindow(options = {}) {
   // size it actually used so a later display change or external resize cannot silently downgrade
   // the capture, while a recreated window (new title) starts from its own measured size.
   let lastParkedSize = null;
+  // The handle whose taskbar button has already been removed. A different handle means the engine
+  // re-created the window, so the hide/show cycle is needed again; the same handle only needs the
+  // style bits re-applied, which must not interrupt a live capture.
+  let lastManagedHwnd = '';
 
   const verifyEngineWindow = (entry) => {
     if (!entry) return { ok: false, reason: 'not-found' };
@@ -389,6 +405,7 @@ function createWallpaperEngineNativeWindow(options = {}) {
     const entry = found.entry;
     const target = api.currentParkTarget();
     const style = api.applyManagedStyle(entry.hwnd);
+    lastManagedHwnd = String(entry.hwnd);
     const measured = api.getRect(entry.hwnd);
     lastParkedSize = {
       width: rectWidth(measured),
@@ -430,14 +447,20 @@ function createWallpaperEngineNativeWindow(options = {}) {
       return { ok: false, reason: verification.reason, processName: verification.processName || '' };
     }
 
+    const sameWindow = lastManagedHwnd === String(entry.hwnd);
     let restoredVisible = false;
-    if (!entry.visible) {
+    if (api.IsIconic(entry.hwnd)) {
+      // A minimized window is still IsWindowVisible=true, but Chromium cannot capture it.
+      api.ShowWindow(entry.hwnd, SW_RESTORE);
+      restoredVisible = true;
+    } else if (!entry.visible) {
       api.ShowWindow(entry.hwnd, SW_SHOWNOACTIVATE);
       restoredVisible = true;
     }
 
     const target = api.currentParkTarget();
-    const style = api.applyManagedStyle(entry.hwnd);
+    const style = api.applyManagedStyle(entry.hwnd, { hideShow: !sameWindow });
+    lastManagedHwnd = String(entry.hwnd);
     const parked = api.moveToParkTarget(entry.hwnd, target, lastParkedSize);
     const foreground = String(api.GetForegroundWindow()) === String(entry.hwnd);
     if (foreground) api.pushToBottom(entry.hwnd);
@@ -527,6 +550,7 @@ module.exports = {
   GWL_EXSTYLE,
   HWND_BOTTOM,
   PARK_TOLERANCE_PX,
+  PARK_VISIBLE_INSET_PX,
   SWP_FLAGS: SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING | SWP_NOZORDER,
   WALLPAPER_ENGINE_PROCESS_NAMES,
   WINDOW_WAIT_DEFAULT_MS,
@@ -540,5 +564,5 @@ module.exports = {
   isRectAtTarget,
   rectHeight,
   rectWidth,
-  virtualDesktopCorner,
+  primaryScreenCorner,
 };
