@@ -70,6 +70,10 @@ import { getLocalSongArrayBuffer } from './services/localMusicService';
 import type { MediaId, OnlineProviderId, ProviderCollection } from './types/onlineMusic';
 import { resolveSongCatalogRef } from './services/onlineMusic/catalogRefs';
 import { omni } from './services/onlineMusic/omni';
+import { getQishuiModeLabel } from './services/onlineMusic/qishuiFeedModes';
+import QishuiFeedModeGrid from './components/qishui/QishuiFeedModeGrid';
+import { useQishuiFeedModeStore } from './stores/useQishuiFeedModeStore';
+import { openQishuiFeedModeGrid } from './stores/useQishuiFeedModeGridStore';
 import { consumeProgrammaticPause, playbackFade } from './services/playbackFade';
 import { getSongArtistLabel, getSongCoverUrl } from './services/onlineMusic/songMetadata';
 import { isNavidromeEnabled } from './services/navidromeService';
@@ -782,6 +786,11 @@ export default function App() {
         () => resolveActiveProviderSummary(onlineProviders, activeProviderId),
         [activeProviderId, onlineProviders],
     );
+    // Qishui has its own listening-mode grid; the NetEase Personal FM picker must not be shown
+    // for it. The selection store is independent so queue refills read the same mode.
+    const isQishuiProvider = activeProviderId === 'qishui';
+    const qishuiFeedModeSelection = useQishuiFeedModeStore(state => state.selection);
+    const qishuiFeedModeLabel = getQishuiModeLabel(qishuiFeedModeSelection);
     // 保留 App 对整张账户表的订阅（原先 useOnlineProviderPlatform 订阅它）：底栏与命令面板的收藏心形
     // （resolveSongLiked → omni.isSongLiked）经 getState 读各平台的 likedSongIds，账户摘要里没有它，
     // 只订阅 controller 快照的话收藏之后心形不会当场更新。取值没有用处。
@@ -1567,6 +1576,24 @@ export default function App() {
         t: (key: string, fallback?: string) => t(key, fallback ?? ''),
     });
 
+    // The Qishui grid writes the store; restart Personal FM here so picking a mode is audible
+    // immediately, the way the official client switches queues. Outside FM the next start reads
+    // the store on its own, so no action is needed.
+    const qishuiFeedModeRef = useRef(qishuiFeedModeSelection);
+    useEffect(() => {
+        if (qishuiFeedModeRef.current === qishuiFeedModeSelection) return;
+        qishuiFeedModeRef.current = qishuiFeedModeSelection;
+        if (!isQishuiProvider || !isFmMode || !currentSong) return;
+        void (async () => {
+            try {
+                const songs = await omni.getPersonalFm();
+                if (songs.length) void playSong(songs[0], songs, true);
+            } catch (error) {
+                console.warn('[Qishui] Failed to switch the feed mode', error);
+            }
+        })();
+    }, [qishuiFeedModeSelection, isQishuiProvider, isFmMode, currentSong, playSong]);
+
     // Wallpaper mode removes normal window semantics (no minimize/maximize/close, no dragging, and
     // click-through is managed by the main process), so the whole custom titlebar strip stays off.
     const usesCustomWindowChrome = isElectronWindow && !wallpaperMode;
@@ -1820,15 +1847,20 @@ export default function App() {
             || Boolean(pendingUnavailableReplacement),
         context: commandPaletteContext,
     });
-    // The FM tab reuses the palette's picker instead of carrying its own copy of the mode list.
-    // Read through a ref rather than depended on: openCommandById tracks the palette's isExecuting
-    // flag, so depending on it would rebuild the player panel model on unrelated renders. The
-    // picker only ever runs from a click, so the latest one is the right one.
+    // Other providers reuse the palette's picker; Qishui has its own icon grid (45 scenes fetched
+    // from the signed PC endpoint). Read the palette opener through a ref rather than depended on:
+    // openCommandById tracks the palette's isExecuting flag, so depending on it would rebuild the
+    // player panel model on unrelated renders. The picker only ever runs from a click, so the
+    // latest one is the right one.
     const openCommandByIdRef = useRef(commandPalette.openCommandById);
     openCommandByIdRef.current = commandPalette.openCommandById;
     const handleOpenFmModePicker = useMemo(() => (
-        isPersonalFmModeSupported ? () => openCommandByIdRef.current(PERSONAL_FM_MODE_COMMAND_ID) : undefined
-    ), [isPersonalFmModeSupported]);
+        isQishuiProvider
+            ? () => openQishuiFeedModeGrid()
+            : isPersonalFmModeSupported
+                ? () => openCommandByIdRef.current(PERSONAL_FM_MODE_COMMAND_ID)
+                : undefined
+    ), [isQishuiProvider, isPersonalFmModeSupported]);
     const nowPlayingDebugSnapshot = useMemo(() => (
         stageSource === 'now-playing'
             ? {
@@ -2260,7 +2292,7 @@ export default function App() {
         handleClearOnlineLyricsState,
         handleLyricTimelineOffsetChange,
         handleChangeReplayGainMode,
-        fmModeLabel: personalFmSelectionLabel,
+        fmModeLabel: isQishuiProvider ? qishuiFeedModeLabel : personalFmSelectionLabel,
         handleOpenFmModePicker,
         handleFmTrash,
         handleNextTrack,
@@ -2975,6 +3007,7 @@ export default function App() {
             <UserGuideModal theme={theme} />
             <PlaybackEntryViewPrompt theme={theme} />
             <LatticeFmNotice />
+            <QishuiFeedModeGrid />
         </AppShell>
     );
 }

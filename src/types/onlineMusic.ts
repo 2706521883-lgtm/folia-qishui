@@ -456,9 +456,34 @@ export interface PersonalFmRequestOptions {
     submode?: string | null;
 }
 
+/** One selectable listening mode; Qishui's catalogue is fetched at runtime. */
+export interface PersonalFmModeEntry {
+    id: string;
+    kind: 'preference' | 'scene';
+    text: string;
+    preferenceMode?: string;
+    sceneModeId?: number;
+    subQueueType?: string;
+    iconUrl?: string;
+    cutoverToast?: string;
+    order?: number;
+}
+
+export interface PersonalFmModeCatalog {
+    provider?: string;
+    configured: boolean;
+    modes: PersonalFmModeEntry[];
+    scenes: PersonalFmModeEntry[];
+    fetchedAt?: number;
+    error?: string;
+    message?: string;
+}
+
 export interface OnlineRecommendationProvider {
     getDailySongs?(refresh?: boolean): Promise<UnifiedSong[]>;
     getPersonalFm?(options?: PersonalFmRequestOptions): Promise<UnifiedSong[]>;
+    /** Providers with a selectable listening-mode catalogue expose it here. */
+    getPersonalFmModes?(): Promise<PersonalFmModeCatalog>;
     /**
      * Read the next Personal FM batch without consuming it (home-card cover, previews).
      * Providers without a consumable feed can omit this; callers fall back to getPersonalFm.

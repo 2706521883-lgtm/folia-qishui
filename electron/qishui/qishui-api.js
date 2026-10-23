@@ -196,6 +196,10 @@ const qishuiSearchCache = createTtlCache(80, 2 * 60 * 1000);
 const qishuiLyricCache = createTtlCache(240, 30 * 60 * 1000);
 const qishuiPublicDetailCache = createTtlCache(240, 30 * 60 * 1000);
 const qishuiFeedCache = createTtlCache(16, 90 * 1000);
+// The mode catalogue changes rarely; an hour is short enough to pick up new scenes and long
+// enough that opening the picker does not re-sign a request every time.
+const QISHUI_FEED_MODES_TTL_MS = 60 * 60 * 1000;
+const qishuiFeedModesCache = createTtlCache(4, QISHUI_FEED_MODES_TTL_MS);
 // 推荐流自己的会话缓冲：key = 账号标识 | flow | transport。
 // 不复用 qishuiFeedCache —— 它按 limit 做 key，正是「永远第一页」的来源。
 const qishuiRecommendFeedSessions = new Map();
@@ -2836,6 +2840,43 @@ function qishuiRecommendFlow(value) {
   return /^(fm|playlist|peek)$/.test(flow) ? flow : 'playlist';
 }
 
+// The PC client selects a listening mode with `feed_preference`:
+//   scene mode     -> { scene_mode_id: 4 }
+//   familiar/fresh -> { preference_mode: 'familiar' | 'fresh' }
+// Anything else is dropped rather than sent upstream.
+function qishuiFeedPreference(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const sceneModeId = Number(value.scene_mode_id ?? value.sceneModeId);
+  if (Number.isFinite(sceneModeId) && sceneModeId > 0) {
+    return { scene_mode_id: Math.trunc(sceneModeId) };
+  }
+  const preferenceMode = normalizeText(value.preference_mode ?? value.preferenceMode).toLowerCase();
+  // Default is the absence of a preference, exactly like the official client's feed request.
+  if (preferenceMode === 'default') return null;
+  if (/^(familiar|fresh)$/.test(preferenceMode)) {
+    return { preference_mode: preferenceMode };
+  }
+  return null;
+}
+
+// A different mode is a different stream: it must not reuse the previous mode's cursor/buffer.
+function qishuiFeedPreferenceKey(feedPreference) {
+  if (!feedPreference) return 'default';
+  if (feedPreference.scene_mode_id) return 'scene:' + feedPreference.scene_mode_id;
+  return 'pref:' + feedPreference.preference_mode;
+}
+
+// The renderer gets ready-to-use icon URLs; the raw url_info shape is an internal CDN detail.
+function qishuiModeIconUrl(urlInfo) {
+  if (!urlInfo || typeof urlInfo !== 'object' || !urlInfo.uri) return '';
+  const base = Array.isArray(urlInfo.urls) ? String(urlInfo.urls[0] || '') : '';
+  if (!base) return '';
+  const template = urlInfo.template_prefix
+    ? `${urlInfo.template_prefix}-resize:400:400.webp`
+    : 'c5_400x400.jpg';
+  return base + String(urlInfo.uri) + '~' + template;
+}
+
 function qishuiRecommendAccountKey(cookieText) {
   const cookie = normalizeQishuiCookieInput(cookieText);
   const userId = qishuiCookieUserId(cookie);
@@ -2848,11 +2889,11 @@ function qishuiRecommendAccountKey(cookieText) {
   return 'anon';
 }
 
-function qishuiRecommendSessionKey(cookieText, flow, transport) {
-  return qishuiRecommendAccountKey(cookieText) + '|' + flow + '|' + transport;
+function qishuiRecommendSessionKey(cookieText, flow, transport, feedPreference) {
+  return qishuiRecommendAccountKey(cookieText) + '|' + flow + '|' + transport + '|' + qishuiFeedPreferenceKey(feedPreference);
 }
 
-function getQishuiRecommendSession(key, flow, transport) {
+function getQishuiRecommendSession(key, flow, transport, feedPreference) {
   const now = Date.now();
   let session = qishuiRecommendFeedSessions.get(key);
   if (session && now - session.updatedAt > QISHUI_FEED_SESSION_TTL_MS) {
@@ -2864,6 +2905,7 @@ function getQishuiRecommendSession(key, flow, transport) {
       key,
       flow,
       transport,
+      feedPreference: feedPreference || null,
       songs: [],
       seen: new Set(),
       playedMedia: [],
@@ -3093,6 +3135,7 @@ function buildQishuiFeedWebPayload(session) {
     is_did_first_request: false,
     feed_counts: { mix_session_count: 1 },
   };
+  if (session.feedPreference) payload.feed_preference = session.feedPreference;
   if (session.cursor) payload[session.cursorKey || 'cursor'] = session.cursor;
   return payload;
 }
@@ -3159,6 +3202,7 @@ async function fetchQishuiTokenRecommendPage(session, limit) {
     played_media: session.playedMedia.slice(-30),
     common_params: { trigger_name: 'mineradio_feed', scene: 'feed', source: 'mineradio' },
   };
+  if (session.feedPreference) payload.feed_preference = session.feedPreference;
   if (session.cursor) payload[session.cursorKey || 'cursor'] = session.cursor;
   const json = await qishuiPost(QISHUI_FEED_SONG_TAB_PATH, payload);
   const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_REQUEST_FAILED');
@@ -3179,6 +3223,72 @@ async function fetchQishuiTokenRecommendPage(session, limit) {
     hasMore: typeof meta.hasMore === 'boolean' ? meta.hasMore : songs.length > 0,
     source: 'token',
   };
+}
+
+function qishuiModeEntryFromPayload(mode, index) {
+  if (!mode || typeof mode !== 'object') return null;
+  const scene = mode.entity && mode.entity.feed_scene_mode;
+  const sceneModeId = Number(scene && scene.scene_mode_id);
+  if (!Number.isFinite(sceneModeId) || sceneModeId <= 0) return null;
+  return {
+    id: 'scene:' + Math.trunc(sceneModeId),
+    kind: 'scene',
+    text: normalizeText(mode.text) || ('场景 ' + Math.trunc(sceneModeId)),
+    sceneModeId: Math.trunc(sceneModeId),
+    subQueueType: normalizeText(scene.sub_queue_type),
+    iconUrl: qishuiModeIconUrl(mode.url_info),
+    cutoverToast: normalizeText(mode.cutover_toast),
+    order: index,
+  };
+}
+
+// POST /luna/pc/feed/mode: the official catalogue. It needs the signed PC transport; the web
+// cookie alone gets ERR_REQUEST_FORBIDDEN. The renderer only sees labels/ids/icons.
+async function handleQishuiFeedModes(cookieText) {
+  const cookie = normalizeQishuiCookieInput(cookieText);
+  const status = getQishuiStatus(cookie);
+  if (!status.webSession) {
+    return {
+      provider: 'qishui',
+      configured: false,
+      modes: [],
+      scenes: [],
+      error: 'QISHUI_COOKIE_REQUIRED',
+      message: status.message,
+    };
+  }
+  const key = 'feed-modes|' + qishuiCookieFingerprint(cookie);
+  return qishuiFeedModesCache.wrap(key, QISHUI_FEED_MODES_TTL_MS, async () => {
+    const json = await qishuiWebRequestJson('/luna/pc/feed/mode', qishuiPcAppParams(), cookie, {
+      bases: [QISHUI_WEB_PC_API_BASE],
+      noDefaultParams: true,
+      sessionOnly: true,
+      pcApp: true,
+      method: 'POST',
+      body: '{}',
+      referer: 'https://www.qishui.com/',
+      timeoutMs: 9000,
+    });
+    const statusError = qishuiFeedStatusError(json, 'QISHUI_FEED_MODES_FAILED');
+    if (statusError) throw statusError;
+    const block = json && Array.isArray(json.feed_mode_block) ? json.feed_mode_block : [];
+    const firstBlock = block.find(item => item && item.type === 'scene_music') || block[0];
+    const rawModes = firstBlock && Array.isArray(firstBlock.feed_mode) ? firstBlock.feed_mode : [];
+    const scenes = rawModes.map(qishuiModeEntryFromPayload).filter(Boolean);
+    return {
+      provider: 'qishui',
+      configured: true,
+      // Familiar/Fresh are not in feed_mode_block; the official client prepends them locally.
+      modes: [
+        { id: 'default', kind: 'preference', text: '推荐', preferenceMode: 'default', order: -3 },
+        { id: 'familiar', kind: 'preference', text: '熟悉模式', preferenceMode: 'familiar', order: -2 },
+        { id: 'fresh', kind: 'preference', text: '新鲜模式', preferenceMode: 'fresh', order: -1 },
+        ...scenes,
+      ],
+      scenes,
+      fetchedAt: Date.now(),
+    };
+  });
 }
 
 // 把整个 advance 事务串行化（不只是上游抓取）：后一个调用必须等前一个把 served 推进完，
@@ -3309,8 +3419,9 @@ async function handleQishuiRecommendFeed(opts, cookieText, deps) {
   }
   const flow = qishuiRecommendFlow(opts.flow);
   const transport = status.webSession ? 'web' : 'token';
-  const key = qishuiRecommendSessionKey(cookieText, flow, transport);
-  const session = getQishuiRecommendSession(key, flow, transport);
+  const feedPreference = qishuiFeedPreference(opts.feedPreference);
+  const key = qishuiRecommendSessionKey(cookieText, flow, transport, feedPreference);
+  const session = getQishuiRecommendSession(key, flow, transport, feedPreference);
   const limit = Math.max(1, Math.min(50, Number(opts.limit) || QISHUI_FEED_PAGE_SIZE));
   // 推进只属于 Personal FM：peek/playlist 即使误传 advance 也绝不消费会话。
   const advance = opts.advance === true && flow === 'fm';
@@ -4770,6 +4881,7 @@ module.exports = {
   handleQishuiSongDetail,
   handleQishuiAlbumDetail,
   handleQishuiFeed,
+  handleQishuiFeedModes,
   handleQishuiRecommendFeed,
   handleQishuiUserPlaylists,
   handleQishuiPlaylistTracks,
@@ -4814,6 +4926,10 @@ module.exports = {
     QISHUI_FEED_PAGE_SIZE,
     qishuiRecommendFeedSessions,
     qishuiRecommendFlow,
+    qishuiFeedPreference,
+    qishuiFeedPreferenceKey,
+    qishuiModeIconUrl,
+    qishuiModeEntryFromPayload,
     extractQishuiFeedPageMeta,
     mapQishuiFeedItems,
     buildQishuiFeedPlaylist,
