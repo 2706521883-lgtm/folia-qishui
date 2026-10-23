@@ -22,18 +22,21 @@
                  ├─ 等 `-control getWallpaper -monitor 0` 连续两次应答（引擎可能还没起）
                  ├─ 先清理上次残留的 `Folia Wallpaper` 前缀播放窗口
                  └─ `-control openWallpaper -file <project.json> -playInWindow "<唯一标题>" ...`
-                    → 原生（koffi/user32）轮询等该窗口出现，套上 TOOLWINDOW/NOACTIVATE、
-                      删掉任务栏按钮、挪到主屏右下角（留 4px 可见）并压到 Z 序底部
-                    → 会话期间每 750ms 守护：样式被重置/位置漂移/被激活就立即修复
+                    （**不带 -borderless**：WGC 必须先看到 DWM 为窗口建立的边框）
+                    → 原生（koffi/user32）轮询等该窗口出现，立刻剥成 0x94000000 无边框形态、
+                      清空扩展样式，挪到虚拟桌面右下角（留 4px 可见）并压到 Z 序底部
+                    → 会话期间每 750ms 守护：边框/位置/激活状态被重置就立即修复
                     → 按重试表反复 `-control applyProperties RAW~({"volume":0,…})~END`
-                 └─ 呈现：desktopCapturer 按窗口标题找到该窗口 → getUserMedia 采集成 MediaStream
+                 └─ 呈现：主进程用状态里的 HWND 直接给出 `window:<hwnd>:0` → getUserMedia
+                          → 首帧到达后通知主进程加 TOOLWINDOW/NOACTIVATE + hide/show，
+                            删除任务栏按钮（此时采集项已存在，样式变更不会再被 WGC 拒绝）
                           → <video muted playsInline> 铺满背景层（透明度/缩放/位移/帧率可调）
 ```
 
 - **视频为什么可以内置**：video 工程的 `project.file` 就是普通 mp4/webm，Chromium 能直接解码，不需要 WE 的场景引擎。协议处理器按 index 里的 item id 反查文件，支持 Range 请求，`<video>` 可以流式播放/循环，不把大文件读进内存。
 - **scene 为什么只能采集**：`.pkg` 是 WE 的私有场景包，渲染依赖 WE 自己的 DirectX 场景引擎/着色器/粒子/音频分析；在 Folia 里重写等于重做一个 Wallpaper Engine。web 工程则实测可以用 `openWallpaper` 打开，所以仍走加固后的采集路径，而不是在 Folia 里执行任意 Workshop HTML。
 - **为什么是「采集」而不是「嵌窗口」**：DWM 缩略图（`DwmRegisterThumbnail`）需要原生窗口句柄与额外 helper 进程，`SetParent` 又会把 WE 窗口从它自己的渲染循环里撕出来。采集方案复用仓库既有的 `desktopCapturer` 通道（`electron/main.cjs` 里主窗口截图用的是同一条路），零原生依赖、零打包成本。
-- **为什么 WE 窗口要「藏」**：`openWallpaper` 的 `-playInWindow` 会开一个真实顶层窗口。只挪到屏幕外不够——它仍然是任务栏/Alt+Tab 里的普通窗口。原生管理器给它加 `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`、清 `WS_EX_APPWINDOW`，再做一次 hide/show 让 shell 删除已经注册的任务栏按钮；窗口仍在渲染，`desktopCapturer` 照常拿帧（实测 1px 可见 + 该样式组合仍能枚举并采集）。
+- **为什么 WE 窗口要「藏」**：`openWallpaper` 的 `-playInWindow` 会开一个真实顶层窗口，只挪到屏幕外的话仍然是任务栏/Alt+Tab 里的普通窗口。但 WGC 在**创建采集项**时拒绝带 `WS_EX_TOOLWINDOW`/`WS_EX_NOACTIVATE` 的窗口（返回 `E_INVALIDARG`，Chromium 翻成 `NotReadableError`），所以改成分两阶段：采集项建立前保持无边框、无扩展样式；首帧到达后再加样式并 hide/show 删除任务栏按钮。实测采集流在样式变更后继续出帧（67→120 帧），任务栏按钮也被移除。
 - **为什么不改壁纸文件**：静音走运行时属性（`applyProperties`），工程目录保持只读。用户随时可以在 WE 本体里照常使用同一个壁纸。
 
 ## 二、主进程模块
@@ -59,8 +62,8 @@
 - **可执行文件**：在各库根下找 `steamapps/common/wallpaper_engine/wallpaper64.exe`（回落 `wallpaper32.exe`），**先验签再用**：PowerShell `Get-AuthenticodeSignature` 的状态必须是 `Valid` 且签发主体匹配 `/\bSkutta Software\b/i`。这是唯一一处「拒绝执行」的安全门。
 - **控制通道就绪**：`-control` 子命令在引擎未运行时不一定失败给出可信信号（实测 `getWallpaper -monitor 0` 返回 exit 0 且 stdout 为空），所以判定标准是「**连续两次**探针成功」并缓存 2.5s；`start()` 里 `openWallpaper` 失败会 `force` 重探后重试一次。
 - **引擎自举**：不带参数 spawn 一次 `wallpaper64.exe`（`windowsHide`、`stdio:'ignore'`、`unref`）把常驻引擎拉起来，再等 720ms 让进程稳定，然后轮询控制通道（总预算 25s）。
-- **播放窗口**：`-control openWallpaper -file <project.json> -playInWindow "<标题>" -width -height -x -y -borderless`。
-  - **标题**是会话非碰撞的（`Folia Wallpaper <seed12><随机 6 位>`），因为窗口只靠标题寻址；渲染端拿不到也不该拼这个标题——`getWallpaperEngineCaptureSource()` 由主进程自己读状态里的标题去找 `desktopCapturer` 源。
+- **播放窗口**：`-control openWallpaper -file <project.json> -playInWindow "<标题>" -width -height -x -y`。**故意不带 `-borderless`**：WGC 拒绝“创建时就无边框”的窗口；必须先让引擎创建带边框窗口（DWM 建帧），再由原生管理器剥框。
+  - **标题**是会话非碰撞的（`Folia Wallpaper <seed12><随机 6 位>`），窗口只靠标题寻址；`getWallpaperEngineCaptureSource()` 优先用状态里的 `hwnd` 组成 `window:<hwnd>:0`，只有在句柄还没拿到时才按标题枚举 `desktopCapturer` 兜底。
   - 尺寸夹在 480–3840（`clampPlaybackSize`），坐标取主窗口所在显示器的 DIP 几何 × `scaleFactor`。
 - **静音**（`applyProperties`）：
   - 恒定下发 `volume = 0`；再按 `project.json` 的属性表派生场景专属静音值：滑块取最小值（分贝类取 `min`，无 min 时 -60）、布尔开关按「静音」语义取反、下拉框选带 None/Off/静音 字样的选项（没有就退回 value `'0'`）。
@@ -70,21 +73,25 @@
   - 载荷前先 `sanitizeMuteProperties`：只放行有限数字 / 布尔 / ≤256 字符字符串，键必须匹配 `/^[a-z0-9_.-]{1,128}$/i` 且不在 `__proto__/prototype/constructor` 黑名单里——坏键会让引擎整包拒绝。
 - **窗口管理（原生优先）**：`electron/wallpaperEngineWindowNative.cjs` 用 koffi 直接调 `user32.dll`，`createWallpaperEngineWindowManager()` 优先选它，PowerShell helper 只在 koffi/原生加载失败时兜底。
   - **找窗口**：`EnumWindows` + `GetWindowTextW` 逐字比较标题（默认最多 8s、每 80ms 一次），再用 `QueryFullProcessImageNameW` 校验属主确实是 `wallpaper64.exe`/`wallpaper32.exe`（**属主不对就不碰**）。
-  - **藏窗口**：`GetWindowLongPtrW(GWL_EXSTYLE)` → 加 `WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE`、清 `WS_EX_APPWINDOW` → hide/show 一次（让 shell 删掉已注册的任务栏按钮）→ `SWP_FRAMECHANGED` 生效。任务栏和 Alt+Tab 里都不再有它，点击也不会激活/抢焦点。
+  - **两阶段样式（0.6.7）**：
+    1. `parkWindow()`：记录 `GWL_STYLE` 后立刻改成 `0x94000000`（`WS_POPUP|WS_VISIBLE|WS_CLIPSIBLINGS`），并把扩展样式清成 `computeFramelessExStyle`（去掉 `TOOLWINDOW|NOACTIVATE|APPWINDOW`）。这一步发生在 `getUserMedia` 之前，是 WGC 唯一接受的采集时形态。
+    2. 渲染端首帧到达 → `markCaptureLive()`：加回 `WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE`，hide/show 一次让 shell 删除已注册的任务栏按钮。采集项已经存在，实测帧号继续增长（67→120），任务栏和 Alt+Tab 里不再有它。
+    3. 采集结束、换帧率、宽限期到点 → `markCaptureStopped()`：清掉这两个位，下一次 `getUserMedia` 才能创建新的采集项。
+    - **为什么不能一步到位**：WGC 的 `CreateForWindow` 对“创建时无边框”和带 `TOOLWINDOW`/`NOACTIVATE` 的窗口都会返回 `E_INVALIDARG`。事后给无边框窗口补边框无效（DWM 从未建帧），必须“先带边框创建 → 再剥框”。
+    - **兜底**：如果某台机器的采集流在加样式后 3s 内就结束，runtime 判定该样式不安全，本会话不再加隐藏样式，只保留壁纸播放（任务栏按钮可见），避免在“采集失败→清样式→重试→再加样式”之间死循环。
   - **Park**：默认目标是虚拟桌面右下角向内 4px（`GetSystemMetrics(76..79) - 4`），窗口主体落在所有显示器并集之外，不会在相邻副屏上漏出一条实时画面；`SetWindowPos(HWND_BOTTOM, ...)` 同时移动、把窗口压到 Z 序底部，**尺寸沿用引擎实际量到的 width/height**（引擎会夹/忽略请求的几何；实测请求 `3712×2049 @ (3711,1629)`，实际拿到 `2982×1670 @ (3481,1199)`）。
-    - 虚拟角可能落在已经关闭/休眠的副屏，DWM 不再合成，`desktopCapturer` 报 `NotReadableError: Could not start video source`。这时渲染端通过 `wallpaper-engine-log` 的 `capture-failed` 事件通知主进程，runtime 调 `setParkMode('primary')`，改停到**主屏右下角向内 4px**；主屏一定在合成，代价是相邻副屏上可能有一条 4px 细边，只在采集失败的机器上启用。
-    - 同一窗口的样式修复不再 hide/show：hide/show 只用于新窗口/首次 park；否则会在采集过程中把窗口藏一下，同样触发 `NotReadableError`。新窗口（句柄变化）仍然 hide/show 以移除任务栏按钮。
-  - **守护**：会话期间每 750ms 调一次 `monitorWindow()`；样式被重置就重新套用，位置漂移/尺寸被改就重新 park，被前台激活就重新压到底部；目标角每次重新计算，所以改分辨率/显示器布局也会跟着走。实测把窗口手动移到 `(10,10)` 并改成 800×600 后，下一次 tick 就恢复到原尺寸和 `(3711,1524)`。
+    - 虚拟角可能落在已经关闭/休眠的副屏，DWM 不再合成，`desktopCapturer` 报 `NotReadableError: Could not start video source`。这时渲染端通过 `wallpaper-engine-log` 的 `capture-failed` 事件通知主进程，runtime 先清样式，再调 `setParkMode('primary')` 改停到**主屏右下角向内 4px**；主屏一定在合成，代价是相邻副屏上可能有一条 4px 细边，只在采集失败的机器上启用。
+  - **守护**：会话期间每 750ms 调一次 `monitorWindow()`；样式被重置就按当前相位重新套用（frameless 或 hidden），位置漂移/尺寸被改就重新 park，被前台激活就重新压到底部；目标角每次重新计算，所以改分辨率/显示器布局也会跟着走。守护期**不做 hide/show**（采集流不能被藏）；只有新句柄（窗口被引擎重建）才把相位重置为 frameless，等渲染端重新采集后再隐藏。
   - **孤儿清理**：`start()` 在打开新窗口前枚举所有以 `Folia Wallpaper` 为前缀的引擎窗口，逐个 `closeWallpaper`；关不掉就 `ShowWindow(SW_HIDE)`。`stop()` 的 `closeWallpaper` 失败也会走同样的 hide 兜底，避免多个任务栏项越积越多。
   - **不依赖会话的孤儿守护**：第一次进入引擎采集路径后，主进程每 5s 扫一次 `Folia Wallpaper` 前缀窗口；只要不是当前 `locationTitle`、且窗口仍可见，就关闭/隐藏。它不随 `stop()` 或窗口丢失重置而停止，专门兜住「引擎在会话结束后才重建窗口」和「窗口标题变了」这两类迟到残留。已被隐藏的窗口会被跳过（`EnumWindows` 仍能枚举隐藏窗口，重复关闭只会每 5s 拉起一次控制进程）；关闭+隐藏都失败的窗口按 10s→5min 指数退避，不会无限刷。视频壁纸不启动引擎，不会触发这条。
   - **诊断日志**：所有 `[WallpaperEngine]` 主进程日志同时追加到 `%APPDATA%\Folia\wallpaper-engine.log`，运行期超过 2MB 也会轮转为 `.1`；开头记录 Folia/Electron/平台版本。日志包含后端类型（native/powershell）、park 的 target/before/after、守护修复、孤儿清理和渲染端 `capture-failed`；现场复发时直接取这个文件即可。
   - **自举主界面**：只有控制通道静默、Folia 自己启动引擎时才把 `Wallpaper Engine` 主窗口 hide 掉；引擎已经在跑时不动用户自己打开的窗口。
-  - **PowerShell 兜底**：`electron/wallpaperEngineWindow.cjs` 的旧 helper 仍保留（`-EncodedCommand`、逐字标题、超时 16s、永不抛错），只负责一次性 park，没有守护/样式管理。
-- **状态**：`{phase, engineReady, executable, locationTitle, itemId, title, width, height, parkX, parkY, muted, audioPropertyCount, mutedPropertyCount, startedAt, error, windowManaged, windowWatchActive, windowLost}`，每次变化通过 `wallpaper-engine-changed` 推给渲染端。
+  - **PowerShell 兜底**：`electron/wallpaperEngineWindow.cjs` 的旧 helper 仍保留（`-EncodedCommand`、逐字标题、超时 16s、永不抛错），只负责一次性 park：它同样剥框，但没有“采集已建立”的信号，所以**不能**加 TOOLWINDOW/NOACTIVATE，任务栏按钮会保留。原生 koffi 可用的机器不会走这条路。
+- **状态**：`{phase, engineReady, executable, locationTitle, hwnd, itemId, title, width, height, parkX, parkY, muted, audioPropertyCount, mutedPropertyCount, startedAt, error, windowManaged, windowWatchActive, windowLost}`，每次变化通过 `wallpaper-engine-changed` 推给渲染端。`hwnd` 在 `parkWindow` 成功时写入，窗口重建时由 750ms 守护更新，停止/丢失时清空。
 
 ### 3. `electron/main.cjs`（接线）
 
-- 6 个 IPC（全部带 `isTrustedMainWindowContents` 门）：5 个 `ipcMain.handle`——`wallpaper-engine-scan`（返回**裁剪过的目录**：id/标题/类型/来源/创意工坊 id/引擎可播放/内置可播放/内置类型/有无预览/音频属性数，**不含任何路径**）、`-start`、`-stop`、`-status`（带 `supported: platform === 'win32'`）、`-get-capture-source`；再加一个 `ipcMain.on('wallpaper-engine-log')`，接收渲染端诊断与 `capture-failed` 事件（后者触发主屏停靠回退）。
+- 8 个 IPC（全部带 `isTrustedMainWindowContents` 门）：6 个 `ipcMain.handle`——`wallpaper-engine-scan`（返回**裁剪过的目录**：id/标题/类型/来源/创意工坊 id/引擎可播放/内置可播放/内置类型/有无预览/音频属性数，**不含任何路径**）、`-start`、`-stop`、`-status`（带 `supported: platform === 'win32'`）、`-get-capture-source`、`-capture-release`（新采集前清任务栏样式）；再加两个 `ipcMain.on`：`wallpaper-engine-log`（渲染端诊断；`capture-ended` 清样式，`capture-failed` 清样式后触发主屏停靠回退）与 `wallpaper-engine-capture-live`（首帧到达，允许加隐藏样式）。
 - `before-quit` 里 `teardownWallpaperEngineSession()` 紧挨 `windowsWallpaper.detach()`：关掉采集窗口，不留孤儿置顶窗口。
 
 ## 三、渲染端
@@ -93,9 +100,9 @@
 - **入口**：播放器面板的快速背景选择器故意不列「壁纸引擎」（`AppearanceSection` 的 `hiddenValues`），「歌词样式」里的普通背景类型行也不再列它。壁纸引擎是独立页签「壁纸模式」，紧跟在通用/背景/歌词动画/字幕之后；进入该页签即切到 `we`，壁纸库、会话控制和采集参数都在这一页，壁纸库紧跟在当前壁纸预览之后。播放器面板右上角的调色盘按钮打开的就是这个设置窗口。
 - **入口回归锁定**：`test/unit/visualizer/backgroundRegistry.test.ts`（内置背景 id 列表含 `we`）与 `test/ui/wallpaperEngineBackground.spec.ts`（「歌词样式」页签行有独立的「壁纸模式」，普通背景类型行不含「壁纸引擎」）。若在已安装的 App 里看不到这个页签，先确认那份 App 是不是由本源码构建的：安装目录 `resources/app` 里搜不到 `wallpaperEngine` 就是旧构建，本功能不在其中。
 - **内置视频**（`we/WeBuiltinVideoLayer.tsx`）：`tuning.itemKind === 'video'` 时完全不走 WE 会话，直接 `<video src="folia-we://media/<itemId>" loop muted={muteAudio} playsInline>`；透明度/缩放/位移与采集层共用同一套 CSS。首帧前显示 `folia-we://preview/<itemId>` 海报；解码失败（例如 HEVC 编码）也回退到海报，不会黑屏。窗口隐藏/最小化时暂停播放。
-- **采集**（`src/services/wallpaperEngineCapture.ts`）：`getUserMedia({video:{mandatory:{chromeMediaSource:'desktop', chromeMediaSourceId, minFrameRate:10, maxFrameRate}}})`。**没有** `setDisplayMediaRequestHandler`——`desktopCapturer` + mandatory 约束这条老路径在 Windows 上不需要用户授权弹窗。
+- **采集**（`src/services/wallpaperEngineCapture.ts`）：优先 `getUserMedia({video:{mandatory:{chromeMediaSource:'desktop', chromeMediaSourceId, minFrameRate:10, maxFrameRate}}})`，`sourceId` 由主进程按 HWND 提供（`window:<hwnd>:0`），不依赖枚举。主进程同时装了 `setDisplayMediaRequestHandler`：老通道报 `NotReadableError`/`NotFoundError` 时自动改走 `getDisplayMedia`（0.6.6 的备用路径），仍失败才回退主屏停靠 + 重试。
 - **图层**（`we/WeBackgroundLayer.tsx`）：`<video muted playsInline autoPlay>` + `object-cover`，透明度/缩放/位移走 CSS `transform`/`opacity`。**采集流只在会话/帧率变化时重建**，所以拖滑杆不会重启采集、不会闪黑；采集失败（例如窗口被 WE 本体抢走）自动退回 `folia-we://preview/<itemId>` 静态预览图，且失败会重试（3 次）而不是一次就永久停在预览图上。
-- **切歌词样式不模糊**：背景层挂在 visualizer 子树里，换样式时它会不会跟着重建取决于走哪条渲染路径——模式分块懒加载、首访时整棵子树经 `Suspense`（`fallback={null}`）重建；播放页的舞台外壳是稳定的，2026-10-17 实测连切 4 个样式只换掉模式自己的内容 div（`player-visual-surface` 内 2 处 DOM 变更）、背景层原地保留。所以采集流不赌路径：`src/services/wallpaperEngineCapture.ts` 把活着的流放在模块级 `liveCapture` 里留 2.5s **宽限期**：重挂载直接认养同一条流（不重开 `getUserMedia`，`video.srcObject` 立刻接回原流），`WeBackgroundLayer` 的 `streamReady` 初值也取自缓存，因此连一帧低清预览图都不会出现。宽限期到点且没有消费者时才真正 `track.stop()`；换成别的背景类型、停会话仍然是立刻（宽限期后）关掉采集。回归锁：`test/component/weBackgroundRemount.spec.ts` + 探针 `dev/probes/weBackgroundRemount.probe.tsx`（`canvas.captureStream` 造假采集，数预览图出现次数与 `getUserMedia` 调用次数）。
+- **切歌词样式不模糊**：背景层挂在 visualizer 子树里，换样式时它会不会跟着重建取决于走哪条渲染路径——模式分块懒加载、首访时整棵子树经 `Suspense`（`fallback={null}`）重建；播放页的舞台外壳是稳定的，2026-10-17 实测连切 4 个样式只换掉模式自己的内容 div（`player-visual-surface` 内 2 处 DOM 变更）、背景层原地保留。所以采集流不赌路径：`src/services/wallpaperEngineCapture.ts` 把活着的流放在模块级 `liveCapture` 里留 2.5s **宽限期**：重挂载直接认养同一条流（不重开 `getUserMedia`，`video.srcObject` 立刻接回原流），`WeBackgroundLayer` 的 `streamReady` 初值也取自缓存，因此连一帧低清预览图都不会出现。宽限期到点且没有消费者时才真正 `track.stop()`，并在停流后调用 `releaseWallpaperEngineCapture` IPC 清掉任务栏隐藏样式，下一次采集才能重新建项；换成别的背景类型、停会话仍然是立刻（宽限期后）关掉采集。回归锁：`test/component/weBackgroundRemount.spec.ts` + 探针 `dev/probes/weBackgroundRemount.probe.tsx`（`canvas.captureStream` 造假采集，数预览图出现次数与 `getUserMedia` 调用次数）。
 - **会话驱动**（`we/WeBackground.tsx` + `src/stores/useWallpaperEngineStore.ts`）：`subscribeWallpaperEngineStatus()` 订阅主进程推送 + 启动时拉一次全集；自动启动受 `enabled && supported && tuning.autoStart && itemId && phase === 'idle'` 约束；背景模式切走时停会话（`stopSession`），不留后台窗口。**`itemKind === 'video'` 时不启动引擎会话**，由 `<video>` 自己播放；切到视频时会停掉仍在运行的场景会话。**卸载也算切走**：组件被卸载时停会话的 effect 根本跑不到（切背景类型、离开播放页都会卸载），所以由模块级的 `IDLE_STOP_DELAY_MS = 3000` 兜底——最后一个背景层卸载 3 秒后仍没有重新挂载就 `stopSession()`；3 秒内重新挂载（切歌词样式必然如此）则取消这次停，引擎与采集都不重启。
 - **设置卡**（`we/WeBackgroundSettingsCard.tsx`）：识别/重新识别、启动/停止（视频时隐藏，因为视频自动播放）、恢复原背景（停会话并清空选择）、自动启动 + 静音壁纸音频两个开关（视频时隐藏自动启动）、5 个滑杆（透明度 0.15–1、缩放 1–1.6、水平/垂直位移 ±50、采集帧率 15–60 步长 5；视频时隐藏采集帧率），以及状态行（未支持 / 出错 / 已静音 / 播放中 / 内置视频播放中 / 就绪 / 没找到 Steam / 空闲）。壁纸网格给每一项标「内置」或「引擎」。
 - **调参持久化**：`we_background_tuning`（`src/stores/visualizerSettingsPersistence.ts` 里夹取后再写），其中 `itemKind` 记录 scene/video/web，空值按旧版 scene 处理。**导出的视觉配置里 `itemId` 故意不外传**（它哈希了本机安装路径），只带标题+外观参数——换机器导入后会提示重新挑一张。
@@ -121,9 +128,11 @@
 17. **`enabled=false` 拦不住卸载**：停会话原本写在「`enabled` 变 false」的 effect 里，但切背景类型、离开播放页是把 `WeBackground` 整个卸载，effect 没机会跑，parked 的引擎窗口就一直在后台播（静音、不出画面，但一直烧 GPU）。所以补了卸载路径：最后一个背景层卸载后 3 秒没重新挂载才 `stopSession()`——延迟是必需的，切歌词样式的卸载-重挂载间隔只有几十毫秒，立刻停会让每换一次样式都重启一次引擎（连带采集重开）。回归锁：`test/component/weSessionUnmountStop.spec.ts` + `dev/probes/weSessionUnmountStop.probe.tsx`（桩住 store 数调用），以及真机实测 `dev/we-live-session-stop-check.cjs`。
 18. **背景层可能被「卸载重建」，于是「模糊一下」会变成「一直模糊」**：切歌词样式会换掉整棵模式子树（模式各自懒加载分块，首访经 `Suspense` 重建；播放页舞台外壳虽稳定，实测也确实存在让背景层 DOM 整体重建的路径），背景层就在这棵子树里。旧实现卸载即 `track.stop()`、重挂载只能重新 `getUserMedia`；2026-10-17 实测那次重开在 2.5s 后仍未接上（新 `<video>` 的 `srcObject` 还是空），于是整段会话都停在 `folia-we://preview/` 那张低清预览图上——用户看到的就是「切样式时壁纸模糊一下」。修法：采集流缓存 + 宽限期认养（重挂载复用同一条流），加上取流失败重试，`streamReady` 初值取自缓存以免首帧回退。
 19. **park 一次不够**：实测 `openWallpaper` 返回、helper 挪到 `(3711,1524)` 之后，引擎仍会在场景加载过程中把窗口再挪到 `(3999,2036)`；窗口重建/改分辨率/改 GPU 偏好也会让位置和扩展样式回到默认。所以必须有会话期 `monitorWindow()`（750ms）持续修正，不能只依赖 `start()` 后的一次 helper。
-20. **只挪到屏幕外不解决任务栏**：WE 的播放窗口扩展样式实测是 `0x00000000`，是普通顶层窗口，任务栏和 Alt+Tab 都会列出来。`WS_EX_TOOLWINDOW` 单独加上去不一定会让 shell 撤掉已经注册的按钮，必须配合一次 hide/show；实测在 1px 可见 + `TOOLWINDOW|NOACTIVATE` 的组合下，`desktopCapturer` 仍能枚举并采到实时帧（800×450，连续 5 帧），所以「藏起来」和「采集」不冲突。
+20. **任务栏隐藏与 WGC 的冲突（0.6.7 修正）**：旧实现 park 时就加 `WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE` 并 hide/show。对 WinForms 探针窗口采帧没问题，但真实的 WE 播放窗口在 WGC **创建采集项**时会返回 `E_INVALIDARG`（`CreateForWindow failed with hr: -2147024809`），Chromium 翻成 `NotReadableError: Could not start video source`。正确顺序是：带边框创建（DWM 建帧）→ 剥框并清空扩展样式 → `getUserMedia` → 首帧到达后加回样式 + hide/show。实测采集流在样式变更后继续出帧（帧号 67→120），任务栏按钮也被移除。
 21. **视频走 `<video>` 必须支持 Range**：Chromium 的媒体栈会用 `Range: bytes=...` 探测/循环；协议处理器返回 200 整文件也能播，但会退化成一次性下载，700MB 的工程会明显卡。`serveVideo` 用 `fs.createReadStream` 返回 206 + `Content-Range`，范围外的请求回 416，HEAD 只回头。实测 31MB mp4：Range 206、`readyState=4`、`videoWidth=1920`、`currentTime=2.96`。
 22. **koffi 的 proto 类型名是进程级的**：`koffi.proto('EnumWindowsProc', ...)` 如果和探针脚本/其他模块重名会直接抛 `Unknown or invalid type name`，而且失败会被 manager 静默降级到 PowerShell（表面现象是「原生管理器没启用」）。原生模块用 `FOLIA_WE_ENUM_PROC`、`FOLIA_WE_RECT` 这类带前缀的名字；诊断时看 `[WallpaperEngine] window manager backend:` 这行。
+23. **采集源优先用 HWND，不要只靠 `desktopCapturer` 枚举**：受影响机器的 `getSources({types:['window']})` 里根本没有这个播放窗口，按标题匹配只能拿到 null；`window:<hwnd>:0` 直接由句柄构造，同样能被 `getUserMedia` 接受（实测 2560×1470、30fps）。句柄由 `parkWindow`/`monitorWindow` 写进状态，窗口重建时由 750ms 守护更新，停止/丢失时清空。
+24. **隐藏样式必须能回退**：如果某台机器的采集流在加样式后 3s 内就结束，runtime 会把该会话标记为 `hiddenStyleDisabled`，不再加样式；宁可任务栏留一个条目，也不能让壁纸在「失败→清样式→重试→再隐藏」之间死循环。
 
 ## 五、现场验证脚本（`dev/`）
 

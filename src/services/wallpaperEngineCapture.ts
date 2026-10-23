@@ -37,6 +37,18 @@ const normalizeFrameRate = (frameRate: number | undefined) => Math.min(60, Math.
 
 const isLive = (stream: MediaStream) => stream.getVideoTracks().some(track => track.readyState === 'live');
 
+// The main process keeps the parked window out of the taskbar with WS_EX_TOOLWINDOW /
+// WS_EX_NOACTIVATE. WGC refuses to create a capture item for a window carrying those bits, so a
+// fresh getUserMedia must ask the main process to clear them first. Older builds do not expose the
+// bridge; the capture-failed retry path still recovers in that case.
+const releaseWindowStyle = async () => {
+    try {
+        await window.electron?.releaseWallpaperEngineCapture?.();
+    } catch {
+        // The main process may already have torn the session down.
+    }
+};
+
 const stopStream = (stream: MediaStream) => {
     stream.getTracks().forEach(track => track.stop());
 };
@@ -80,6 +92,8 @@ export const acquireWallpaperEngineCapture = async ({
         // A different source or frame rate supersedes the cached capture: it has no consumer left.
         forget(current);
         stopStream(current.stream);
+        // The window is still in its taskbar-hidden shape; clear it before the new capture item.
+        await releaseWindowStyle();
     }
 
     let stream: MediaStream;
@@ -142,6 +156,9 @@ export const releaseWallpaperEngineCapture = (stream: MediaStream | null | undef
             if (capture.consumers > 0) return;
             forget(capture);
             stopStream(capture.stream);
+            // No remount adopted the stream: the next mount needs a fresh capture item, which the
+            // taskbar-hiding bits would block.
+            void releaseWindowStyle();
         }, RELEASE_GRACE_MS);
         return;
     }

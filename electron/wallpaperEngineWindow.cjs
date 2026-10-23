@@ -58,6 +58,20 @@ public class FoliaWeWindow {
   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
   [StructLayout(LayoutKind.Sequential)]
   public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  // The engine is asked to create the popout with a frame: WGC refuses a window that was created
+  // borderless, but accepts this order (frame first, strip second). The tool-window bits are
+  // intentionally NOT applied here — they make WGC refuse to create the capture item.
+  public static bool ApplyFrameless(IntPtr hWnd) {
+    int style = GetWindowLong(hWnd, -16);
+    int ex = GetWindowLong(hWnd, -20);
+    int nextEx = ex & ~(0x00000080 | 0x08000000 | 0x00040000);
+    int frameless = unchecked((int)0x94000000);
+    bool changed = style != frameless || ex != nextEx;
+    if (style != frameless) SetWindowLong(hWnd, -16, frameless);
+    if (ex != nextEx) SetWindowLong(hWnd, -20, nextEx);
+    if (changed) SetWindowPos(hWnd, IntPtr.Zero, 0, 0, 0, 0, 0x0037);
+    return changed;
+  }
   // Exact ordinal title match, unlike FindWindow: the unique session title must never be confused
   // with another window that merely differs in case.
   public static IntPtr FindByExactTitle(string title) {
@@ -115,18 +129,11 @@ public class FoliaWeWindow {
     }
     exit 0
   }
-  # The playback window is an ordinary top-level window: without these bits the shell gives it a
-  # taskbar button and Alt+Tab entry, and activating it brings the full-size parked window forward.
-  # The hide/show cycle also makes the shell drop a button it registered before the style change;
-  # SW_SHOWNOACTIVATE never steals focus.
-  $exStyle = [FoliaWeWindow]::GetWindowLong($hwnd, -20)
-  $managedStyle = (($exStyle -bor 0x08000000 -bor 0x00000080) -band (-bnot 0x00040000))
-  $styleChanged = $managedStyle -ne $exStyle
-  if ($styleChanged) {
-    [void][FoliaWeWindow]::SetWindowLong($hwnd, -20, $managedStyle)
-    [void][FoliaWeWindow]::ShowWindow($hwnd, 0)
-    [void][FoliaWeWindow]::ShowWindow($hwnd, 4)
-  }
+  # The engine created this window with a frame (the runtime no longer passes -borderless), which
+  # is what lets WGC create the capture item. Strip the frame now; do not add TOOLWINDOW or
+  # NOACTIVATE here, because either bit makes WGC refuse the capture. This fallback consequently
+  # leaves the taskbar button in place — the native manager removes it after the capture is live.
+  $frameStripped = [FoliaWeWindow]::ApplyFrameless($hwnd)
   $rect = [FoliaWeWindow+RECT]::new()
   [void][FoliaWeWindow]::GetWindowRect($hwnd, [ref]$rect)
   $before = @{ x = $rect.Left; y = $rect.Top; width = ($rect.Right - $rect.Left); height = ($rect.Bottom - $rect.Top) }
@@ -140,7 +147,8 @@ public class FoliaWeWindow {
     ok = $true
     hwnd = $hwnd.ToInt64()
     processName = $owner.ProcessName
-    styleChanged = [bool]$styleChanged
+    frameStripped = [bool]$frameStripped
+    styleChanged = [bool]$frameStripped
     moved = [bool]$moved
     waitedMs = $waitedMs
     target = @{ x = $targetX; y = $targetY }
@@ -263,6 +271,8 @@ function createWallpaperEngineWindowManager(options = {}) {
     backend: 'powershell',
     nativeReason: native.reason || '',
     monitorWindow: null,
+    markCaptureLive: null,
+    markCaptureStopped: null,
     listSessionWindows: null,
     hideWindow: null,
     neutraliseWindow: null,

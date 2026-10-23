@@ -14,6 +14,7 @@ const RUNNING_STATUS: ElectronWallpaperEngineStatus = {
     engineReady: true,
     executable: 'C:/probe/wallpaper64.exe',
     locationTitle: 'probe',
+    hwnd: '',
     // 故意和 tuning.itemId 不同：背景层就不会去开采集（探针只关心会话生命周期）。
     itemId: 'probe-host-session',
     title: 'Probe session',

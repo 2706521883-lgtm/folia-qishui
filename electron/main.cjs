@@ -38,7 +38,10 @@ const {
   WALLPAPER_ENGINE_PROTOCOL_SCHEME,
   createWallpaperEngineLibrary,
 } = require('./wallpaperEngineLibrary.cjs');
-const { createWallpaperEngineRuntime } = require('./wallpaperEngineRuntime.cjs');
+const {
+  buildWallpaperEngineCaptureSource,
+  createWallpaperEngineRuntime,
+} = require('./wallpaperEngineRuntime.cjs');
 const { createWallpaperEngineWindowManager } = require('./wallpaperEngineWindow.cjs');
 const { createKugouApiBridge } = require('./kugouApiBridge.cjs');
 const { createBodianApiBridge } = require('./bodianApiBridge.cjs');
@@ -4992,12 +4995,21 @@ async function getMainWindowCaptureSource() {
   return source ? { id: source.id, name: source.name } : null;
 }
 
-// The Wallpaper Engine playback window is addressed by its unique session title only; the parked
-// position keeps it out of sight, so this must never fall back to "any wallpaper64 window".
+// The Wallpaper Engine playback window is addressed by its unique session title or, preferably,
+// by its handle. The handle form (`window:<hwnd>:0`) does not depend on desktopCapturer listing
+// the window — the affected Windows 10 machines omit the framed popout from that list — and it is
+// the only form that works before the taskbar-hiding style is applied. The parked position keeps
+// it out of sight, so this must never fall back to "any wallpaper64 window".
 async function getWallpaperEngineCaptureSource() {
-  const locationTitle = wallpaperEngineRuntime.getStatus().locationTitle;
+  const status = wallpaperEngineRuntime.getStatus();
+  const locationTitle = status.locationTitle;
   if (!locationTitle) {
     return null;
+  }
+
+  const hwndSource = buildWallpaperEngineCaptureSource({ hwnd: status.hwnd, title: locationTitle });
+  if (hwndSource) {
+    return hwndSource;
   }
 
   const sources = await desktopCapturer.getSources({
@@ -6875,6 +6887,24 @@ ipcMain.handle('wallpaper-engine-get-capture-source', async (event) => {
   return getWallpaperEngineCaptureSource();
 });
 
+// The renderer reports the moment the first capture stream is live. Only then may the native
+// window manager add WS_EX_TOOLWINDOW/NOACTIVATE: applying either bit before getUserMedia makes
+// WGC refuse to create the capture item (NotReadableError).
+ipcMain.on('wallpaper-engine-capture-live', (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) return;
+  wallpaperEngineRuntime.markCaptureLive();
+});
+
+// The renderer is about to release its stream for a fresh getUserMedia (frame-rate change,
+// remount after the release grace). The capture-hostile bits must be cleared first, otherwise the
+// new capture fails with the same NotReadableError.
+ipcMain.handle('wallpaper-engine-capture-release', (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    throw new Error('Untrusted renderer attempted to release the Wallpaper Engine capture.');
+  }
+  return wallpaperEngineRuntime.markCaptureStopped('released');
+});
+
 // Renderer-side capture failures (getUserMedia NotReadableError etc.) are part of the same
 // diagnostic trail as the main-process park/watch logs. The renderer cannot write files directly;
 // it sends the line here, and it lands in %APPDATA%\Folia\wallpaper-engine.log.
@@ -6884,9 +6914,18 @@ ipcMain.on('wallpaper-engine-log', (event, payload) => {
   const message = String(record.message || '').slice(0, 2000);
   const kind = typeof record.event === 'string' ? record.event.slice(0, 64) : '';
   wallpaperEngineLog('renderer', kind ? `[${kind}] ${message}` : message);
+  // A stream that ended or failed must be re-acquired in the frameless, no-tool-style shape.
+  // Clearing is required before the renderer's retry, otherwise WGC refuses the new capture item.
+  if (kind === 'capture-ended') {
+    wallpaperEngineRuntime.markCaptureStopped('capture-ended');
+    return;
+  }
   // NotReadableError on the virtual-corner park means DWM is not composing that monitor. Move the
   // window to the primary-screen fallback; the renderer retries the capture shortly afterwards.
-  if (kind === 'capture-failed') wallpaperEngineRuntime.fallbackToPrimaryPark();
+  if (kind === 'capture-failed') {
+    wallpaperEngineRuntime.markCaptureStopped('capture-failed');
+    wallpaperEngineRuntime.fallbackToPrimaryPark();
+  }
 });
 
 ipcMain.handle('video-export-prepare-window', (event, size) => {

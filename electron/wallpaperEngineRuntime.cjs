@@ -42,6 +42,10 @@ const WINDOW_LOST_GRACE_MS = 6000;
 // title-bound watcher has already reset. This slow, session-independent scan catches those late
 // orphans (and any window whose title changed) for the rest of the app's lifetime.
 const ORPHAN_WATCH_INTERVAL_MS = 5000;
+// If the capture stream dies within this window of hiding the taskbar button, the machine's WGC
+// capture item did not survive the style change. Keep the wallpaper alive and leave the taskbar
+// button visible for the rest of the session instead of looping through capture failures.
+const HIDDEN_STYLE_UNSAFE_MS = 3000;
 const SAFE_PROPERTY_KEY = /^[a-z0-9_.-]{1,128}$/i;
 const BLOCKED_PROPERTY_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
@@ -84,6 +88,9 @@ const clampPlaybackSize = (value, fallback) => {
   return Math.min(MAX_PLAYBACK_SIZE, Math.max(MIN_PLAYBACK_SIZE, size));
 };
 
+// -borderless is deliberately absent: Wallpaper Engine then creates an ordinary framed window,
+// which is what lets Windows Graphics Capture build a capture item. The native window manager
+// strips the frame immediately afterwards; a window *created* borderless can never be captured.
 const buildOpenWallpaperArgs = ({ file, locationTitle, width, height, x, y }) => [
   '-control', 'openWallpaper',
   '-file', String(file),
@@ -92,8 +99,16 @@ const buildOpenWallpaperArgs = ({ file, locationTitle, width, height, x, y }) =>
   '-height', String(Math.round(height)),
   '-x', String(Math.round(x)),
   '-y', String(Math.round(y)),
-  '-borderless',
 ];
+
+// The renderer asks for a source id. The handle is authoritative: Chromium accepts
+// `window:<hwnd>:0` even when the window is not in desktopCapturer's list (the affected Windows 10
+// machines omit the framed popout entirely). Enumeration remains the fallback.
+const buildWallpaperEngineCaptureSource = ({ hwnd, title } = {}) => {
+  const handle = Number(hwnd);
+  if (!Number.isFinite(handle) || handle <= 0) return null;
+  return { id: 'window:' + Math.trunc(handle) + ':0', name: String(title || '') };
+};
 
 // Only plain scalar values under safe property keys survive; anything else is dropped rather than
 // handed to the engine, which would reject the whole RAW payload.
@@ -210,12 +225,17 @@ function createWallpaperEngineRuntime(options = {}) {
   // retried with exponential backoff instead of spawning a control process every 5 seconds.
   const orphanRetryAt = new Map();
   const orphanFailures = new Map();
+  // Timestamp of the last taskbar-hiding style application; used to detect a machine whose live
+  // capture does not survive that style change.
+  let hiddenStyleAppliedAt = 0;
+  let hiddenStyleDisabled = false;
 
   const status = {
     phase: 'idle',
     engineReady: false,
     executable: '',
     locationTitle: '',
+    hwnd: '',
     itemId: '',
     title: '',
     width: 0,
@@ -492,6 +512,7 @@ function createWallpaperEngineRuntime(options = {}) {
     publishStatus({
       phase: 'idle',
       locationTitle: '',
+      hwnd: '',
       itemId: '',
       title: '',
       muted: false,
@@ -531,6 +552,11 @@ function createWallpaperEngineRuntime(options = {}) {
       if (result.styleApplied || result.restoredVisible || result.moved || result.foreground) {
         log('[wallpaper-engine] window monitor repaired', JSON.stringify(result));
       }
+      // A re-created playback window gets a new handle. The renderer's ended-stream handler asks
+      // for the source again, so it must see the new handle here.
+      if (result.hwnd && String(result.hwnd) !== status.hwnd) {
+        publishStatus({ hwnd: String(result.hwnd) });
+      }
       if (!status.windowManaged) publishStatus({ windowManaged: true });
     } catch (error) {
       watchMisses += 1;
@@ -562,6 +588,42 @@ function createWallpaperEngineRuntime(options = {}) {
       }
     }
     return { ok: true, mode: 'primary' };
+  };
+
+  // Called by the renderer as soon as the capture stream is live. Only now may the window manager
+  // add the tool-window bits: applying them before getUserMedia makes WGC refuse to start.
+  const markCaptureLive = () => {
+    if (disposed) return { ok: false, reason: 'disposed' };
+    if (!windowHelper || typeof windowHelper.markCaptureLive !== 'function') {
+      return { ok: false, reason: 'unsupported' };
+    }
+    if (!status.locationTitle) return { ok: false, reason: 'no-title' };
+    if (hiddenStyleDisabled) return { ok: false, reason: 'disabled' };
+    const result = windowHelper.markCaptureLive({ title: status.locationTitle });
+    // Only a real style change starts the "did the stream survive it?" window. An idempotent
+    // re-report (a remount adopting the same stream) must not reset the clock.
+    if (result && result.ok && result.styleApplied) {
+      hiddenStyleAppliedAt = Date.now();
+    }
+    return result;
+  };
+
+  // Clears the capture-hostile bits before the next getUserMedia. Also remembers whether the
+  // previous stream died immediately after those bits were applied: on such a machine the style
+  // is disabled for the rest of the session so the wallpaper keeps playing.
+  const markCaptureStopped = (reason = 'capture-stopped') => {
+    if (disposed) return { ok: false, reason: 'disposed' };
+    if (!windowHelper || typeof windowHelper.markCaptureStopped !== 'function') {
+      return { ok: false, reason: 'unsupported' };
+    }
+    if (hiddenStyleAppliedAt && Date.now() - hiddenStyleAppliedAt < HIDDEN_STYLE_UNSAFE_MS) {
+      hiddenStyleDisabled = true;
+      logWarn('[wallpaper-engine] capture ended right after hiding the taskbar; disabling style', reason);
+    }
+    hiddenStyleAppliedAt = 0;
+    return status.locationTitle
+      ? windowHelper.markCaptureStopped({ title: status.locationTitle })
+      : { ok: false, reason: 'no-title' };
   };
 
   const hideWindowSafe = (title) => {
@@ -691,6 +753,7 @@ function createWallpaperEngineRuntime(options = {}) {
       publishStatus({
         phase: 'idle',
         locationTitle: '',
+        hwnd: '',
         itemId: '',
         title: '',
         muted: false,
@@ -709,6 +772,7 @@ function createWallpaperEngineRuntime(options = {}) {
     publishStatus({
       phase: 'idle',
       locationTitle: '',
+      hwnd: '',
       itemId: '',
       title: '',
       muted: false,
@@ -726,6 +790,9 @@ function createWallpaperEngineRuntime(options = {}) {
 
   const start = async ({ item, muteAudio = true } = {}) => {
     if (disposed) return { ok: false, error: 'disposed' };
+    // A new session may use a different engine window, so the style heuristic starts fresh.
+    hiddenStyleAppliedAt = 0;
+    hiddenStyleDisabled = false;
     if (!item || !item.enginePlayable || !item.projectFile) {
       publishStatus({
         phase: 'error',
@@ -788,6 +855,7 @@ function createWallpaperEngineRuntime(options = {}) {
         publishStatus({
           phase: 'error',
           locationTitle: '',
+          hwnd: '',
           itemId: '',
           title: '',
           error: 'open-failed',
@@ -804,7 +872,11 @@ function createWallpaperEngineRuntime(options = {}) {
           // The helper reports the OS's own primary-screen corner; reuse it so the next window is
           // opened at the right place instead of relying on the DIP approximation.
           parkTarget = { x: Number(parkedResult.target.x), y: Number(parkedResult.target.y) };
-          publishStatus({ parkX: parkTarget.x, parkY: parkTarget.y });
+          publishStatus({
+            parkX: parkTarget.x,
+            parkY: parkTarget.y,
+            hwnd: parkedResult.hwnd ? String(parkedResult.hwnd) : '',
+          });
         }
         log('[wallpaper-engine] park check', JSON.stringify(parkedResult));
       }
@@ -845,6 +917,7 @@ function createWallpaperEngineRuntime(options = {}) {
     publishStatus({
       phase: 'idle',
       locationTitle: '',
+      hwnd: '',
       itemId: '',
       title: '',
       muted: false,
@@ -859,6 +932,8 @@ function createWallpaperEngineRuntime(options = {}) {
     ensureControlReady,
     fallbackToPrimaryPark,
     getStatus: () => ({ ...status }),
+    markCaptureLive,
+    markCaptureStopped,
     resolveExecutable,
     start,
     stop,
@@ -871,6 +946,7 @@ module.exports = {
   ENGINE_READY_CACHE_MS,
   ENGINE_READY_SUCCESS_COUNT,
   ENGINE_SIGNER_PATTERN,
+  HIDDEN_STYLE_UNSAFE_MS,
   INITIAL_MUTE_RETRY_DELAYS_MS,
   MUTE_REASSERT_DELAYS_MS,
   MUTE_SCHEDULE_MS,
@@ -884,6 +960,7 @@ module.exports = {
   buildLocationTitle,
   buildOpenWallpaperArgs,
   buildVerbatimControlInvocation,
+  buildWallpaperEngineCaptureSource,
   clampPlaybackSize,
   createWallpaperEngineRuntime,
   findExecutableCandidates,
