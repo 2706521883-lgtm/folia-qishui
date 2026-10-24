@@ -291,6 +291,8 @@ const Visualizer: React.FC<VisualizerProps> = (props) => {
         lines,
         theme,
         subtitleTheme,
+        songTitle,
+        songArtist,
         audioPower,
         audioBands,
         showText = true,
@@ -647,13 +649,34 @@ const Visualizer: React.FC<VisualizerProps> = (props) => {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="text-2xl opacity-50 absolute"
-                            style={{
-                                color: theme.secondaryColor,
-                                fontSize: emptyFontSize,
-                            }}
+                            className="absolute flex w-full max-w-6xl flex-col items-center px-8 text-center"
+                            style={{ color: theme.secondaryColor }}
                         >
-                            {t('ui.waitingForMusic')}
+                            {/* No active line yet (intro / instrumental / a paused seek): the
+                                translated waiting label is intentionally empty, so show the track
+                                itself instead of leaving the player as a blank background. */}
+                            <div
+                                style={{
+                                    color: theme.primaryColor,
+                                    fontFamily: resolveThemeFontStack(theme),
+                                    fontWeight: resolveThemeFontWeight(theme, 700),
+                                    fontSize: emptyFontSize,
+                                    opacity: 0.5,
+                                }}
+                            >
+                                {songTitle || t('ui.waitingForMusic')}
+                            </div>
+                            {songTitle && songArtist ? (
+                                <div
+                                    className="mt-1 opacity-40"
+                                    style={{
+                                        color: theme.secondaryColor,
+                                        fontSize: `clamp(${(0.75 * lyricsFontScale).toFixed(3)}rem, ${(1.5 * lyricsFontScale).toFixed(3)}vw, ${(1.125 * lyricsFontScale).toFixed(3)}rem)`,
+                                    }}
+                                >
+                                    {songArtist}
+                                </div>
+                            ) : null}
                         </motion.div>
                     )}
                 </AnimatePresence>

@@ -225,6 +225,25 @@ export function usePlaybackVisualizerBridge({
                     setPlayerState(PlayerState.PAUSED);
                 }
             }
+        } else if (audioElement && activePlaybackContext === 'main' && !isNowPlayingStageActive && !isPlayerCapStageActive) {
+            // The main deck is paused (or paused after a seek). Keep the lyric read-head on the
+            // position the transport shows; otherwise it stays at the value from the last playing
+            // frame and the visualizer can render nothing while the bar already reads 01:02.
+            const time = Number.isFinite(audioElement.currentTime) ? audioElement.currentTime : 0;
+            currentTime.set(time);
+            const effectiveLyricTime = time - lyricTimelineOffsetMs / 1000;
+            lyricCurrentTime.set(effectiveLyricTime);
+
+            if (lyrics) {
+                const foundIndex = findLatestActiveLineIndex(lyrics.lines, effectiveLyricTime);
+                if (foundIndex !== currentLineIndexRef.current) {
+                    currentLineIndexRef.current = foundIndex;
+                    setCurrentLineIndex(foundIndex);
+                }
+            } else if (currentLineIndexRef.current !== -1) {
+                currentLineIndexRef.current = -1;
+                setCurrentLineIndex(-1);
+            }
         }
 
         animationFrameRef.current = requestAnimationFrame(updateLoop);
