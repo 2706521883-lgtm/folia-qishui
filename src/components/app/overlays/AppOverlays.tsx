@@ -7,6 +7,8 @@ import MemoryMonitorWindow from '../../debug/MemoryMonitorWindow';
 import NowPlayingToast from './NowPlayingToast';
 import type { AppOverlaysModel } from './buildAppOverlaysModel';
 import { countRender } from '../../../dev/renderCount';
+import { useAppChromeStore } from '../../../stores/useAppChromeStore';
+import { useDesktopSettingsStore } from '../../../stores/useDesktopSettingsStore';
 import { useLatticeControlsStore } from '../../../stores/useLatticeControlsStore';
 
 // Centralized app-level overlay renderer so App.tsx does not mount leaf overlays directly.
@@ -17,6 +19,9 @@ type AppOverlaysProps = {
 const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
     countRender('AppOverlays');
     const isCurrentSongPosterVisible = useLatticeControlsStore(state => state.isCurrentSongPosterVisible);
+    // Desktop modes are display layers: the floating player bar is not part of them.
+    const wallpaperMode = useDesktopSettingsStore(state => state.wallpaperMode);
+    const desktopLyricModeActive = useAppChromeStore(state => state.desktopLyricModeActive);
     const {
         searchOverlay,
         debugOverlay,
@@ -35,6 +40,8 @@ const AppOverlays: React.FC<AppOverlaysProps> = ({ model }) => {
             {memoryMonitor && <MemoryMonitorWindow {...memoryMonitor} />}
 
             {floatingControls
+                && !wallpaperMode
+                && !desktopLyricModeActive
                 && (floatingControls.currentView !== 'lattice' || !isCurrentSongPosterVisible)
                 && <FloatingPlayerControls {...floatingControls} />}
 

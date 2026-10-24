@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
     AudioLines,
     Bookmark,
+    Captions,
     Check,
     ChevronDown,
     Heart,
@@ -12,6 +13,8 @@ import {
     ListMusic,
     Loader2,
     LogIn,
+    LogOut,
+    Monitor,
     Music2,
     Palette,
     Plus,
@@ -36,7 +39,9 @@ import {
     QISHUI_RECENT_PLAYLIST_ID,
 } from '../../services/onlineMusic/qishuiCatalog';
 import { createQishuiPlaylist } from '../../services/onlineMusic/qishuiPlaylistCreate';
+import { useAppChromeStore } from '../../stores/useAppChromeStore';
 import { openSettings } from '../../stores/useSettingsModalStore';
+import { useDesktopSettingsStore } from '../../stores/useDesktopSettingsStore';
 import { useQishuiFeedModeStore } from '../../stores/useQishuiFeedModeStore';
 import { getQishuiModeLabel } from '../../services/onlineMusic/qishuiFeedModes';
 import { buildQishuiPlayerNavModel } from './qishuiPlayerNavModel';
@@ -203,6 +208,18 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     const { t } = useTranslation();
     const model = useMemo(() => buildQishuiPlayerNavModel(collections), [collections]);
     const qishuiFeedModeSelection = useQishuiFeedModeStore(state => state.selection);
+    // 桌面模式有两个：壁纸模式（沉到桌面底层）和桌面歌词（置顶 + 透明 + 鼠标穿透）。
+    // 两者都由主进程的窗口状态驱动；网页版没有窗口可操作，因此只在 Electron 里露出入口。
+    const wallpaperMode = useDesktopSettingsStore(state => state.wallpaperMode);
+    const handleToggleWallpaperMode = useDesktopSettingsStore(state => state.handleToggleWallpaperMode);
+    const desktopLyricMode = useAppChromeStore(state => state.desktopLyricModeActive);
+    const setDesktopLyricModeActive = useAppChromeStore(state => state.setDesktopLyricModeActive);
+    const canUseDesktopMode = typeof window !== 'undefined' && Boolean(window.electron);
+    const isDesktopModeActive = wallpaperMode || desktopLyricMode;
+    const isWallpaperVariantActive = wallpaperMode && !desktopLyricMode;
+    const [isDesktopModeMenuOpen, setIsDesktopModeMenuOpen] = useState(false);
+    const [isDesktopLyricBusy, setIsDesktopLyricBusy] = useState(false);
+    const [isHandleHovered, setIsHandleHovered] = useState(false);
     const recommendationIcon = qishuiFeedModeSelection?.kind === 'preference'
         ? (qishuiFeedModeSelection.preferenceMode === 'familiar'
             ? HeartHandshake
@@ -239,11 +256,12 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
         setIsCreating(false);
         setCreateName('');
         setCreateError('');
+        setIsDesktopModeMenuOpen(false);
     }, [activeProviderId]);
 
     // While a track is playing the panel stays out of the lyrics; moving the pointer into its
     // top-right footprint (or focusing the create form) reveals it. Pausing pins it open.
-    const [isRevealed, setIsRevealed] = useState(() => !isPlaying);
+    const [isRevealed, setIsRevealed] = useState(() => !isPlaying && !isDesktopModeActive);
     const isPointerInsideRef = useRef(false);
     const hideTimerRef = useRef<number | null>(null);
 
@@ -263,21 +281,33 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     const scheduleHide = useCallback(() => {
         isPointerInsideRef.current = false;
         clearHideTimer();
-        if (!isPlaying || isCreating) return;
+        if (isCreating) return;
+        // Desktop modes are display layers: the panel must collapse again even while paused.
+        if (!isDesktopModeActive && !isPlaying) return;
         hideTimerRef.current = window.setTimeout(() => {
             hideTimerRef.current = null;
             setIsRevealed(false);
         }, 650);
-    }, [clearHideTimer, isCreating, isPlaying]);
+    }, [clearHideTimer, isCreating, isDesktopModeActive, isPlaying]);
+
+    // Entering a desktop mode always starts collapsed: the handle is the only entry point, even
+    // when playback is paused.
+    useEffect(() => {
+        if (!isDesktopModeActive) return;
+        clearHideTimer();
+        isPointerInsideRef.current = false;
+        setIsRevealed(false);
+    }, [isDesktopModeActive, clearHideTimer]);
 
     useEffect(() => {
+        if (isDesktopModeActive) return;
         if (!isPlaying) {
             clearHideTimer();
             setIsRevealed(true);
             return;
         }
         if (!isPointerInsideRef.current) setIsRevealed(false);
-    }, [isPlaying, isVisible, clearHideTimer]);
+    }, [isDesktopModeActive, isPlaying, isVisible, clearHideTimer]);
 
     useEffect(() => {
         if (isCreating) {
@@ -294,11 +324,40 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     useEffect(() => () => clearHideTimer(), [clearHideTimer]);
 
     useEffect(() => {
-        if (!isRevealed) {
-            setIsSwitcherOpen(false);
-            setIsEffectPresetOpen(false);
+        if (isRevealed) {
+            setIsHandleHovered(false);
+            return;
         }
+        setIsSwitcherOpen(false);
+        setIsEffectPresetOpen(false);
+        setIsDesktopModeMenuOpen(false);
     }, [isRevealed]);
+
+    // Native title tooltips would float over the desktop while the desktop-layer sidebar is used.
+    // Strip them for the whole panel in both desktop modes and put them back on exit.
+    useEffect(() => {
+        if (!isDesktopModeActive) return undefined;
+        const root = document.querySelector('[data-player-nav-root]');
+        if (!root) return undefined;
+        const savedTitles = new Map<Element, string>();
+        const stripTitles = () => {
+            root.querySelectorAll('[title]').forEach((element) => {
+                const title = element.getAttribute('title');
+                if (!title) return;
+                if (!savedTitles.has(element)) savedTitles.set(element, title);
+                element.removeAttribute('title');
+            });
+        };
+        stripTitles();
+        const observer = new MutationObserver(stripTitles);
+        observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] });
+        return () => {
+            observer.disconnect();
+            savedTitles.forEach((title, element) => {
+                if (!element.getAttribute('title')) element.setAttribute('title', title);
+            });
+        };
+    }, [isDesktopModeActive, isVisible]);
 
     const openLiked = useCallback(() => {
         if (model.liked) {
@@ -338,6 +397,85 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
             text: t('qishuiNav.douyinEmpty', '当前账号没有抖音收藏的音乐'),
         });
     }, [model.douyin, onOpenCollection, onStatusMessage, t]);
+
+    const openDesktopModeMenu = useCallback(() => {
+        setIsEffectPresetOpen(false);
+        setIsSwitcherOpen(false);
+        setIsDesktopModeMenuOpen((value) => {
+            const next = !value;
+            // The tray can flip desktop lyrics behind our back; read the real state on every open.
+            if (next && canUseDesktopMode) {
+                void window.electron?.getDesktopLyricMode?.()
+                    .then(active => setDesktopLyricModeActive(Boolean(active)))
+                    .catch(() => undefined);
+            }
+            return next;
+        });
+    }, [canUseDesktopMode, setDesktopLyricModeActive]);
+
+    const reportDesktopLyricFailure = useCallback((error: unknown) => {
+        onStatusMessage({
+            type: 'error',
+            text: error instanceof Error ? error.message : t('qishuiNav.desktopLyricsFailed', '切换桌面歌词失败'),
+        });
+    }, [onStatusMessage, t]);
+
+    const selectWallpaperMode = useCallback(() => {
+        setIsDesktopModeMenuOpen(false);
+        if (wallpaperMode) {
+            if (desktopLyricMode) {
+                // Same desktop session, switch the flavour back to the plain wallpaper.
+                void window.electron?.prepareDesktopMode?.('wallpaper');
+                setDesktopLyricModeActive(false);
+                return;
+            }
+            handleToggleWallpaperMode(false);
+            return;
+        }
+        void window.electron?.prepareDesktopMode?.('wallpaper');
+        handleToggleWallpaperMode(true);
+    }, [desktopLyricMode, handleToggleWallpaperMode, setDesktopLyricModeActive, wallpaperMode]);
+
+    const selectDesktopLyricMode = useCallback(async () => {
+        setIsDesktopModeMenuOpen(false);
+        if (wallpaperMode) {
+            if (desktopLyricMode) {
+                // Clicking the active flavour exits the whole desktop session.
+                handleToggleWallpaperMode(false);
+                return;
+            }
+            // Already on the desktop as the wallpaper flavour: just change the flavour.
+            setIsDesktopLyricBusy(true);
+            try {
+                await window.electron?.prepareDesktopMode?.('lyrics');
+                setDesktopLyricModeActive(true);
+                onStatusMessage({ type: 'info', text: t('qishuiNav.desktopLyricsOn', '已开启桌面歌词') });
+            } catch (error) {
+                reportDesktopLyricFailure(error);
+            } finally {
+                setIsDesktopLyricBusy(false);
+            }
+            return;
+        }
+        setIsDesktopLyricBusy(true);
+        try {
+            await window.electron?.prepareDesktopMode?.('lyrics');
+            useDesktopSettingsStore.getState().applyWallpaperMode(true);
+            setDesktopLyricModeActive(true);
+            onStatusMessage({ type: 'info', text: t('qishuiNav.desktopLyricsOn', '已开启桌面歌词') });
+        } catch (error) {
+            reportDesktopLyricFailure(error);
+        } finally {
+            setIsDesktopLyricBusy(false);
+        }
+    }, [desktopLyricMode, handleToggleWallpaperMode, onStatusMessage, reportDesktopLyricFailure, setDesktopLyricModeActive, t, wallpaperMode]);
+
+    const exitDesktopModes = useCallback(async () => {
+        setIsDesktopModeMenuOpen(false);
+        if (wallpaperMode) {
+            handleToggleWallpaperMode(false);
+        }
+    }, [handleToggleWallpaperMode, wallpaperMode]);
 
     const submitCreate = useCallback(async (event: React.FormEvent) => {
         event.preventDefault();
@@ -382,6 +520,18 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     const subtleRow = isDaylight
         ? 'text-zinc-600 hover:bg-black/[0.05] hover:text-zinc-950'
         : 'text-white/70 hover:bg-white/[0.07] hover:text-white';
+    const compactIconButton = (active: boolean) => `flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+        active
+            ? isDaylight
+                ? 'border-black/15 bg-black/[0.08] text-zinc-900'
+                : 'border-white/15 bg-white/[0.12] text-white'
+            : isDaylight
+                ? 'border-black/10 bg-white/50 text-zinc-500 hover:bg-white/80 hover:text-zinc-900'
+                : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.1] hover:text-white'
+    }`;
+    // The handle is the only thing that may appear over the desktop; it stays invisible (but
+    // hoverable) until the pointer reaches it.
+    const isDesktopHandleVisible = !isDesktopModeActive || isHandleHovered;
 
     return (
         <div className="pointer-events-none fixed right-4 top-12 z-40 hidden w-[248px] md:block">
@@ -398,7 +548,8 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                 onPointerLeave={scheduleHide}
                 onFocusCapture={reveal}
                 onBlurCapture={scheduleHide}
-                className={`relative flex max-h-[calc(100vh-7.5rem)] w-full flex-col rounded-2xl border shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${isEffectPresetOpen ? 'overflow-visible' : 'overflow-hidden'} ${surface} ${isRevealed ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                className={`relative flex max-h-[calc(100vh-7.5rem)] w-full flex-col rounded-2xl border shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${isEffectPresetOpen || isDesktopModeMenuOpen ? 'overflow-visible' : 'overflow-hidden'} ${surface} ${isRevealed ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                data-player-nav-root="true"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                 onClick={event => event.stopPropagation()}
                 aria-label={isQishuiProvider
@@ -454,21 +605,27 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                                     onClick={() => onPlayFeed?.()}
                                 />
                             </div>
+                            {canUseDesktopMode && (
+                                <button
+                                    type="button"
+                                    onClick={openDesktopModeMenu}
+                                    className={compactIconButton(isDesktopModeActive || isDesktopModeMenuOpen)}
+                                    title={t('qishuiNav.desktopMode', '桌面模式')}
+                                    aria-label={t('qishuiNav.desktopMode', '桌面模式')}
+                                    aria-haspopup="menu"
+                                    aria-expanded={isDesktopModeMenuOpen}
+                                >
+                                    <Monitor size={14} />
+                                </button>
+                            )}
                             <button
                                 type="button"
                                 onClick={() => {
                                     setIsSwitcherOpen(false);
+                                    setIsDesktopModeMenuOpen(false);
                                     setIsEffectPresetOpen(value => !value);
                                 }}
-                                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                                    isEffectPresetOpen
-                                        ? isDaylight
-                                            ? 'border-black/15 bg-black/[0.08] text-zinc-900'
-                                            : 'border-white/15 bg-white/[0.12] text-white'
-                                        : isDaylight
-                                            ? 'border-black/10 bg-white/50 text-zinc-500 hover:bg-white/80 hover:text-zinc-900'
-                                            : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.1] hover:text-white'
-                                }`}
+                                className={compactIconButton(isEffectPresetOpen)}
                                 title={t('qishuiNav.effectPreset', '效果预设')}
                                 aria-label={t('qishuiNav.effectPreset', '效果预设')}
                                 aria-expanded={isEffectPresetOpen}
@@ -493,6 +650,70 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                             setIsEffectPresetOpen(value => !value);
                         }}
                     />
+                )}
+
+                {isDesktopModeMenuOpen && (
+                    <div
+                        role="menu"
+                        aria-label={t('qishuiNav.desktopMode', '桌面模式')}
+                        className={`absolute right-2 top-9 z-30 w-[224px] overflow-hidden rounded-2xl border p-1.5 shadow-2xl backdrop-blur-2xl ${
+                            isDaylight ? 'border-black/10 bg-white/95 text-zinc-800' : 'border-white/10 bg-[#141519]/95 text-white/90'
+                        }`}
+                    >
+                        <div className={`px-2.5 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-[0.12em] ${muted}`}>
+                            {t('qishuiNav.desktopMode', '桌面模式')}
+                        </div>
+                        <button
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={isWallpaperVariantActive}
+                            onClick={selectWallpaperMode}
+                            className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] transition-colors ${subtleRow}`}
+                        >
+                            <Monitor size={14} className="shrink-0 opacity-80" />
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate">{t('qishuiNav.desktopWallpaperMode', '桌面壁纸模式')}</span>
+                                <span className={`block truncate text-[10px] ${muted}`}>
+                                    {t('qishuiNav.desktopWallpaperModeHint', '沉到桌面底层，作为歌词壁纸')}
+                                </span>
+                            </span>
+                            {isWallpaperVariantActive && <Check size={13} className="shrink-0 opacity-80" />}
+                        </button>
+                        <button
+                            type="button"
+                            role="menuitemradio"
+                            aria-checked={desktopLyricMode}
+                            disabled={isDesktopLyricBusy}
+                            onClick={() => { void selectDesktopLyricMode(); }}
+                            className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] transition-colors disabled:cursor-wait disabled:opacity-50 ${subtleRow}`}
+                        >
+                            <Captions size={14} className="shrink-0 opacity-80" />
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate">{t('qishuiNav.desktopLyrics', '桌面歌词')}</span>
+                                <span className={`block truncate text-[10px] ${muted}`}>
+                                    {t('qishuiNav.desktopLyricsHint', '全屏透明，仅侧栏可操作')}
+                                </span>
+                            </span>
+                            {isDesktopLyricBusy
+                                ? <Loader2 size={13} className="shrink-0 animate-spin opacity-80" />
+                                : desktopLyricMode ? <Check size={13} className="shrink-0 opacity-80" /> : null}
+                        </button>
+                        {(wallpaperMode || desktopLyricMode) && (
+                            <>
+                                <div className={`mx-1 my-1 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={isDesktopLyricBusy}
+                                    onClick={() => { void exitDesktopModes(); }}
+                                    className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12px] transition-colors disabled:cursor-wait disabled:opacity-50 ${subtleRow}`}
+                                >
+                                    <LogOut size={14} className="shrink-0 opacity-80" />
+                                    <span className="min-w-0 flex-1 truncate">{t('qishuiNav.exitDesktopMode', '退出桌面模式')}</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
                 )}
 
                 {isEffectPresetOpen && (
@@ -735,6 +956,7 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                 type="button"
                 onClick={() => {
                     setIsEffectPresetOpen(false);
+                    setIsDesktopModeMenuOpen(false);
                     setIsSwitcherOpen(value => !value);
                 }}
                 className={`flex w-full shrink-0 items-center gap-2 border-t px-4 py-2.5 text-left transition-colors ${divider} ${isDaylight ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.05]'}`}
@@ -759,8 +981,12 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
             {!isRevealed && (
                 <button
                     type="button"
-                    className={`pointer-events-auto absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all hover:scale-105 ${isDaylight ? 'border-black/15 bg-white/80 text-zinc-600 hover:bg-white' : 'border-white/20 bg-black/55 text-white/75 hover:bg-black/75 hover:text-white'}`}
-                    onPointerEnter={reveal}
+                    className={`pointer-events-auto absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-full border shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md transition-all hover:scale-105 ${isDesktopModeActive && !isDesktopHandleVisible ? 'opacity-0' : 'opacity-100'} ${isDaylight ? 'border-black/15 bg-white/80 text-zinc-600 hover:bg-white' : 'border-white/20 bg-black/55 text-white/75 hover:bg-black/75 hover:text-white'}`}
+                    onPointerEnter={() => {
+                        setIsHandleHovered(true);
+                        reveal();
+                    }}
+                    onPointerLeave={() => setIsHandleHovered(false)}
                     onFocus={reveal}
                     onClick={reveal}
                     title={isQishuiProvider

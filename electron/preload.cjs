@@ -191,6 +191,13 @@ contextBridge.exposeInMainWorld('electron', {
     getMainWindowClickThroughEnabled: () => ipcRenderer.invoke('window-get-click-through'),
     setMainWindowClickThroughEnabled: (enabled) => ipcRenderer.invoke('window-set-click-through', enabled),
     setMainWindowClickThroughUnlockHover: (active) => ipcRenderer.invoke('window-set-click-through-unlock-hover', active),
+    getDesktopLyricMode: () => ipcRenderer.invoke('window-get-desktop-lyric-mode'),
+    prepareDesktopMode: (variant) => ipcRenderer.invoke('window-prepare-desktop-mode', variant),
+    onDesktopLyricModeChanged: (callback) => {
+        const listener = (_event, active) => callback(Boolean(active));
+        ipcRenderer.on('desktop-lyric-mode-changed', listener);
+        return () => ipcRenderer.removeListener('desktop-lyric-mode-changed', listener);
+    },
     getMainWindowAlwaysOnTop: () => ipcRenderer.invoke('window-get-always-on-top'),
     setMainWindowAlwaysOnTop: (enabled) => ipcRenderer.invoke('window-set-always-on-top', enabled),
     onMainWindowClickThroughChanged: (callback) => {

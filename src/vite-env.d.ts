@@ -1022,6 +1022,9 @@ declare global {
       getMainWindowClickThroughEnabled: () => Promise<boolean>;
       setMainWindowClickThroughEnabled: (enabled: boolean) => Promise<boolean>;
       setMainWindowClickThroughUnlockHover: (active: boolean) => Promise<boolean>;
+      getDesktopLyricMode: () => Promise<boolean>;
+      prepareDesktopMode: (variant: 'wallpaper' | 'lyrics') => Promise<boolean>;
+      onDesktopLyricModeChanged: (callback: (active: boolean) => void) => () => void;
       getMainWindowAlwaysOnTop: () => Promise<boolean>;
       setMainWindowAlwaysOnTop: (enabled: boolean) => Promise<boolean>;
       onMainWindowClickThroughChanged: (callback: (state: ElectronMainWindowClickThroughState) => void) => () => void;

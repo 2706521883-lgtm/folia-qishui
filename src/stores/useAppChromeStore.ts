@@ -20,6 +20,8 @@ type AppChromeState = {
     showTransparentWindowBorder: boolean;
     isMainWindowClickThroughEnabled: boolean;
     isClickThroughToggleHotspotActive: boolean;
+    /** The desktop-wallpaper session is running the lyrics flavour. */
+    desktopLyricModeActive: boolean;
     isPlayerPanelGuideHotspotActive: boolean;
     /** Persisted: the listener's last choice of a bare lyrics page. */
     isPlayerChromeHidden: boolean;
@@ -30,6 +32,7 @@ type AppChromeState = {
     setShowTransparentWindowBorder: React.Dispatch<React.SetStateAction<boolean>>;
     setIsMainWindowClickThroughEnabled: React.Dispatch<React.SetStateAction<boolean>>;
     setIsClickThroughToggleHotspotActive: React.Dispatch<React.SetStateAction<boolean>>;
+    setDesktopLyricModeActive: React.Dispatch<React.SetStateAction<boolean>>;
     setIsPlayerPanelGuideHotspotActive: React.Dispatch<React.SetStateAction<boolean>>;
     setIsPlayerChromeHidden: React.Dispatch<React.SetStateAction<boolean>>;
     setIsDevDebugOverlayVisible: React.Dispatch<React.SetStateAction<boolean>>;
@@ -46,6 +49,7 @@ export const useAppChromeStore = create<AppChromeState>((set, get) => ({
     showTransparentWindowBorder: false,
     isMainWindowClickThroughEnabled: false,
     isClickThroughToggleHotspotActive: false,
+    desktopLyricModeActive: false,
     isPlayerPanelGuideHotspotActive: false,
     isPlayerChromeHidden: getStoredBoolean(PLAYER_CHROME_HIDDEN_STORAGE_KEY, false),
     isDevDebugOverlayVisible: false,
@@ -55,6 +59,7 @@ export const useAppChromeStore = create<AppChromeState>((set, get) => ({
     setShowTransparentWindowBorder: (next) => set({ showTransparentWindowBorder: resolve(next, get().showTransparentWindowBorder) }),
     setIsMainWindowClickThroughEnabled: (next) => set({ isMainWindowClickThroughEnabled: resolve(next, get().isMainWindowClickThroughEnabled) }),
     setIsClickThroughToggleHotspotActive: (next) => set({ isClickThroughToggleHotspotActive: resolve(next, get().isClickThroughToggleHotspotActive) }),
+    setDesktopLyricModeActive: (next) => set({ desktopLyricModeActive: resolve(next, get().desktopLyricModeActive) }),
     setIsPlayerPanelGuideHotspotActive: (next) => set({ isPlayerPanelGuideHotspotActive: resolve(next, get().isPlayerPanelGuideHotspotActive) }),
     // Written through on every change, the way App.tsx's effect used to.
     setIsPlayerChromeHidden: (next) => {

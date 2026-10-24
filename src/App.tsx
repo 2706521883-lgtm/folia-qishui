@@ -255,6 +255,7 @@ export default function App() {
         showTransparentWindowBorder,
         isMainWindowClickThroughEnabled,
         isClickThroughToggleHotspotActive, setIsClickThroughToggleHotspotActive,
+        desktopLyricModeActive,
         setIsPlayerPanelGuideHotspotActive,
         isPlayerChromeHidden, setIsPlayerChromeHidden,
         isDevDebugOverlayVisible,
@@ -264,6 +265,7 @@ export default function App() {
         isMainWindowClickThroughEnabled: state.isMainWindowClickThroughEnabled,
         isClickThroughToggleHotspotActive: state.isClickThroughToggleHotspotActive,
         setIsClickThroughToggleHotspotActive: state.setIsClickThroughToggleHotspotActive,
+        desktopLyricModeActive: state.desktopLyricModeActive,
         setIsPlayerPanelGuideHotspotActive: state.setIsPlayerPanelGuideHotspotActive,
         isPlayerChromeHidden: state.isPlayerChromeHidden,
         setIsPlayerChromeHidden: state.setIsPlayerChromeHidden,
@@ -2925,7 +2927,12 @@ export default function App() {
             isTitlebarRevealed={isTitlebarRevealed}
             alwaysShowMainWindowTitlebar={alwaysShowMainWindowTitlebar}
             isMainWindowClickThroughEnabled={isMainWindowClickThroughEnabled}
-            showMainWindowClickThroughToggle={isMainWindowClickThroughEnabled ? isClickThroughToggleHotspotActive : isTitlebarRevealed}
+            // Desktop modes have no click-through to toggle; the lock button would only confuse.
+            showMainWindowClickThroughToggle={
+                !desktopLyricModeActive
+                && !wallpaperMode
+                && (isMainWindowClickThroughEnabled ? isClickThroughToggleHotspotActive : isTitlebarRevealed)
+            }
             isDaylight={isDaylight}
             onToggleMainWindowClickThrough={() => {
                 const nextEnabled = !isMainWindowClickThroughEnabled;
@@ -3133,13 +3140,15 @@ export default function App() {
                 visualizerMode={visualizerMode}
                 onVisualizerModeChange={handleSetVisualizerMode}
                 isDaylight={isDaylight}
+                // Desktop modes keep the sidebar available; it auto-hides while playing and
+                // reveals when the desktop mouse forwarding reaches the handle. Click-through
+                // (a standalone switch) still hides it.
                 isVisible={
                     currentView === 'player'
                     && Boolean(activeProvider)
                     && !isPanelOpen
-                    && !wallpaperMode
-                    && !isMainWindowClickThroughEnabled
                     && !isNowPlayingStageActive
+                    && !isMainWindowClickThroughEnabled
                 }
                 isPlaying={playerState === PlayerState.PLAYING}
                 isFeedLoading={isQishuiFeedLoading}

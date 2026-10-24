@@ -250,6 +250,11 @@ const WALLPAPER_MODE_SETTING_KEY = 'wallpaper_mode';
 // Windows-only helper switches; both default to on (missing = enabled).
 const WALLPAPER_FORWARD_MOUSE_SETTING_KEY = 'wallpaper_forward_mouse';
 const WALLPAPER_ZGUARD_SETTING_KEY = 'wallpaper_zguard';
+// Which desktop-layer flavour the current wallpaper session is: 'wallpaper' or 'lyrics'.
+// Both use the same WorkerW window/helper path; the marker only drives the UI and the transparent
+// document needed by lyrics.
+const DESKTOP_MODE_VARIANT_SETTING_KEY = 'desktop_mode_variant';
+const DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY = 'desktop_mode_prev_transparent';
 // macOS-only: auto-hide the Dock while a wallpaper session is active. Hiding only ever applies to a
 // bottom-edge Dock (side Docks stay untouched); the on/off switch is the override — turning it off
 // disables even a bottom Dock. Exiting wallpaper mode or quitting restores the user's original Dock
@@ -2610,7 +2615,9 @@ function setMainWindowSkipTaskbarEnabled(enabled) {
 
 function persistMainWindowSkipTaskbarEnabled(enabled) {
   store.set(HIDE_TASKBAR_ICON_SETTING_KEY, Boolean(enabled));
-  return setMainWindowSkipTaskbarEnabled(enabled);
+  const applied = setMainWindowSkipTaskbarEnabled(enabled);
+  publishDesktopLyricModeState();
+  return applied;
 }
 
 function applyRemoteControlAlwaysOnTop(win) {
@@ -2696,65 +2703,59 @@ function setMainWindowAlwaysOnTop(enabled) {
   patchRemoteControlSnapshot({
     mainWindowAlwaysOnTop,
   });
+  publishDesktopLyricModeState();
   refreshTrayMenu();
   return mainWindowAlwaysOnTop;
 }
 
 function isDesktopLyricModeActive() {
-  return mainWindowClickThroughEnabled
-    && mainWindowAlwaysOnTop
-    && isTransparentPlayerBackgroundEnabled()
-    && mainWindowSkipTaskbarEnabled;
+  return isWallpaperModeEnabled() && store.get(DESKTOP_MODE_VARIANT_SETTING_KEY) === 'lyrics';
 }
 
-async function setDesktopLyricMode(enabled) {
-  const nextEnabled = Boolean(enabled);
-  if (nextEnabled && isWallpaperModeEnabled()) {
-    return false;
+// Both desktop flavours use the wallpaper WorkerW session; this only records which one is meant
+// and gives the lyrics flavour a transparent document (restored when the session ends).
+function prepareDesktopModeEntry(variant) {
+  if (variant === 'lyrics') {
+    // Keep the first pre-session value when switching flavours inside the same desktop session;
+    // only the very first lyrics entry records it.
+    if (!store.has(DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY)) {
+      store.set(DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY, isTransparentPlayerBackgroundEnabled());
+    }
+    if (!isTransparentPlayerBackgroundEnabled()) {
+      store.set(TRANSPARENT_PLAYER_BACKGROUND_SETTING_KEY, true);
+    }
+    store.set(DESKTOP_MODE_VARIANT_SETTING_KEY, 'lyrics');
+  } else {
+    // A wallpaper flavour switch must not drop the lyrics session's restore value; the session
+    // may still be exited later and the listener's original background restored then.
+    store.set(DESKTOP_MODE_VARIANT_SETTING_KEY, 'wallpaper');
   }
+  publishDesktopLyricModeState();
+  return true;
+}
 
-  // The preset has no state of its own: it only applies one exact combination of independent
-  // window switches. Drop click-through before a possible window rebuild, then reapply it last.
-  setMainWindowClickThroughEnabled(false);
-  setMainWindowAlwaysOnTop(nextEnabled);
-  persistMainWindowSkipTaskbarEnabled(nextEnabled);
-  if (isTransparentPlayerBackgroundEnabled() !== nextEnabled) {
-    await setMainWindowTransparentModeFromRemote(nextEnabled);
+function restoreDesktopModeState() {
+  // Restore whenever this session recorded the pre-mode transparency, even if the user switched
+  // from the lyrics flavour to the wallpaper flavour before leaving.
+  if (store.has(DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY)) {
+    store.set(
+      TRANSPARENT_PLAYER_BACKGROUND_SETTING_KEY,
+      Boolean(store.get(DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY)),
+    );
   }
-  if (nextEnabled) {
-    setMainWindowClickThroughEnabled(true);
-  }
-  return nextEnabled;
+  store.delete(DESKTOP_MODE_PREV_TRANSPARENT_SETTING_KEY);
+  store.delete(DESKTOP_MODE_VARIANT_SETTING_KEY);
+  publishDesktopLyricModeState();
 }
 
 async function resetMainWindowPresentation() {
-  return setDesktopLyricMode(false);
-}
-
-async function enableDesktopLyricsLeavingWallpaperMode() {
-  store.set(WALLPAPER_MODE_SETTING_KEY, false);
-  refreshTrayMenu();
-
-  if (process.platform === 'linux') {
-    mainWindowAlwaysOnTop = true;
-    mainWindowSkipTaskbarEnabled = true;
-    store.set(MAIN_WINDOW_ALWAYS_ON_TOP_SETTING_KEY, true);
-    store.set(HIDE_TASKBAR_ICON_SETTING_KEY, true);
-    store.set(TRANSPARENT_PLAYER_BACKGROUND_SETTING_KEY, true);
-    process.env.FOLIA_PENDING_DESKTOP_LYRIC = '1';
-    scheduleWallpaperModeRelaunch(false);
-    return;
+  setMainWindowClickThroughEnabled(false);
+  setMainWindowAlwaysOnTop(false);
+  persistMainWindowSkipTaskbarEnabled(false);
+  if (isTransparentPlayerBackgroundEnabled()) {
+    await setMainWindowTransparentModeFromRemote(false);
   }
-
-  wallpaperModeRelaunchGeneration += 1;
-  const generation = wallpaperModeRelaunchGeneration;
-  if (wallpaperModeRelaunchTimer) {
-    clearTimeout(wallpaperModeRelaunchTimer);
-    wallpaperModeRelaunchTimer = null;
-  }
-  await relaunchForWallpaperModeChange(false, generation);
-  await setDesktopLyricMode(true);
-  refreshTrayMenu();
+  return false;
 }
 
 function refreshTrayMenu() {
@@ -2810,14 +2811,17 @@ function refreshTrayMenu() {
       checked: isDesktopLyricModeActive(),
       enabled: hasMainWindow,
       click: () => {
-        const nextEnabled = !isDesktopLyricModeActive();
-        if (nextEnabled && isWallpaperModeEnabled()) {
-          void enableDesktopLyricsLeavingWallpaperMode();
+        if (isDesktopLyricModeActive()) {
+          store.set(WALLPAPER_MODE_SETTING_KEY, false);
+          restoreDesktopModeState();
+          scheduleWallpaperModeRelaunch(false);
+          refreshTrayMenu();
           return;
         }
-        void setDesktopLyricMode(nextEnabled).then(() => {
-          refreshTrayMenu();
-        });
+        prepareDesktopModeEntry('lyrics');
+        store.set(WALLPAPER_MODE_SETTING_KEY, true);
+        scheduleWallpaperModeRelaunch(true);
+        refreshTrayMenu();
       },
     },
     ...(isWallpaperModeSupportedPlatform() ? [{
@@ -2838,6 +2842,13 @@ function refreshTrayMenu() {
         // presentation (measured on-device: the content is presented 33pt low, leaving an
         // empty menu-bar strip above the wallpaper). The wallpaper entry asserts click-
         // through and the always-on-top state itself (state-only flip + level sink).
+        if (nextEnabled) {
+          if (!store.get(DESKTOP_MODE_VARIANT_SETTING_KEY)) {
+            prepareDesktopModeEntry('wallpaper');
+          }
+        } else {
+          restoreDesktopModeState();
+        }
         store.set(WALLPAPER_MODE_SETTING_KEY, nextEnabled);
         refreshTrayMenu();
         scheduleWallpaperModeRelaunch(nextEnabled);
@@ -4607,6 +4618,21 @@ function patchRemoteControlSnapshot(patch) {
   sendRemoteControlSnapshot(latestRemoteControlSnapshot);
 }
 
+let lastPublishedDesktopLyricMode = null;
+
+function publishDesktopLyricModeState() {
+  const active = Boolean(isDesktopLyricModeActive());
+  if (lastPublishedDesktopLyricMode === active) {
+    return active;
+  }
+
+  lastPublishedDesktopLyricMode = active;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('desktop-lyric-mode-changed', active);
+  }
+  return active;
+}
+
 function publishMainWindowClickThroughState() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return false;
@@ -4616,6 +4642,7 @@ function publishMainWindowClickThroughState() {
     enabled: mainWindowClickThroughEnabled,
     unlockHoverActive: mainWindowClickThroughUnlockHover,
   });
+  publishDesktopLyricModeState();
   refreshTrayMenu();
   return true;
 }
@@ -5485,16 +5512,13 @@ app.whenReady().then(async () => {
       void macController.recoverStrandedDock();
     }
   }
+  // A crash/quit while a desktop flavour was active can leave the lyrics-only transparency (or a
+  // stale variant marker) behind. Put the normal document back before the window is built.
+  if (!isWallpaperModeEnabled()) {
+    restoreDesktopModeState();
+  }
   createWindow();
   focusMainWindow();
-  if (process.env.FOLIA_PENDING_DESKTOP_LYRIC === '1') {
-    delete process.env.FOLIA_PENDING_DESKTOP_LYRIC;
-    if (!isWallpaperModeEnabled()) {
-      void setDesktopLyricMode(true).then(() => {
-        refreshTrayMenu();
-      });
-    }
-  }
   // Windows wallpaper mode: attach the helper once the window exists (startup with the setting
   // on; runtime toggles go through scheduleWallpaperModeRelaunch → relaunchForWallpaperModeChange).
   if (isWindowsWallpaperMode()) {
@@ -5803,8 +5827,20 @@ ipcMain.handle('save-settings', (event, key, value) => {
   }
 
   if (key === WALLPAPER_MODE_SETTING_KEY) {
+    // Both desktop flavours share the wallpaper session. The renderer prepares the flavour
+    // before saving; a plain save falls back to the wallpaper flavour. Leaving restores the
+    // listener's pre-mode transparency (the lyrics flavour turns it on).
+    if (Boolean(nextValue)) {
+      setMainWindowClickThroughEnabled(false);
+      if (!store.get(DESKTOP_MODE_VARIANT_SETTING_KEY)) {
+        prepareDesktopModeEntry('wallpaper');
+      }
+    } else {
+      restoreDesktopModeState();
+    }
     // Let the renderer receive its save-settings response before the process relaunches, while
     // coalescing rapid toggles into one handoff/relaunch operation.
+    publishDesktopLyricModeState();
     scheduleWallpaperModeRelaunch(Boolean(nextValue));
   }
 
@@ -6388,6 +6424,28 @@ ipcMain.handle('window-set-click-through-unlock-hover', (event, active) => {
   }
 
   return setMainWindowClickThroughUnlockHover(active);
+});
+
+ipcMain.handle('window-get-desktop-lyric-mode', (event) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    return false;
+  }
+
+  return isDesktopLyricModeActive();
+});
+
+ipcMain.handle('window-prepare-desktop-mode', (event, variant) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    return false;
+  }
+
+  if (variant !== 'lyrics' && variant !== 'wallpaper') {
+    return false;
+  }
+
+  prepareDesktopModeEntry(variant);
+  refreshTrayMenu();
+  return true;
 });
 
 ipcMain.handle('window-get-always-on-top', (event) => {

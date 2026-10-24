@@ -23,6 +23,7 @@ export const useElectronWindowChrome = () => {
     const isMainWindowClickThroughEnabled = useAppChromeStore(state => state.isMainWindowClickThroughEnabled);
     const setIsMainWindowClickThroughEnabled = useAppChromeStore(state => state.setIsMainWindowClickThroughEnabled);
     const setIsClickThroughToggleHotspotActive = useAppChromeStore(state => state.setIsClickThroughToggleHotspotActive);
+    const setDesktopLyricModeActive = useAppChromeStore(state => state.setDesktopLyricModeActive);
 
     useEffect(() => {
         const body = document.body;
@@ -74,6 +75,30 @@ export const useElectronWindowChrome = () => {
             unsubscribe?.();
         };
     }, [isElectronWindow]);
+
+    // Desktop lyrics is one preset made of four window switches; the main process owns it and the
+    // tray can flip it without touching React, so mirror its value into the chrome store.
+    useEffect(() => {
+        if (!isElectronWindow || !window.electron?.getDesktopLyricMode) {
+            setDesktopLyricModeActive(false);
+            return undefined;
+        }
+
+        let mounted = true;
+        void window.electron.getDesktopLyricMode().then((active) => {
+            if (mounted) setDesktopLyricModeActive(Boolean(active));
+        }).catch(() => {
+            if (mounted) setDesktopLyricModeActive(false);
+        });
+        const unsubscribe = window.electron.onDesktopLyricModeChanged?.((active) => {
+            setDesktopLyricModeActive(Boolean(active));
+        });
+
+        return () => {
+            mounted = false;
+            unsubscribe?.();
+        };
+    }, [isElectronWindow, setDesktopLyricModeActive]);
 
     useEffect(() => {
         if (!isElectronWindow || !isMainWindowClickThroughEnabled || !window.electron?.setMainWindowClickThroughUnlockHover) {

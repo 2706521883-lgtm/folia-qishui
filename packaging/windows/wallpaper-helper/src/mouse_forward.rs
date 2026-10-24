@@ -89,8 +89,15 @@ fn move_report_due(now_us: u64, last_sent_us: u64) -> bool {
     now_us.saturating_sub(last_sent_us) >= MOUSE_MOVE_MIN_INTERVAL_US
 }
 
-// Whether `hwnd` is one of the desktop's own top-level windows (wallpaper WorkerW, icon WorkerW
-// or Progman).
+// Whether `hwnd` is one of the desktop's own windows (wallpaper WorkerW, icon WorkerW, Progman)
+// or Folia's wallpaper window itself. The latter is parented into the wallpaper WorkerW and its
+// UI (the player sidebar) is part of the desktop the user is clicking; without accepting it, the
+// first click on the wallpaper focuses Folia and every later click/move is dropped as "not the
+// desktop" until the user clicks bare desktop again.
+unsafe fn is_attached_wallpaper_window(hwnd: HWND) -> bool {
+    !hwnd.0.is_null() && crate::monitor::resident_folia_hwnd() == Some(hwnd.0 as isize)
+}
+
 unsafe fn is_desktop_window(hwnd: HWND) -> bool {
     if hwnd.0.is_null() {
         return false;
@@ -100,10 +107,13 @@ unsafe fn is_desktop_window(hwnd: HWND) -> bool {
     hwnd.0 as isize == worker_w
         || (icon_worker_w != 0 && hwnd.0 as isize == icon_worker_w)
         || Some(hwnd) == find_progman_hwnd()
+        || is_attached_wallpaper_window(hwnd)
 }
 
 unsafe fn is_desktop_foreground() -> bool {
-    is_desktop_window(GetForegroundWindow())
+    let foreground = GetForegroundWindow();
+    // Child windows report themselves as foreground on some shells; their root is the WorkerW.
+    is_desktop_window(foreground) || is_desktop_window(GetAncestor(foreground, GA_ROOT))
 }
 
 // Whether a click or wheel at `point` lands on the desktop. Raw input reaches the helper before
