@@ -12,6 +12,7 @@ import { useReducedMotionFor } from './hooks/useReducedMotionFor';
 import AppShell from './components/app/AppShell';
 import Home from './components/app/Home';
 import PlayerPanel from './components/app/PlayerPanel';
+import AudioEqualizerDialog from './components/panelTab/AudioEqualizerDialog';
 import ThemeQuickEditorHost from './components/panelTab/ThemeQuickEditor';
 import AppDialogs from './components/app/dialogs/AppDialogs';
 import { useSettingsDialogModel } from './components/app/dialogs/useSettingsDialogModel';
@@ -3165,6 +3166,10 @@ export default function App() {
             {currentView === 'player' && !showLyricMatchModal && (
                 <PlayerPanel model={playerPanelModel} />
             )}
+
+            {/* 音频效果器挂在应用层而不是面板的控制页里：播放器右上角的快捷控制和命令面板都能在
+                面板收起时打开它，之前它只随控制页挂载，点了只会置位、看不见对话框。 */}
+            <AudioEqualizerDialog isDaylight={isDaylight} theme={theme} />
 
             <ThemeQuickEditorHost onSaveAiTheme={saveEditedAiDualTheme} onSaveCustomTheme={saveCustomDualTheme} />
 

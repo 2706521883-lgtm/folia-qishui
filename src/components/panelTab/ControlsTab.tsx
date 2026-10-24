@@ -2,7 +2,6 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Theme, ThemeMode, VisualizerMode } from '../../types';
 import type { ThemeSourceModel } from '../../hooks/themeControllerState';
-import AudioEqualizerDialog from './AudioEqualizerDialog';
 import AppearanceSection from './controls/AppearanceSection';
 import PlayerQuickControls from './controls/PlayerQuickControls';
 import ThemeQuickRow from './controls/ThemeQuickRow';
@@ -132,8 +131,6 @@ const ControlsTab: React.FC<ControlsTabProps> = ({
                 />
 
             </div>
-
-            <AudioEqualizerDialog isDaylight={isDaylight} theme={theme} />
 
         </motion.div>
     );

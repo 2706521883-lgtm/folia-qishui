@@ -239,8 +239,8 @@ test('steps straight through sonnet without an interstitial dialog', async ({ pa
 test('closes the audio effect dialog with Escape', async ({ page }) => {
     await openControlsTab(page);
 
-    await page.getByRole('button', { name: '打开音频均衡器' }).click();
-    const equalizerTitle = page.getByText('音频效果器', { exact: true });
+    await page.getByRole('button', { name: '音频效果器' }).click();
+    const equalizerTitle = page.getByRole('heading', { name: '音频效果器' });
     await expect(equalizerTitle).toBeVisible();
 
     await page.keyboard.press('Escape');
