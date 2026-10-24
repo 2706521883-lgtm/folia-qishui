@@ -118,6 +118,8 @@ npm run test:unit     # vitest 单元测试
 npm run typecheck     # TypeScript 类型检查
 ```
 
+> 接手开发或新会话继续这个项目时，先读 [`docs/handbook/00-先读我.md`](./docs/handbook/00-先读我.md)：当前版本、发布流程、硬性约束和已知坑都在那里。
+
 ## 七、使用说明
 
 1. 打开 Folia → 在音源列表里选择「汽水音乐」。
