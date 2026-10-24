@@ -7,12 +7,16 @@
 // with: let the engine create an ordinary framed window (DWM builds the frame), strip the frame
 // afterwards, and only add the taskbar-hiding bits once the capture stream is already live.
 //
-//   1. parkWindow() strips the frame (0x94000000) and keeps the window's ex-style clear,
+//   1. parkWindow() strips the frame (0x94000000), keeps the window's ex-style clear, and posts
+//      the final client size back to the engine (WM_SIZE) so its render surface grows with the
+//      now-frameless client area — otherwise a strip of the engine's own background is left at
+//      the bottom (white on light wallpapers, black on dark ones),
 //   2. markCaptureLive() re-adds the tool-window / no-activate bits and does one hide/show cycle
 //      to remove the taskbar button; an existing capture item survives this (verified on Windows
 //      10 22H2 + RTX 2060),
 //   3. markCaptureStopped() clears those bits again so the next getUserMedia can start,
-//   4. monitor() keeps the window parked and re-applies the phase-appropriate style every tick.
+//   4. monitor() keeps the window parked and re-applies the phase-appropriate style every tick;
+//      a recreated or re-stripped window gets the WM_SIZE notification again.
 //
 // The window is still a real Wallpaper Engine window: this module never reparents it (SetParent
 // tears it out of the engine's render loop) and never touches the wallpaper project on disk.
@@ -146,6 +150,8 @@ const loadNativeApi = () => {
   const SetWindowLongPtrW = user32.func('intptr_t __stdcall SetWindowLongPtrW(void *hwnd, int index, intptr_t value)');
   const SetWindowPos = user32.func('bool __stdcall SetWindowPos(void *hwnd, void *after, int x, int y, int cx, int cy, uint32 flags)');
   const GetWindowRect = user32.func('bool __stdcall GetWindowRect(void *hwnd, _Out_ FOLIA_WE_RECT *rect)');
+  const GetClientRect = user32.func('bool __stdcall GetClientRect(void *hwnd, _Out_ FOLIA_WE_RECT *rect)');
+  const PostMessageW = user32.func('bool __stdcall PostMessageW(void *hwnd, uint32 msg, intptr_t wparam, intptr_t lparam)');
   const ShowWindow = user32.func('bool __stdcall ShowWindow(void *hwnd, int cmd)');
   const IsWindowVisible = user32.func('bool __stdcall IsWindowVisible(void *hwnd)');
   const IsIconic = user32.func('bool __stdcall IsIconic(void *hwnd)');
@@ -305,6 +311,21 @@ const loadNativeApi = () => {
     return { moved: true, before, after: getRect(hwnd) };
   };
 
+  // The engine sizes its render surface to the client area of the framed window. After the frame
+  // is stripped the client area grows by the title-bar height, but the engine never sees a size
+  // change and keeps painting the smaller surface — the uncovered strip at the bottom shows the
+  // engine window's own background (white on light wallpapers, black on dark ones). Posting the
+  // final client size as WM_SIZE makes it rebuild the surface; see the issue report §4.2.
+  const notifyEngineResize = (hwnd) => {
+    const client = {};
+    if (!GetClientRect(hwnd, client)) return null;
+    const cx = Number(client.right) || 0;
+    const cy = Number(client.bottom) || 0;
+    if (cx <= 0 || cy <= 0) return null;
+    PostMessageW(hwnd, 0x0005 /* WM_SIZE */, 0, ((cy & 0xFFFF) * 65536) + (cx & 0xFFFF));
+    return { width: cx, height: cy };
+  };
+
   // Strips the frame DWM created when the window was opened. The engine now creates the popout
   // with a frame (the runtime stopped passing -borderless): that is what makes WGC accept the
   // window. This must run *after* creation; a window created borderless can never be repaired.
@@ -438,6 +459,7 @@ const loadNativeApi = () => {
     findExactTitle,
     pushToBottom,
     moveToParkTarget,
+    notifyEngineResize,
     applyFramelessStyle,
     applyHiddenStyle,
     clearHiddenStyle,
@@ -553,6 +575,9 @@ function createWallpaperEngineNativeWindow(options = {}) {
     };
     const parked = api.moveToParkTarget(entry.hwnd, target, lastParkedSize);
     api.pushToBottom(entry.hwnd);
+    // The frame strip changed the client height; make the engine rebuild its render surface at
+    // the final size so no uncovered strip is left at the bottom.
+    const resize = api.notifyEngineResize(entry.hwnd);
     const after = api.getRect(entry.hwnd);
     log('[wallpaper-engine] native park', JSON.stringify({
       title: entry.title,
@@ -562,6 +587,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
       windowStyle: style.style,
       exStyle: style.exStyle,
       moved: parked.moved,
+      resizeNotified: Boolean(resize),
+      resize,
       target,
       before: parked.before,
       after,
@@ -576,6 +603,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
       styleApplied: style.changed,
       windowStyle: style.style,
       exStyle: style.exStyle,
+      resizeNotified: Boolean(resize),
+      resize,
       target,
       before: parked.before,
       after,
@@ -617,6 +646,11 @@ function createWallpaperEngineNativeWindow(options = {}) {
     const parked = api.moveToParkTarget(entry.hwnd, target, lastParkedSize);
     const foreground = String(api.GetForegroundWindow()) === String(entry.hwnd);
     if (foreground) api.pushToBottom(entry.hwnd);
+    // Only re-notify when this repair actually recreated/stripped the window; the monitor runs
+    // repeatedly, and a WM_SIZE on every tick would make the engine relayout for nothing. A live
+    // capture that merely had its taskbar-hiding bits re-asserted keeps its render surface.
+    const needsResize = !sameWindow || (style.changed && !captureHidden);
+    const resize = needsResize ? api.notifyEngineResize(entry.hwnd) : null;
     const after = api.getRect(entry.hwnd);
     return {
       ok: true,
@@ -628,6 +662,8 @@ function createWallpaperEngineNativeWindow(options = {}) {
       exStyle: style.exStyle,
       restoredVisible,
       moved: parked.moved,
+      resizeNotified: Boolean(resize),
+      resize,
       foreground,
       target,
       before: parked.before,

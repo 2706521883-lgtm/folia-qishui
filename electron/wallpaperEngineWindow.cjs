@@ -143,6 +143,20 @@ public class FoliaWeWindow {
     Start-Sleep -Milliseconds 60
     [void][FoliaWeWindow]::GetWindowRect($hwnd, [ref]$rect)
   }
+  # The frame strip enlarged the client area after WE created its render surface. A 1px height
+  # jiggle gives the engine a real size change, so it rebuilds at the final extent; without it a
+  # strip of the engine window's own background stays at the bottom (white or black).
+  $resizeJiggled = $false
+  $finalWidth = $rect.Right - $rect.Left
+  $finalHeight = $rect.Bottom - $rect.Top
+  if ($finalWidth -gt 0 -and $finalHeight -gt 1) {
+    $resizeJiggled = $true
+    [void][FoliaWeWindow]::SetWindowPos($hwnd, [IntPtr]::Zero, $rect.Left, $rect.Top, $finalWidth, ($finalHeight - 1), ${SWP_FLAGS})
+    Start-Sleep -Milliseconds 30
+    [void][FoliaWeWindow]::SetWindowPos($hwnd, [IntPtr]::Zero, $rect.Left, $rect.Top, $finalWidth, $finalHeight, ${SWP_FLAGS})
+    Start-Sleep -Milliseconds 30
+    [void][FoliaWeWindow]::GetWindowRect($hwnd, [ref]$rect)
+  }
   Write-Output (@{
     ok = $true
     hwnd = $hwnd.ToInt64()
@@ -150,6 +164,7 @@ public class FoliaWeWindow {
     frameStripped = [bool]$frameStripped
     styleChanged = [bool]$frameStripped
     moved = [bool]$moved
+    resizeJiggled = [bool]$resizeJiggled
     waitedMs = $waitedMs
     target = @{ x = $targetX; y = $targetY }
     before = $before
