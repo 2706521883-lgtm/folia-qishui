@@ -56,6 +56,11 @@ export type BravaisSeamTargetInput = {
     searchOpen?: boolean;
     /** 这一层可以画歌手海报（歌手页完整等级；过滤生效时回到普通缝）。 */
     poster?: boolean;
+    /**
+     * 歌单（非专辑集合）固定用全屏墙面：不展开信息缝、列表面板或过滤位。
+     * 表单仍可临时打开，否则本地歌单的改名 / 删除会失去入口。
+     */
+    forceHidden?: boolean;
 };
 
 /** 这一刻的生效等级：过滤框、面板、表单都要求完整的缝。 */
@@ -67,6 +72,8 @@ export const resolveSeamTarget = (input: BravaisSeamTargetInput): { width: numbe
     // 整条缝翻成表单只在集合层与歌手页（B8）上有；首页的表单在目录树面板底部（B9），不占整条缝。
     // 面板三层都有：集合 / 歌手是列表面板，首页是目录树（只在有批量的那几行，hasPanel 由 surface 给）。
     if (input.surface !== 'home' && input.formOpen) return { width: BRAVAIS_SEAM_FULL_WIDTH, variant: 'form' };
+    // 歌单固定全屏墙面：面包屑、竖排标题、播放全部、收藏、过滤、列表与「更多」都随缝一起隐藏。
+    if (input.forceHidden) return { width: 0, variant: 'none' };
     // 面板里只有「折叠」：折叠后面板仍算开着，恢复时回到面板（设计稿 §5）。
     if (input.panelOpen && input.level !== 'hidden') {
         return { width: resolvePanelWidth(input.viewportWidth), variant: 'panel' };

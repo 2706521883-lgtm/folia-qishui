@@ -94,6 +94,11 @@ export interface LibraryHomeData {
     stageTools?: LibraryStageToolsPort;
     navidromeEnabled?: boolean;
     onPlayAll?: (songs: SongResult[]) => void;
+    /**
+     * 播放整张歌单但不按「播放后进入的视图」切页：歌单打开后由资料库层退回首页，
+     * 再显式进入 Lattice。宿主没提供时回退到 onPlayAll。
+     */
+    onPlayAllSilent?: (songs: SongResult[]) => void;
     /** 在线歌单的合并播放：曲目接到现有队列尾部，跨平台混排保留在 Lattice 拼贴里。 */
     onPlayAllMerged?: (songs: SongResult[]) => void;
     onPlayTrackMerged?: (track: SongResult, queue: SongResult[]) => void;

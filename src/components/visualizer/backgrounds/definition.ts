@@ -98,6 +98,11 @@ export interface VisualizerBackgroundRenderProps {
     seed?: string | number;
     staticMode: boolean;
     paused: boolean;
+    /**
+     * The app window itself is hidden/minimized. This is deliberately separate from `paused`:
+     * a paused track must not stop an external live wallpaper (Wallpaper Engine) from rendering.
+     */
+    windowHidden: boolean;
 }
 
 export interface VisualizerBackgroundSettingsProps {

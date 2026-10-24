@@ -24,11 +24,14 @@ import {
     X,
     type LucideIcon,
 } from 'lucide-react';
-import type { StatusMessage, Theme, VisualizerMode } from '../../types';
+import type { StatusMessage, Theme, ThemeMode, VisualizerMode } from '../../types';
 import type { ProviderAccountSummary, ProviderCollection, ProviderUser } from '../../types/onlineMusic';
+import type { ThemeSourceModel } from '../../hooks/themeControllerState';
 import EffectPresetRows from '../panelTab/controls/EffectPresetRows';
+import PlayerQuickControls, { type PlayerQuickControlsProps } from '../panelTab/controls/PlayerQuickControls';
+import ThemeQuickRow from '../panelTab/controls/ThemeQuickRow';
+import ThemeSourceRow from '../panelTab/controls/ThemeSourceRow';
 import {
-    QISHUI_FEED_PLAYLIST_ID,
     QISHUI_LIKED_PLAYLIST_ID,
     QISHUI_RECENT_PLAYLIST_ID,
 } from '../../services/onlineMusic/qishuiCatalog';
@@ -39,9 +42,10 @@ import { getQishuiModeLabel } from '../../services/onlineMusic/qishuiFeedModes';
 import { buildQishuiPlayerNavModel } from './qishuiPlayerNavModel';
 
 // src/components/qishui/QishuiPlayerNav.tsx
-// The official Qishui PC sidebar, adapted to the empty top-right column on Folia's player page.
-// It only renders while the Qishui provider is active; the rows open the same collections the
-// library already knows, so playback, search and the queue stay on Folia's existing paths.
+// The player-page sidebar. It now renders for every online provider: the Qishui-only rows
+// (recommendation / listening mode) disappear elsewhere, while collections, account switching
+// and quick controls remain. Rows open the same collections the library already knows, so
+// playback, search and the queue stay on Folia's existing paths.
 type QishuiPlayerNavProps = {
     collections: readonly ProviderCollection[];
     user: ProviderUser | null;
@@ -49,14 +53,25 @@ type QishuiPlayerNavProps = {
     activeProviderId: string;
     theme: Theme;
     onThemeChange: (theme: Theme) => void;
+    themeSourceModel: ThemeSourceModel;
+    onThemeSourceChange: (mode: ThemeMode) => void;
+    hasCustomTheme: boolean;
+    defaultTheme: Theme;
+    daylightTheme: Theme;
+    onToggleDaylight: () => void;
     visualizerMode: VisualizerMode;
     onVisualizerModeChange: (mode: VisualizerMode) => void;
     isDaylight: boolean;
     isVisible: boolean;
     isPlaying: boolean;
+    isFeedLoading: boolean;
+    quickControls: PlayerQuickControlsProps;
     onOpenCollection: (collection: ProviderCollection) => void;
+    /** 汽水专属；其它平台不显示推荐行。 */
+    onPlayFeed?: () => void;
     onSelectProvider: (providerId: string) => void;
-    onOpenModeGrid: () => void;
+    /** 汽水专属；其它平台不显示听歌模式行。 */
+    onOpenModeGrid?: () => void;
     onRefresh: () => Promise<unknown>;
     onStatusMessage: (message: StatusMessage) => void;
 };
@@ -66,21 +81,35 @@ type NavRowProps = {
     iconUrl?: string;
     label: string;
     isDaylight: boolean;
+    isLoading?: boolean;
+    loadingLabel?: string;
     onClick: () => void;
 };
 
-const NavRow: React.FC<NavRowProps> = ({ icon: Icon, iconUrl, label, isDaylight, onClick }) => (
+const NavRow: React.FC<NavRowProps> = ({
+    icon: Icon,
+    iconUrl,
+    label,
+    isDaylight,
+    isLoading = false,
+    loadingLabel,
+    onClick,
+}) => (
     <button
         type="button"
         onClick={onClick}
+        disabled={isLoading}
+        aria-busy={isLoading || undefined}
         className={`flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[13px] transition-colors ${
             isDaylight
                 ? 'text-zinc-700 hover:bg-black/[0.05] hover:text-zinc-950'
                 : 'text-white/80 hover:bg-white/[0.07] hover:text-white'
-        }`}
-        title={label}
+        } ${isLoading ? 'cursor-wait' : ''}`}
+        title={isLoading ? loadingLabel ?? label : label}
     >
-        {iconUrl ? (
+        {isLoading ? (
+            <Loader2 size={15} className="shrink-0 animate-spin opacity-80" />
+        ) : iconUrl ? (
             <img
                 src={iconUrl}
                 alt=""
@@ -93,6 +122,11 @@ const NavRow: React.FC<NavRowProps> = ({ icon: Icon, iconUrl, label, isDaylight,
             <Icon size={15} className="shrink-0 opacity-80" />
         )}
         <span className="truncate">{label}</span>
+        {isLoading && loadingLabel && (
+            <span className={`ml-auto shrink-0 text-[10px] ${isDaylight ? 'text-zinc-400' : 'text-white/45'}`}>
+                {loadingLabel}
+            </span>
+        )}
     </button>
 );
 
@@ -146,12 +180,21 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     activeProviderId,
     theme,
     onThemeChange,
+    themeSourceModel,
+    onThemeSourceChange,
+    hasCustomTheme,
+    defaultTheme,
+    daylightTheme,
+    onToggleDaylight,
     visualizerMode,
     onVisualizerModeChange,
     isDaylight,
     isVisible,
     isPlaying,
+    isFeedLoading,
+    quickControls,
     onOpenCollection,
+    onPlayFeed,
     onSelectProvider,
     onOpenModeGrid,
     onRefresh,
@@ -173,9 +216,12 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
         ? qishuiFeedModeSelection.iconUrl
         : undefined;
     const recommendationLabel = getQishuiModeLabel(qishuiFeedModeSelection);
+    const isQishuiProvider = activeProviderId === 'qishui';
     const activeProvider = providers.find(provider => provider.providerId === activeProviderId);
-    const activeProviderLabel = activeProvider?.shortName || activeProvider?.displayName || '汽水音乐';
-    const activeProviderStatus = activeProvider ? providerStatusLabel(activeProvider) : '已登录';
+    const activeProviderLabel = activeProvider?.shortName || activeProvider?.displayName || '在线音乐';
+    const activeProviderStatus = activeProvider ? providerStatusLabel(activeProvider) : '在线音乐';
+    // 汽水按官方分类只列自己创建的歌单；其它平台列出当前 provider 能拿到的全部歌单。
+    const listedPlaylists = isQishuiProvider ? model.created : model.playlists;
     const [isSwitcherOpen, setIsSwitcherOpen] = useState(false);
     const [isEffectPresetOpen, setIsEffectPresetOpen] = useState(false);
     const [isCreating, setIsCreating] = useState(false);
@@ -187,6 +233,13 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
     useEffect(() => {
         if (isCreating) inputRef.current?.focus();
     }, [isCreating]);
+
+    // 新建歌单只属于汽水；切到别的平台时把没提交的输入收掉，免得切回来还留着。
+    useEffect(() => {
+        setIsCreating(false);
+        setCreateName('');
+        setCreateError('');
+    }, [activeProviderId]);
 
     // While a track is playing the panel stays out of the lyrics; moving the pointer into its
     // top-right footprint (or focusing the create form) reveals it. Pausing pins it open.
@@ -247,24 +300,33 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
         }
     }, [isRevealed]);
 
-    const openFeed = useCallback(() => {
-        onOpenCollection(model.feed ?? virtualCollection(QISHUI_FEED_PLAYLIST_ID, t('qishuiNav.feed', '汽水推荐流'), {
-            trackCount: 200,
-            providerData: { virtual: true, playbackMode: 'recommend-match' },
-        }));
-    }, [model.feed, onOpenCollection, t]);
-
     const openLiked = useCallback(() => {
-        onOpenCollection(model.liked ?? virtualCollection(QISHUI_LIKED_PLAYLIST_ID, t('qishuiNav.liked', '我喜欢的音乐'), {
-            isOwned: true,
-        }));
-    }, [model.liked, onOpenCollection, t]);
+        if (model.liked) {
+            onOpenCollection(model.liked);
+            return;
+        }
+        if (isQishuiProvider) {
+            onOpenCollection(virtualCollection(QISHUI_LIKED_PLAYLIST_ID, t('qishuiNav.liked', '我喜欢的音乐'), {
+                isOwned: true,
+            }));
+            return;
+        }
+        onStatusMessage({ type: 'info', text: t('qishuiNav.likedEmpty', '当前平台没有可用的收藏歌单') });
+    }, [isQishuiProvider, model.liked, onOpenCollection, onStatusMessage, t]);
 
     const openRecent = useCallback(() => {
-        onOpenCollection(model.recent ?? virtualCollection(QISHUI_RECENT_PLAYLIST_ID, t('qishuiNav.recent', '汽水最近播放'), {
-            isOwned: true,
-        }));
-    }, [model.recent, onOpenCollection, t]);
+        if (model.recent) {
+            onOpenCollection(model.recent);
+            return;
+        }
+        if (isQishuiProvider) {
+            onOpenCollection(virtualCollection(QISHUI_RECENT_PLAYLIST_ID, t('qishuiNav.recent', '汽水最近播放'), {
+                isOwned: true,
+            }));
+            return;
+        }
+        onStatusMessage({ type: 'info', text: t('qishuiNav.recentEmpty', '当前平台没有历史播放歌单') });
+    }, [isQishuiProvider, model.recent, onOpenCollection, onStatusMessage, t]);
 
     const openDouyin = useCallback(() => {
         if (model.douyin) {
@@ -279,6 +341,8 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
 
     const submitCreate = useCallback(async (event: React.FormEvent) => {
         event.preventDefault();
+        // 新建歌单只有汽水有对应的接口；其它平台不显示入口，这里再兜一层。
+        if (!isQishuiProvider) return;
         const name = createName.trim();
         if (!name || isSubmitting) return;
         setIsSubmitting(true);
@@ -306,7 +370,7 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
         } finally {
             setIsSubmitting(false);
         }
-    }, [createName, isSubmitting, onOpenCollection, onRefresh, onStatusMessage, t]);
+    }, [createName, isQishuiProvider, isSubmitting, onOpenCollection, onRefresh, onStatusMessage, t]);
 
     if (!isVisible) return null;
 
@@ -334,10 +398,12 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                 onPointerLeave={scheduleHide}
                 onFocusCapture={reveal}
                 onBlurCapture={scheduleHide}
-                className={`relative flex max-h-[calc(100vh-7.5rem)] w-full flex-col overflow-hidden rounded-2xl border shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${surface} ${isRevealed ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                className={`relative flex max-h-[calc(100vh-7.5rem)] w-full flex-col rounded-2xl border shadow-[0_24px_64px_rgba(0,0,0,0.35)] backdrop-blur-2xl ${isEffectPresetOpen ? 'overflow-visible' : 'overflow-hidden'} ${surface} ${isRevealed ? 'pointer-events-auto' : 'pointer-events-none'}`}
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
                 onClick={event => event.stopPropagation()}
-                aria-label={t('qishuiNav.label', '汽水音乐导航')}
+                aria-label={isQishuiProvider
+                    ? t('qishuiNav.label', '汽水音乐导航')
+                    : t('qishuiNav.labelGeneric', '在线音乐导航')}
                 aria-hidden={!isRevealed}
             >
             <div className="flex shrink-0 items-center gap-2.5 px-4 pb-3 pt-4">
@@ -374,47 +440,68 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
             </div>
 
             <div className="relative shrink-0 px-2">
-                <div className="flex items-center gap-1">
-                    <div className="min-w-0 flex-1">
+                {isQishuiProvider ? (
+                    <>
+                        <div className="flex items-center gap-1">
+                            <div className="min-w-0 flex-1">
+                                <NavRow
+                                    icon={recommendationIcon}
+                                    iconUrl={recommendationIconUrl}
+                                    label={recommendationLabel}
+                                    isDaylight={isDaylight}
+                                    isLoading={isFeedLoading}
+                                    loadingLabel={t('qishuiNav.feedRefreshing', '刷新中…')}
+                                    onClick={() => onPlayFeed?.()}
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsSwitcherOpen(false);
+                                    setIsEffectPresetOpen(value => !value);
+                                }}
+                                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                                    isEffectPresetOpen
+                                        ? isDaylight
+                                            ? 'border-black/15 bg-black/[0.08] text-zinc-900'
+                                            : 'border-white/15 bg-white/[0.12] text-white'
+                                        : isDaylight
+                                            ? 'border-black/10 bg-white/50 text-zinc-500 hover:bg-white/80 hover:text-zinc-900'
+                                            : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.1] hover:text-white'
+                                }`}
+                                title={t('qishuiNav.effectPreset', '效果预设')}
+                                aria-label={t('qishuiNav.effectPreset', '效果预设')}
+                                aria-expanded={isEffectPresetOpen}
+                            >
+                                <Sparkles size={14} />
+                            </button>
+                        </div>
                         <NavRow
-                            icon={recommendationIcon}
-                            iconUrl={recommendationIconUrl}
-                            label={recommendationLabel}
+                            icon={SlidersHorizontal}
+                            label={t('qishuiNav.mode', '听歌模式')}
                             isDaylight={isDaylight}
-                            onClick={openFeed}
+                            onClick={() => onOpenModeGrid?.()}
                         />
-                    </div>
-                    <button
-                        type="button"
+                    </>
+                ) : (
+                    <NavRow
+                        icon={Sparkles}
+                        label={t('qishuiNav.quickControls', '快捷控制')}
+                        isDaylight={isDaylight}
                         onClick={() => {
                             setIsSwitcherOpen(false);
                             setIsEffectPresetOpen(value => !value);
                         }}
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                            isEffectPresetOpen
-                                ? isDaylight
-                                    ? 'border-black/15 bg-black/[0.08] text-zinc-900'
-                                    : 'border-white/15 bg-white/[0.12] text-white'
-                                : isDaylight
-                                    ? 'border-black/10 bg-white/50 text-zinc-500 hover:bg-white/80 hover:text-zinc-900'
-                                    : 'border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.1] hover:text-white'
-                        }`}
-                        title={t('qishuiNav.effectPreset', '效果预设')}
-                        aria-label={t('qishuiNav.effectPreset', '效果预设')}
-                        aria-expanded={isEffectPresetOpen}
-                    >
-                        <Sparkles size={14} />
-                    </button>
-                </div>
-                <NavRow icon={SlidersHorizontal} label={t('qishuiNav.mode', '听歌模式')} isDaylight={isDaylight} onClick={onOpenModeGrid} />
+                    />
+                )}
 
                 {isEffectPresetOpen && (
-                    <div className={`absolute right-2 top-9 z-30 w-[232px] rounded-2xl border p-2 shadow-2xl backdrop-blur-2xl ${
+                    <div className={`absolute right-2 top-9 z-30 max-h-[calc(100vh-18rem)] w-[292px] overflow-y-auto overscroll-contain rounded-2xl border p-2 shadow-2xl backdrop-blur-2xl ${
                         isDaylight ? 'border-black/10 bg-white/95 text-zinc-800' : 'border-white/10 bg-[#141519]/95 text-white/90'
                     }`}>
                         <div className="flex items-center justify-between px-1 pb-1.5">
                             <span className={`text-[10px] font-medium uppercase tracking-[0.12em] ${muted}`}>
-                                {t('qishuiNav.effectPreset', '效果预设')}
+                                {t('qishuiNav.quickControls', '快捷控制')}
                             </span>
                             <button
                                 type="button"
@@ -426,6 +513,11 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                                 <X size={11} />
                             </button>
                         </div>
+                        <PlayerQuickControls {...quickControls} />
+                        <div className={`mx-1 my-1.5 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
+                        <div className={`px-1 pb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] ${muted}`}>
+                            {t('qishuiNav.effectPreset', '效果预设')}
+                        </div>
                         <EffectPresetRows
                             theme={theme}
                             onThemeChange={onThemeChange}
@@ -434,37 +526,86 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                             onVisualizerModeChange={onVisualizerModeChange}
                             onClosePanel={() => setIsEffectPresetOpen(false)}
                         />
+                        <div className={`mx-1 my-2 h-px ${isDaylight ? 'bg-black/10' : 'bg-white/10'}`} />
+                        <div className={`px-1 pb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] ${muted}`}>
+                            {t('qishuiNav.themeSettings', '主题设置')}
+                        </div>
+                        <ThemeSourceRow
+                            themeSourceModel={themeSourceModel}
+                            onBgModeChange={onThemeSourceChange}
+                            hasCustomTheme={hasCustomTheme}
+                            defaultTheme={defaultTheme}
+                            daylightTheme={daylightTheme}
+                            isDaylight={isDaylight}
+                        />
+                        <div className="mt-2">
+                            <ThemeQuickRow
+                                theme={theme}
+                                themeSourceModel={themeSourceModel}
+                                defaultTheme={defaultTheme}
+                                daylightTheme={daylightTheme}
+                                isDaylight={isDaylight}
+                                onToggleDaylight={onToggleDaylight}
+                            />
+                        </div>
                     </div>
                 )}
             </div>
 
-            <div className={`mt-2 shrink-0 border-t px-2 pt-2 ${divider}`}>
-                <SectionLabel isDaylight={isDaylight}>{t('qishuiNav.myMusic', '我的音乐')}</SectionLabel>
-                <NavRow icon={Heart} label={t('qishuiNav.liked', '我喜欢的音乐')} isDaylight={isDaylight} onClick={openLiked} />
-                <NavRow icon={Video} label={t('qishuiNav.douyin', '抖音收藏的音乐')} isDaylight={isDaylight} onClick={openDouyin} />
-                <NavRow icon={History} label={t('qishuiNav.history', '历史播放')} isDaylight={isDaylight} onClick={openRecent} />
-            </div>
+            {(isQishuiProvider || model.liked || model.recent || model.douyin) && (
+                <div className={`mt-2 shrink-0 border-t px-2 pt-2 ${divider}`}>
+                    <SectionLabel isDaylight={isDaylight}>{t('qishuiNav.myMusic', '我的音乐')}</SectionLabel>
+                    {(isQishuiProvider || model.liked) && (
+                        <NavRow
+                            icon={Heart}
+                            label={isQishuiProvider ? t('qishuiNav.liked', '我喜欢的音乐') : model.liked?.name || t('qishuiNav.liked', '我喜欢的音乐')}
+                            isDaylight={isDaylight}
+                            onClick={openLiked}
+                        />
+                    )}
+                    {model.douyin && (
+                        <NavRow
+                            icon={Video}
+                            label={isQishuiProvider ? t('qishuiNav.douyin', '抖音收藏的音乐') : model.douyin.name}
+                            isDaylight={isDaylight}
+                            onClick={openDouyin}
+                        />
+                    )}
+                    {(isQishuiProvider || model.recent) && (
+                        <NavRow
+                            icon={History}
+                            label={isQishuiProvider ? t('qishuiNav.history', '历史播放') : model.recent?.name || t('qishuiNav.history', '历史播放')}
+                            isDaylight={isDaylight}
+                            onClick={openRecent}
+                        />
+                    )}
+                </div>
+            )}
 
             <div className={`mt-2 flex min-h-0 flex-1 flex-col border-t pt-2 ${divider}`}>
                 <div className="flex shrink-0 items-center justify-between px-4 pb-1">
                     <span className={`text-[10px] font-medium uppercase tracking-[0.12em] ${muted}`}>
-                        {t('qishuiNav.created', '创建的歌单')}
+                        {isQishuiProvider
+                            ? t('qishuiNav.created', '创建的歌单')
+                            : t('qishuiNav.playlists', '我的歌单')}
                     </span>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setIsCreating(value => !value);
-                            setCreateError('');
-                        }}
-                        className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${subtleRow}`}
-                        title={isCreating ? t('common.cancel', '取消') : t('qishuiNav.createPlaylist', '新建歌单')}
-                        aria-label={isCreating ? t('common.cancel', '取消') : t('qishuiNav.createPlaylist', '新建歌单')}
-                    >
-                        {isCreating ? <X size={13} /> : <Plus size={13} />}
-                    </button>
+                    {isQishuiProvider && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsCreating(value => !value);
+                                setCreateError('');
+                            }}
+                            className={`flex h-6 w-6 items-center justify-center rounded-full transition-colors ${subtleRow}`}
+                            title={isCreating ? t('common.cancel', '取消') : t('qishuiNav.createPlaylist', '新建歌单')}
+                            aria-label={isCreating ? t('common.cancel', '取消') : t('qishuiNav.createPlaylist', '新建歌单')}
+                        >
+                            {isCreating ? <X size={13} /> : <Plus size={13} />}
+                        </button>
+                    )}
                 </div>
 
-                {isCreating && (
+                {isQishuiProvider && isCreating && (
                     <form onSubmit={submitCreate} className="shrink-0 px-3 pb-2">
                         <input
                             ref={inputRef}
@@ -518,7 +659,7 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                 )}
 
                 <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-                    {model.created.length > 0 ? model.created.map(collection => (
+                    {listedPlaylists.length > 0 ? listedPlaylists.map(collection => (
                         <button
                             key={String(collection.id)}
                             type="button"
@@ -531,7 +672,9 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                         </button>
                     )) : (
                         <div className={`px-3 py-2 text-[11px] ${muted}`}>
-                            {t('qishuiNav.noCreated', '暂无创建的歌单')}
+                            {isQishuiProvider
+                                ? t('qishuiNav.noCreated', '暂无创建的歌单')
+                                : t('qishuiNav.noPlaylists', '暂无歌单')}
                         </div>
                     )}
                 </div>
@@ -620,8 +763,12 @@ const QishuiPlayerNav: React.FC<QishuiPlayerNavProps> = ({
                     onPointerEnter={reveal}
                     onFocus={reveal}
                     onClick={reveal}
-                    title={t('qishuiNav.show', '展开汽水音乐导航')}
-                    aria-label={t('qishuiNav.show', '展开汽水音乐导航')}
+                    title={isQishuiProvider
+                        ? t('qishuiNav.show', '展开汽水音乐导航')
+                        : t('qishuiNav.showGeneric', '展开在线音乐导航')}
+                    aria-label={isQishuiProvider
+                        ? t('qishuiNav.show', '展开汽水音乐导航')
+                        : t('qishuiNav.showGeneric', '展开在线音乐导航')}
                 >
                     <Music2 size={14} />
                 </button>

@@ -6,8 +6,17 @@ import { useBravaisSeamFilter } from './useBravaisSeamFilter';
 // port），输入是缝自己的输入位（BravaisSeamFilterField），墙上打字经命令面板的 ownInput 交过来（useBravaisSeamFilter）。
 // committedQuery 是墙与范围实际用的过滤词（防抖、输入法组词期间按住组词开始前的那一个）。
 
-export const useBravaisCollectionFilter = ({ sessionKey, isActive }: { sessionKey: string; isActive: boolean }) => {
+export const useBravaisCollectionFilter = ({
+    sessionKey,
+    isActive,
+    allowTyping = true,
+}: {
+    sessionKey: string;
+    isActive: boolean;
+    /** 专辑以外的歌单固定全屏墙面，没有过滤输入位，关掉墙上的打字过滤。 */
+    allowTyping?: boolean;
+}) => {
     const { query, setQuery, port } = useLibrarySessionQuery(sessionKey);
-    const committedQuery = useBravaisSeamFilter({ port, query, isActive });
+    const committedQuery = useBravaisSeamFilter({ port, query, isActive, allowTyping });
     return { query, setQuery, committedQuery };
 };

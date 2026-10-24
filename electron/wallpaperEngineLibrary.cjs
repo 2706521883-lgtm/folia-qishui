@@ -627,7 +627,18 @@ function createWallpaperEngineLibrary(options = {}) {
       } catch {
         return new Response('Bad request', { status: 400 });
       }
-      const item = getItem(itemId);
+      let item = getItem(itemId);
+      if (!item) {
+        // Preview/media requests can race the startup pre-scan (or arrive before the settings
+        // card has scanned). Resolving against the index is still the only way a path is chosen;
+        // this only delays the answer until the index exists.
+        try {
+          await ensureFresh(false);
+          item = getItem(itemId);
+        } catch {
+          item = null;
+        }
+      }
       if (!item) return new Response('Not found', { status: 404 });
       if (hostname === 'media') return serveVideo(request, item);
       if (!item.previewFile) return new Response('Not found', { status: 404 });

@@ -16,7 +16,6 @@ import {
     LocalGridViewCollectionDescriptor,
     isLocalGridViewCollection,
     isNavidromeGridViewCollection,
-    refreshLocalGridViewCollection,
     resolveLocalAlbumArtistDisplay,
     resolveLocalGridViewTracks,
 } from '../../components/app/home/gridViewCollectionAdapters';
@@ -25,7 +24,6 @@ import { createLibraryMutationPort } from './createLibraryMutationPort';
 import { useCollectionResource } from '../core/bindings/useCollectionResource';
 import { useCollectionMutations } from '../core/bindings/useCollectionMutations';
 import { useArtistResource } from '../core/bindings/useArtistResource';
-import type { LocalLibraryCatalogSnapshot } from '../../hooks/useLocalLibraryCatalog';
 import { LocalLibraryEntityPanel } from '../../components/modal/LocalLibraryEntityPanel';
 import { LocalFolderSongInfoPanel } from '../../components/modal/LocalFolderSongInfoPanel';
 import { LocalSongMetadataMatchDialog } from '../../components/modal/LocalSongMetadataMatchDialog';
@@ -50,6 +48,8 @@ import { resolveLibraryLayerPresentation } from '../core/model/libraryStage';
 import { projectNavigationTrail, resolveCollectionPush } from '../core/model/collectionNavigation';
 import { LIBRARY_HOME_SESSION_KEY } from './librarySuiteChoice';
 import LibrarySuiteStageSlot from './LibrarySuiteStageSlot';
+import { resolveLiveLocalCollection } from './localCollectionRuntime';
+import { usePlaylistLatticeOpener } from './usePlaylistLatticeOpener';
 
 // src/library/app/GridViewOverlayHost.tsx
 // Hosts the GridView overlay outside Grid3D so it can be opened/restored independently.
@@ -138,36 +138,6 @@ const resolveLocalCollectionCoverUrlFromTracks = (
     if (localCoverUrl) return localCoverUrl;
 
     return preferredSong.onlineMetadata?.coverUrl;
-};
-
-const resolveLiveLocalCollection = (
-    collection: LocalGridViewCollectionDescriptor,
-    surfaceProps: HomeSurfaceProps,
-    catalog: LocalLibraryCatalogSnapshot,
-): LocalGridViewCollectionDescriptor | null => {
-    if (!collection.playlistId) {
-        return refreshLocalGridViewCollection(
-            collection,
-            surfaceProps.localSongs,
-            catalog.ready ? catalog : undefined,
-        );
-    }
-
-    const playlist = surfaceProps.localPlaylists.find(item => item.id === collection.playlistId);
-    if (!playlist) {
-        return null;
-    }
-
-    const validSongIds = new Set(surfaceProps.localSongs.map(song => song.id));
-    const songIds = playlist.songIds.filter(songId => validSongIds.has(songId));
-
-    return {
-        ...collection,
-        name: playlist.name,
-        songIds,
-        trackCount: songIds.length,
-        isVirtual: playlist.isFavorite,
-    };
 };
 
 const GridViewOverlayHost: React.FC<GridViewOverlayHostProps> = ({
@@ -281,9 +251,20 @@ const GridViewOverlayHost: React.FC<GridViewOverlayHostProps> = ({
     // 播放与入队的语义集中在端口里，网格与别的 renderer 共用。
     const playbackPort = useMemo(() => createLibraryPlaybackPort(surfaceProps), [surfaceProps]);
 
+    // 歌单不走集合层：解析歌单资源、装载队列（不切视图），然后显式进入 Lattice。
+    // 具体语义在 usePlaylistLatticeOpener 里，与播放器侧栏共用；这里只负责按类型分流。
+    const playlistLattice = usePlaylistLatticeOpener(surfaceProps);
+    const { open: openPlaylistInLattice, cancel: cancelPlaylistOpen } = playlistLattice;
+
     const openGridView = useCallback((collection: GridViewCollectionDescriptor) => {
+        if (collection.type === 'playlist' && surfaceProps.onOpenLattice) {
+            openPlaylistInLattice(collection);
+            return;
+        }
+        // 打开专辑 / 歌手 / 文件夹时取消还在等待的歌单加载，避免稍后突然抢走视图。
+        cancelPlaylistOpen();
         onOpenCollection(collection);
-    }, [onOpenCollection]);
+    }, [cancelPlaylistOpen, onOpenCollection, openPlaylistInLattice, surfaceProps.onOpenLattice]);
 
     // 压栈 / 返回之前先让负责集合层的 suite 安排转场（网格：级联入场计划、反向移形换影，原先写在这里的
     // 两段逻辑原样搬进了 suites/grid/transitions/gridHostTransitions）。

@@ -42,4 +42,30 @@ describe('Bravais artist poster target', () => {
         expect(resolvePosterWidth(800)).toBe(520);
         expect(resolvePosterWidth(3000)).toBe(680);
     });
+
+    it('keeps playlist collections wall-only, but still allows their forms', () => {
+        expect(resolveSeamTarget({
+            surface: 'collection',
+            level: 'full',
+            viewportWidth: 1440,
+            forceHidden: true,
+        })).toEqual({ width: 0, variant: 'none' });
+
+        expect(resolveSeamTarget({
+            surface: 'collection',
+            level: 'full',
+            viewportWidth: 1440,
+            forceHidden: true,
+            panelOpen: true,
+            filterOpen: true,
+        })).toEqual({ width: 0, variant: 'none' });
+
+        expect(resolveSeamTarget({
+            surface: 'collection',
+            level: 'full',
+            viewportWidth: 1440,
+            forceHidden: true,
+            formOpen: true,
+        }).variant).toBe('form');
+    });
 });

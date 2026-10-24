@@ -51,6 +51,14 @@ describe('computeBravaisFrame', () => {
         expect(none.seam.visible).toBe(false);
         expect(none.left).toEqual(none.right);
     });
+
+    it('suppresses the restore tab for a wall-only playlist', () => {
+        const folded = computeBravaisFrame({ center: { x: 0, y: 0 }, view, anchorX: 0, openWidth: 0, contentWidth: 0, hidden: true, tabEnabled: false });
+        expect(folded.tab.visible).toBe(false);
+
+        const collapsed = computeBravaisFrame({ center: { x: 3000, y: 0 }, view, anchorX: 0, openWidth: 300, contentWidth: 300, hidden: false, tabEnabled: false });
+        expect(collapsed.tab.visible).toBe(false);
+    });
 });
 
 describe('layout memory', () => {

@@ -80,7 +80,7 @@ const WeBackgroundRemountProbe: React.FC = () => {
                 key={epoch}
                 tuning={DEFAULT_WE_BACKGROUND_TUNING}
                 active
-                paused={paused}
+                suspended={paused}
                 posterUrl={POSTER}
             />
             <div className="absolute left-4 top-4 z-10 flex gap-2">

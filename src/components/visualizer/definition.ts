@@ -67,6 +67,11 @@ export interface VisualizerSharedProps {
     showSubtitleTranslation?: boolean;
     subtitleContentMode?: SubtitleContentMode;
     paused?: boolean;
+    /**
+     * The app window is hidden/minimized. Backgrounds that capture an external live surface
+     * (Wallpaper Engine) use this instead of `paused`, so pausing the track does not freeze them.
+     */
+    windowHidden?: boolean;
     onBack?: () => void;
     isPanelOpen?: boolean;
     alwaysShowBackButton?: boolean;
