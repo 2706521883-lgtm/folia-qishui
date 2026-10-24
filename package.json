@@ -7,7 +7,7 @@
     "name": "2706521883-lgtm"
   },
   "private": true,
-  "version": "0.6.9",
+  "version": "0.6.10",
   "license": "AGPL-3.0",
   "type": "module",
   "main": "electron/main.cjs",

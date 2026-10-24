@@ -135,6 +135,8 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
     const previousLayerRef = useRef<BravaisLayer | null>(null);
     const { layer, owned } = resolveCurrentLayer({ depth: navigation.depth, home, top, previous: previousLayerRef.current });
     previousLayerRef.current = layer;
+    // 歌单（非专辑集合）固定用全屏墙面；连恢复信息缝的边缘标签也不出现。
+    const isWallOnlyCollection = Boolean(layer && layer.surface === 'collection' && !layer.seam.album);
 
     // B7：缝此刻的开口——等级之上还有表单态、列表面板与过滤输入位的临时展开（bravaisSeamTarget；正在输入过滤词时
     // 书脊 / 折叠的缝展开成完整信息条，首页是窄缝）。
@@ -166,6 +168,8 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
             // 歌手页与专辑集合页的完整等级画成海报。
             poster: (target.surface === 'artist' && Boolean(target.seam.artist))
                 || (target.surface === 'collection' && Boolean(target.seam.album)),
+            // 歌单（含本地歌单与各平台歌单）只留全屏墙面；专辑海报和歌手海报不受影响。
+            forceHidden: target.surface === 'collection' && !target.seam.album,
         };
     }, [frameRef]);
     const resolvedSeamTarget = layer
@@ -192,6 +196,7 @@ const BravaisStage: React.FC<LibrarySuiteStageProps> = ({
         reducedTransitions,
         tweenCamera: camera.tweenTo,
         checkCull: camera.checkCull,
+        suppressSeamTab: isWallOnlyCollection,
     });
     const { bottomPx, getBottomInset } = useBravaisPlayerSafeArea();
 

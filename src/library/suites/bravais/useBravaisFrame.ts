@@ -16,6 +16,8 @@ export type BravaisFrameState = {
     targetOpenWidth: number;
     contentWidth: number;
     hidden: boolean;
+    /** 歌单固定全屏墙面时关掉边缘的“恢复信息缝”标签。 */
+    tabEnabled: boolean;
 };
 
 export type BravaisFrameRefs = {
@@ -35,6 +37,7 @@ export const useBravaisFrame = (refs: BravaisFrameRefs) => {
         targetOpenWidth: 0,
         contentWidth: 0,
         hidden: false,
+        tabEnabled: true,
     });
 
     const renderFrame = useCallback(() => {
@@ -47,6 +50,7 @@ export const useBravaisFrame = (refs: BravaisFrameRefs) => {
             openWidth: state.openWidth,
             contentWidth: state.contentWidth,
             hidden: state.hidden,
+            tabEnabled: state.tabEnabled,
         });
         const { left, right, seam, seamContent, tab } = refs;
         if (left.current) left.current.style.transform = `translate3d(${frame.left.x}px, ${frame.left.y}px, 0) scale(${frame.scale})`;

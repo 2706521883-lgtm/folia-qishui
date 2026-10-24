@@ -11,14 +11,14 @@ interface WeBuiltinVideoLayerProps {
     /** The background mode is currently present in the player. */
     active: boolean;
     /** Window hidden/minimized: pause playback instead of decoding frames nobody sees. */
-    paused?: boolean;
+    suspended?: boolean;
     posterUrl?: string | null;
 }
 
 const WeBuiltinVideoLayer: React.FC<WeBuiltinVideoLayerProps> = ({
     tuning,
     active,
-    paused = false,
+    suspended = false,
     posterUrl,
 }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -42,12 +42,12 @@ const WeBuiltinVideoLayer: React.FC<WeBuiltinVideoLayerProps> = ({
         if (!video) return;
         video.muted = tuning.muteAudio;
         video.loop = true;
-        if (!active || paused) {
+        if (!active || suspended) {
             video.pause();
             return;
         }
         void video.play().catch(() => undefined);
-    }, [active, paused, tuning.muteAudio, tuning.itemId]);
+    }, [active, suspended, tuning.muteAudio, tuning.itemId]);
 
     if (!active || !tuning.itemId) return null;
 

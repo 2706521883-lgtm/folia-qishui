@@ -18,6 +18,8 @@ export type BravaisFrameInput = {
     contentWidth: number;
     /** 折叠等级（hidden）：标签换成悬浮按钮，常驻。 */
     hidden: boolean;
+    /** 歌单固定全屏墙面时不显示“恢复信息缝”的边缘标签。 */
+    tabEnabled?: boolean;
 };
 
 export type BravaisFrame = {
@@ -31,7 +33,7 @@ export type BravaisFrame = {
     tab: { visible: boolean; side: 'left' | 'right' };
 };
 
-export const computeBravaisFrame = ({ center, view, anchorX, openWidth, contentWidth, hidden }: BravaisFrameInput): BravaisFrame => {
+export const computeBravaisFrame = ({ center, view, anchorX, openWidth, contentWidth, hidden, tabEnabled = true }: BravaisFrameInput): BravaisFrame => {
     const camera = cameraFromViewCenter(center, view);
     if (anchorX === null) {
         return {
@@ -53,6 +55,6 @@ export const computeBravaisFrame = ({ center, view, anchorX, openWidth, contentW
         seam: { x: geometry.screenX, width: geometry.width, visible: geometry.width >= 1 },
         // 原型：(开口 / 排版宽度 − .35) / .65，开到三成五以下就看不见。
         contentOpacity: Math.max(0, Math.min(1, (geometry.width / layoutWidth - 0.35) / 0.65)),
-        tab: { visible: hidden || geometry.collapsed, side: geometry.side },
+        tab: { visible: tabEnabled && (hidden || geometry.collapsed), side: geometry.side },
     };
 };

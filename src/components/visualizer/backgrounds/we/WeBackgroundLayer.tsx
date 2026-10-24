@@ -24,8 +24,11 @@ interface WeBackgroundLayerProps {
     active: boolean;
     /** Poster frame shown while the capture is starting or when it failed. */
     posterUrl?: string | null;
-    /** The player window is hidden/minimized: stop drawing capture frames until it returns. */
-    paused?: boolean;
+    /**
+     * The app window is hidden/minimized: stop drawing capture frames until it returns.
+     * Pausing the track is intentionally not part of this signal — the wallpaper stays live.
+     */
+    suspended?: boolean;
 }
 
 // The playback window is created by the engine, which returns from openWallpaper before Windows has
@@ -41,25 +44,36 @@ const CAPTURE_ACQUIRE_ATTEMPTS = 3;
 
 const delay = (ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms); });
 
-const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, posterUrl, paused = false }) => {
+const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, posterUrl, suspended = false }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const pausedRef = useRef(paused);
-    pausedRef.current = paused;
+    const suspendedRef = useRef(suspended);
+    suspendedRef.current = suspended;
     const frameRate = tuning.frameRate;
     // Seeded from the service so a remount that can adopt the running capture never paints the
     // poster first (effects run after paint, which would be a visible blurry frame).
     const [streamReady, setStreamReady] = useState(() => hasLiveWallpaperEngineCapture(frameRate));
+    // The poster covers a freshly attached stream until its first real frame. "Capture attached"
+    // is not the same as "a frame is on screen": playing from a paused state used to reveal a
+    // black <video> because the poster was already gone.
+    const [hasFrame, setHasFrame] = useState(() => hasLiveWallpaperEngineCapture(frameRate));
     // Incremented when the live stream ends (engine window re-created / style repair). The effect
     // below then re-fetches the capture source instead of leaving the layer on the poster forever.
     const [captureEpoch, setCaptureEpoch] = useState(0);
     const retryCountRef = useRef(0);
     const retryItemRef = useRef('');
+    const frameKeyRef = useRef(`${tuning.itemId}:${frameRate}:${captureEpoch}`);
 
     useEffect(() => {
+        const frameKey = `${tuning.itemId}:${frameRate}:${captureEpoch}`;
+        if (frameKeyRef.current !== frameKey) {
+            frameKeyRef.current = frameKey;
+            setHasFrame(false);
+        }
         if (!active) {
             retryCountRef.current = 0;
             retryItemRef.current = '';
             setStreamReady(false);
+            setHasFrame(false);
             return undefined;
         }
         if (retryItemRef.current !== tuning.itemId) {
@@ -125,8 +139,9 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                 if (video) {
                     video.srcObject = stream;
                     // A capture that lands while the window is minimized stays paused; the
-                    // visibility effect below starts it when the window returns.
-                    if (!pausedRef.current) await video.play().catch(() => undefined);
+                    // effect below starts it when the window returns. A paused track is not
+                    // suspended, so the wallpaper keeps producing frames.
+                    if (!suspendedRef.current) await video.play().catch(() => undefined);
                     if (!disposed) {
                         retryCountRef.current = 0;
                         setStreamReady(true);
@@ -155,12 +170,12 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
-        if (paused) {
+        if (suspended) {
             video.pause();
             return;
         }
         if (video.srcObject) void video.play().catch(() => undefined);
-    }, [active, paused, streamReady]);
+    }, [active, streamReady, suspended]);
 
     if (!active && !posterUrl) return null;
 
@@ -179,9 +194,11 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
             className="absolute inset-0 z-0 overflow-hidden"
             style={{ pointerEvents: 'none', isolation: 'isolate', contain: 'paint' }}
         >
-            {/* The poster sits *behind* the video: while no frames flow the (transparent) video
-                shows it through, and as soon as the capture paints, the live wallpaper covers it. */}
-            {posterUrl && !streamReady ? (
+            {/* The poster stays until a real frame has been presented. A capture can be attached
+                while the video is paused (window hidden) or before its first frame; revealing the
+                video then would paint black, so it stays hidden behind the poster. A remount that
+                adopts a live capture seeds `hasFrame`, preserving the no-blur switch path. */}
+            {posterUrl && !hasFrame ? (
                 <img
                     src={posterUrl}
                     alt=""
@@ -196,10 +213,17 @@ const WeBackgroundLayer: React.FC<WeBackgroundLayerProps> = ({ tuning, active, p
                 <video
                     ref={videoRef}
                     className="absolute inset-0 h-full w-full object-cover"
-                    style={{ opacity: tuning.opacity, transform, willChange: 'transform' }}
+                    style={{
+                        opacity: tuning.opacity,
+                        transform,
+                        visibility: hasFrame ? 'visible' : 'hidden',
+                        willChange: 'transform',
+                    }}
                     muted
                     playsInline
                     autoPlay
+                    onLoadedData={() => setHasFrame(true)}
+                    onPlaying={() => setHasFrame(true)}
                 />
             ) : null}
         </div>

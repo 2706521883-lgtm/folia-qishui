@@ -68,11 +68,14 @@ export const useBravaisSeamFilter = ({
     query,
     isActive,
     reserved,
+    allowTyping = true,
 }: {
     port: LibraryQueryPort;
     query: string;
     isActive: boolean;
     reserved?: () => readonly string[];
+    /** 歌单固定全屏墙面时没有过滤输入位：别再让墙上的按键静默改写过滤词。 */
+    allowTyping?: boolean;
 }) => {
     const latest = useRef({ port, reserved });
     latest.current = { port, reserved };
@@ -85,12 +88,12 @@ export const useBravaisSeamFilter = ({
             // 缝自己画输入位：命令面板的 filter-view（列表里选它、Ctrl/Cmd+F）没有锚点可贴，退回它自己的浮层。
             getAnchor: () => null,
             focusResults: () => useBravaisUiStore.getState().focusFirst?.() ?? false,
-            ownInput: {
+            ownInput: allowTyping ? {
                 takeKey: event => takeBravaisFilterKey(event, latest.current.port, latest.current.reserved?.() ?? []),
                 open: openBravaisFilter,
-            },
+            } : undefined,
         });
-    }, [isActive]);
+    }, [allowTyping, isActive]);
 
     return useCommittedQuery(useCompositionHold(query));
 };

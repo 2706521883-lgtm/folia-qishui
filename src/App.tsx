@@ -87,6 +87,7 @@ import { useQishuiLibrary } from './hooks/useQishuiLibrary';
 import { useLibraryAccountController } from './library/app/useLibraryAccountController';
 import { createLibraryAccountSwitchCleanupPort } from './library/app/createLibraryAccountPort';
 import { useLibraryStageToolsPort } from './library/app/useLibraryStageToolsPort';
+import { usePlaylistLatticeOpener } from './library/app/usePlaylistLatticeOpener';
 import { useLibraryAccountPendingSwitch, useLibraryAccountProviders } from './library/core/bindings/useLibraryAccount';
 import { canSwitchToProviderDirectly } from './library/core/model/onlineProviderAccountView';
 import ConfirmDialog from './components/shared/ConfirmDialog';
@@ -141,6 +142,8 @@ import { buildLocalLibraryIndex } from './utils/localLibraryIndex';
 import type { PlayerChromeVisibilityMode } from './types/remoteControl';
 import { setStatusMessage as setStatusMsg, useStatusMessage } from './stores/useStatusMessageStore';
 import { selectVisualizerSettingsSnapshot, useVisualizerSettingsStore } from './stores/useVisualizerSettingsStore';
+import { readStoredWeBackgroundTuning } from './stores/visualizerSettingsPersistence';
+import { useWallpaperEngineStore } from './stores/useWallpaperEngineStore';
 import { selectLyricSettingsSnapshot, useLyricSettingsStore } from './stores/useLyricSettingsStore';
 import { selectTypographySettingsSnapshot, useTypographySettingsStore } from './stores/useTypographySettingsStore';
 import { selectPlayerChromeSettingsSnapshot, usePlayerChromeSettingsStore } from './stores/usePlayerChromeSettingsStore';
@@ -162,6 +165,8 @@ import { useLibraryOcclusionSettled } from './hooks/useLibraryOcclusionSettled';
 import { useWallHandoffStore } from './stores/useWallHandoffStore';
 import { countRender } from './dev/renderCount';
 import { resolveSongLiked } from './utils/resolveSongLiked';
+import { resolveLikeAvailability } from './utils/playerLikeAvailability';
+import type { PlayerQuickControlsProps } from './components/panelTab/controls/PlayerQuickControls';
 import StageSessionEmptyState from './components/app/stage/StageSessionEmptyState';
 import { useVisualizerRendererModel } from './components/visualizer/useVisualizerRendererModel';
 import { useVisualizerTunings } from './components/visualizer/useVisualizerTunings';
@@ -401,6 +406,18 @@ export default function App() {
     // and related actions like toggling cover color backgrounds and static mode,
     // as well as setting daylight mode preference
     useAppPreferences();
+    // Wallpaper Engine: warm the main-process library index after startup. The WE background can
+    // auto-start before the settings card has ever been opened; without a scan the main process
+    // cannot resolve the saved item id, so a previously selected wallpaper would not come back
+    // after a restart. Only users who already have a WE item pay for the scan.
+    useEffect(() => {
+        if (typeof window === 'undefined' || window.electron?.platform !== 'win32') return undefined;
+        if (!readStoredWeBackgroundTuning().itemId) return undefined;
+        const timer = window.setTimeout(() => {
+            void useWallpaperEngineStore.getState().refreshLibrary(false);
+        }, 1200);
+        return () => window.clearTimeout(timer);
+    }, []);
     const {
         audioQuality,
         queueAddBehavior,
@@ -831,6 +848,11 @@ export default function App() {
         () => omni.refreshProviderPlaylists(activeProviderId),
         [activeProviderId],
     );
+    // 播放器侧栏的刷新按当前平台走各自的完整刷新（账号 + 歌单），不存在时退化为空操作。
+    const refreshPlayerNavProvider = useCallback(
+        () => onlineProviderRefreshers[activeProviderId]?.() ?? Promise.resolve(undefined),
+        [activeProviderId, onlineProviderRefreshers],
+    );
     useHomeProviderRefresh({
         activeProviderId,
         activeProviderFreshness: activeProvider?.freshness,
@@ -993,15 +1015,6 @@ export default function App() {
         (collection: GridViewCollectionDescriptor) => navigateToCollection(collection, 'home'),
         [navigateToCollection],
     );
-    // Player-page Qishui sidebar: open the same provider collections, but keep the player as the
-    // navigation origin so dismissing the grid returns to the lyrics page instead of the home wall.
-    const openQishuiPlayerCollection = useCallback(
-        (collection: ProviderCollection) => navigateToCollection(
-            createOnlineGridViewCollection(collection, 'qishui'),
-            'player',
-        ),
-        [navigateToCollection],
-    );
     // A provider that needs a sign-in is handled on the home surface, where the account host and
     // QR modal live; switching between already-signed-in providers can stay on the player page.
     const selectOnlineProviderFromPlayer = useCallback((providerId: string) => {
@@ -1069,6 +1082,7 @@ export default function App() {
         addOnlineSongsToQueue,
         playSong,
         playOnlineQueueFromStart,
+        playOnlineQueueFromStartSilent,
         playMergedQueueFromStart,
         playMergedQueueTrack,
         handleQueueAddAndPlay,
@@ -1607,6 +1621,58 @@ export default function App() {
         t: (key: string, fallback?: string) => t(key, fallback ?? ''),
     });
 
+    // Starts (or restarts) the Qishui feed with the mode currently stored in the mode store.
+    // `playSong(..., true)` enters Personal FM, so the queue keeps refilling in the background.
+    // A sequence number makes a slow response from an older mode change harmless: only the latest
+    // request is allowed to replace the queue.
+    const qishuiFeedPlaySeqRef = useRef(0);
+    const qishuiFeedClickBusyRef = useRef(false);
+    const qishuiFeedClickCooldownUntilRef = useRef(0);
+    const [isQishuiFeedLoading, setIsQishuiFeedLoading] = useState(false);
+    const playQishuiFeed = useCallback(async (loadingText?: string): Promise<boolean> => {
+        const seq = ++qishuiFeedPlaySeqRef.current;
+        const toastNonce = loadingText ? Date.now() : 0;
+        if (loadingText) {
+            setIsQishuiFeedLoading(true);
+            setStatusMsg({
+                type: 'info',
+                text: loadingText,
+                nonce: toastNonce,
+                durationMs: 20000,
+            });
+        }
+        // Only the newest request owns the toast/spinner. A superseded request must not clear
+        // feedback that now belongs to the mode the user picked afterwards.
+        const settle = (ok: boolean) => {
+            if (seq !== qishuiFeedPlaySeqRef.current) return;
+            if (!loadingText) return;
+            setIsQishuiFeedLoading(false);
+            setStatusMsg(prev => {
+                if (prev?.nonce !== toastNonce) return prev;
+                return ok ? null : {
+                    type: 'error',
+                    text: t('qishuiNav.feedFailed', '播放当前听歌模式失败，请稍后重试'),
+                };
+            });
+        };
+        try {
+            const songs = await omni.getPersonalFm();
+            if (seq !== qishuiFeedPlaySeqRef.current) return true;
+            if (!songs.length) {
+                settle(false);
+                return false;
+            }
+            void playSong(songs[0], songs, true);
+            settle(true);
+            return true;
+        } catch (error) {
+            if (seq !== qishuiFeedPlaySeqRef.current) return true;
+            console.warn('[Qishui] Failed to start the feed mode', error);
+            settle(false);
+            return false;
+        }
+    }, [playSong, setStatusMsg, t]);
+
     // The Qishui grid writes the store; restart Personal FM here so picking a mode is audible
     // immediately, the way the official client switches queues. Outside FM the next start reads
     // the store on its own, so no action is needed.
@@ -1615,15 +1681,19 @@ export default function App() {
         if (qishuiFeedModeRef.current === qishuiFeedModeSelection) return;
         qishuiFeedModeRef.current = qishuiFeedModeSelection;
         if (!isQishuiProvider || !isFmMode || !currentSong) return;
-        void (async () => {
-            try {
-                const songs = await omni.getPersonalFm();
-                if (songs.length) void playSong(songs[0], songs, true);
-            } catch (error) {
-                console.warn('[Qishui] Failed to switch the feed mode', error);
-            }
-        })();
-    }, [qishuiFeedModeSelection, isQishuiProvider, isFmMode, currentSong, playSong]);
+        void playQishuiFeed(t('qishuiNav.modeSwitching', '正在切换听歌模式...'));
+    }, [qishuiFeedModeSelection, isQishuiProvider, isFmMode, currentSong, playQishuiFeed, t]);
+
+    const playQishuiFeedFromSidebar = useCallback(() => {
+        // One request at a time, then a short cooldown. Rapid clicks during loading (or right
+        // after it) must not queue another feed refresh that would cut the song that just started.
+        if (qishuiFeedClickBusyRef.current || Date.now() < qishuiFeedClickCooldownUntilRef.current) return;
+        qishuiFeedClickBusyRef.current = true;
+        void playQishuiFeed(t('qishuiNav.feedLoading', '正在刷新推荐...')).finally(() => {
+            qishuiFeedClickCooldownUntilRef.current = Date.now() + 2000;
+            qishuiFeedClickBusyRef.current = false;
+        });
+    }, [playQishuiFeed, t]);
 
     // Wallpaper mode removes normal window semantics (no minimize/maximize/close, no dragging, and
     // click-through is managed by the main process), so the whole custom titlebar strip stays off.
@@ -2266,6 +2336,7 @@ export default function App() {
         openStagePlayer,
         theme,
         playAll: playOnlineQueueFromStart,
+        playAllSilent: playOnlineQueueFromStartSilent,
         playAllMerged: playMergedQueueFromStart,
         playTrackMerged: playMergedQueueTrack,
         addAllToQueue: addOnlineSongsToQueue,
@@ -2276,6 +2347,38 @@ export default function App() {
         onPopCollectionTo: popCollectionTo,
         onBackCollection: backCollection,
     });
+    // 播放器侧栏与首页共用同一套歌单点击语义：歌单 → 整张入队并静默起播 → Lattice 队列拼贴。
+    // 专辑等非歌单集合仍按原来的导航打开。
+    const playlistLatticeOpener = usePlaylistLatticeOpener(homeModel.surfaceProps);
+    const openPlayerCollection = useCallback((collection: ProviderCollection) => {
+        const descriptor = createOnlineGridViewCollection(collection, collection.providerId ?? activeProviderId);
+        if (descriptor.type === 'playlist') {
+            playlistLatticeOpener.open(descriptor);
+            return;
+        }
+        playlistLatticeOpener.cancel();
+        navigateToCollection(descriptor, 'player');
+    }, [activeProviderId, navigateToCollection, playlistLatticeOpener]);
+    // 侧栏的其它入口一旦开始，就取消还在等待的歌单加载，避免稍后突然把画面抢去 Lattice。
+    const playFeedFromPlayerSidebar = useCallback(() => {
+        playlistLatticeOpener.cancel();
+        playQishuiFeedFromSidebar();
+    }, [playQishuiFeedFromSidebar, playlistLatticeOpener]);
+    const openModeGridFromPlayerSidebar = useCallback(() => {
+        playlistLatticeOpener.cancel();
+        openQishuiFeedModeGrid();
+    }, [playlistLatticeOpener]);
+    const selectProviderFromPlayerSidebar = useCallback((providerId: string) => {
+        playlistLatticeOpener.cancel();
+        selectOnlineProviderFromPlayer(providerId);
+    }, [playlistLatticeOpener, selectOnlineProviderFromPlayer]);
+    const cancelPendingPlaylistRef = useRef(playlistLatticeOpener.cancel);
+    cancelPendingPlaylistRef.current = playlistLatticeOpener.cancel;
+    // 换平台或离开播放页后，侧栏发起的加载不再有归属：取消它，免得稍后突然把画面抢去 Lattice。
+    useEffect(() => () => cancelPendingPlaylistRef.current(), [activeProviderId]);
+    useEffect(() => {
+        if (currentView !== 'player') cancelPendingPlaylistRef.current();
+    }, [currentView]);
     const playerDisplayCatalogIndex = useMemo(() => buildLocalLibraryIndex(
         localLibraryCatalog.entities,
         localLibraryCatalog.assignments,
@@ -2361,6 +2464,34 @@ export default function App() {
         localLibraryCatalog,
         navigateToCollection,
     });
+    // The Qishui sidebar's quick-control popover mirrors the controls tab: same song actions,
+    // sound tiles and volume row. The panel model already owns those values, so reuse them and
+    // only derive the like-disabled reason here (the panel component computes it on its own).
+    const qishuiQuickControls = useMemo<PlayerQuickControlsProps>(() => {
+        const playback = playerPanelModel.panelProps.playback;
+        const likeAvailability = resolveLikeAvailability(playerDisplayCurrentSong, isNowPlayingControlDisabled, false);
+        const likeReason = likeAvailability.reason;
+        return {
+            isDaylight,
+            loopMode: playback.loopMode,
+            onToggleLoop: playback.onToggleLoop,
+            loopToggleDisabled: playback.playbackControlsDisabled ?? false,
+            onLike: playback.onLike,
+            isLiked: playback.isLiked,
+            likeDisabled: likeAvailability.disabled,
+            likeDisabledReason: likeReason ? t(likeReason.key, likeReason.params) : undefined,
+            onGenerateAITheme: playback.onGenerateAITheme,
+            isGeneratingTheme: playback.isGeneratingTheme,
+            canGenerateAITheme: playback.canGenerateAITheme,
+            themeSourceModel: playback.themeSourceModel,
+            theme: playback.theme,
+            volume: playback.volume,
+            isMuted: playback.isMuted,
+            onVolumePreview: playback.onVolumePreview,
+            onVolumeChange: playback.onVolumeChange,
+            onToggleMute: playback.onToggleMute,
+        };
+    }, [playerPanelModel, playerDisplayCurrentSong, isNowPlayingControlDisabled, isDaylight, t]);
     const appOverlaysModel = useAppOverlaysModel({
         theme,
         closeSearchView,
@@ -2992,22 +3123,31 @@ export default function App() {
                 activeProviderId={activeProviderId}
                 theme={theme}
                 onThemeChange={setTheme}
+                themeSourceModel={themeSourceModel}
+                onThemeSourceChange={handleBgModeChange}
+                hasCustomTheme={hasCustomTheme}
+                defaultTheme={DEFAULT_THEME}
+                daylightTheme={DAYLIGHT_THEME}
+                onToggleDaylight={toggleDaylightMode}
                 visualizerMode={visualizerMode}
                 onVisualizerModeChange={handleSetVisualizerMode}
                 isDaylight={isDaylight}
                 isVisible={
                     currentView === 'player'
-                    && isQishuiProvider
+                    && Boolean(activeProvider)
                     && !isPanelOpen
                     && !wallpaperMode
                     && !isMainWindowClickThroughEnabled
                     && !isNowPlayingStageActive
                 }
                 isPlaying={playerState === PlayerState.PLAYING}
-                onOpenCollection={openQishuiPlayerCollection}
-                onSelectProvider={selectOnlineProviderFromPlayer}
-                onOpenModeGrid={openQishuiFeedModeGrid}
-                onRefresh={refreshQishuiLibrary}
+                isFeedLoading={isQishuiFeedLoading}
+                quickControls={qishuiQuickControls}
+                onOpenCollection={openPlayerCollection}
+                onPlayFeed={isQishuiProvider ? playFeedFromPlayerSidebar : undefined}
+                onSelectProvider={selectProviderFromPlayerSidebar}
+                onOpenModeGrid={isQishuiProvider ? openModeGridFromPlayerSidebar : undefined}
+                onRefresh={refreshPlayerNavProvider}
                 onStatusMessage={setStatusMsg}
             />
 

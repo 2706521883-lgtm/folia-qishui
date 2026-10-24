@@ -11,6 +11,7 @@ type PlaybackSurface = Pick<
     HomeSurfaceProps,
     | 'onPlaySong'
     | 'onPlayAll'
+    | 'onPlayAllSilent'
     | 'onPlayAllMerged'
     | 'onPlayTrackMerged'
     | 'onAddAllToQueue'
@@ -24,6 +25,7 @@ type PlaybackSurface = Pick<
 export const createLibraryPlaybackPort = (surface: PlaybackSurface): LibraryPlaybackPort => ({
     playTrack: (track, queue) => surface.onPlaySong(track, queue),
     playAll: tracks => surface.onPlayAll?.(tracks),
+    playAllSilent: tracks => (surface.onPlayAllSilent ?? surface.onPlayAll)?.(tracks),
     // 合并播放只由在线歌单使用；宿主没接这两个回调时回退到原来的替换语义。
     playAllMerged: tracks => (surface.onPlayAllMerged ?? surface.onPlayAll)?.(tracks),
     playTrackMerged: (track, queue) => (surface.onPlayTrackMerged

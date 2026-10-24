@@ -63,4 +63,23 @@ describe('buildQishuiPlayerNavModel', () => {
         expect(model.created).toHaveLength(1);
         expect(model.created[0].id).toBe('created-1');
     });
+
+    it('surfaces liked/recent and lists every other playlist for non-Qishui providers', () => {
+        const model = buildQishuiPlayerNavModel([
+            collection('nl', '我喜欢的音乐', { providerId: 'netease', isLiked: true }),
+            collection('nr', '最近播放', { providerId: 'netease' }),
+            collection('nd', '抖音收藏', { providerId: 'netease' }),
+            collection('no', '私人歌单', { providerId: 'netease', isOwned: true }),
+            collection('ns', '收藏的歌单', { providerId: 'netease' }),
+            collection('na', '专辑', { providerId: 'netease', type: 'album' }),
+            collection('nf', 'My Favorite Songs', { providerId: 'netease' }),
+        ]);
+
+        expect(model.liked?.id).toBe('nl');
+        expect(model.recent?.id).toBe('nr');
+        expect(model.douyin).toBeNull();
+        // 其它平台不再要求 isOwned；非 playlist 类型不进列表，名字相近的自建歌单也不被误收。
+        expect(model.playlists.map(item => item.id)).toEqual(['nd', 'no', 'ns', 'nf']);
+        expect(model.created.map(item => item.id)).toEqual(['no']);
+    });
 });

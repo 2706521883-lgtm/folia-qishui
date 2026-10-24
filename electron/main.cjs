@@ -6853,8 +6853,20 @@ ipcMain.handle('wallpaper-engine-start', async (event, payload) => {
     return { ok: false, error: 'unsupported-platform' };
   }
   const itemId = payload && typeof payload.itemId === 'string' ? payload.itemId : '';
-  const item = wallpaperEngineLibrary.getItem(itemId);
+  let item = wallpaperEngineLibrary.getItem(itemId);
   if (!item) {
+    // A fresh launch can auto-start before the renderer's pre-scan finishes (or before the
+    // settings card was ever opened). Waiting for the scan here is what makes the selected
+    // wallpaper survive a restart instead of failing as an unknown item.
+    try {
+      await wallpaperEngineLibrary.ensureFresh(false);
+      item = wallpaperEngineLibrary.getItem(itemId);
+    } catch (error) {
+      wallpaperEngineLogWarn('[wallpaper-engine] library scan before start failed', error);
+    }
+  }
+  if (!item) {
+    wallpaperEngineLogWarn('[wallpaper-engine] start rejected: unknown item', itemId);
     return { ok: false, error: 'unknown-item' };
   }
   return wallpaperEngineRuntime.start({

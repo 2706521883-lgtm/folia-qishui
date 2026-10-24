@@ -61,7 +61,7 @@ const BravaisCollection: React.FC<LibraryCollectionSurfaceProps> = ({
 
     const { snapshot } = useCollectionResourceState(resource);
     const tracks = useMemo(() => snapshot?.tracks ?? [], [snapshot?.tracks]);
-    const filter = useBravaisCollectionFilter({ sessionKey, isActive });
+    const filter = useBravaisCollectionFilter({ sessionKey, isActive, allowTyping: collection.type === 'album' });
     // 与网格、TUI 同一条规则：只有本地文件夹（含「全部歌曲」）按本地排序。
     const supportsLocalTrackSorting = collection.source === 'local' && collection.type === 'folder';
     const sortField = useLocalTrackSortStore(state => state.field);

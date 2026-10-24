@@ -24,6 +24,7 @@ type VisualizerShellSharedProps = Pick<
     | 'staticMode'
     | 'backgroundStaticMode'
     | 'paused'
+    | 'windowHidden'
     | 'onBack'
     | 'isPanelOpen'
     | 'alwaysShowBackButton'
@@ -71,6 +72,7 @@ const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
     const resolvedStaticMode = sharedProps?.staticMode ?? false;
     const resolvedBackgroundStaticMode = sharedProps?.backgroundStaticMode ?? false;
     const resolvedPaused = sharedProps?.paused ?? false;
+    const resolvedWindowHidden = sharedProps?.windowHidden ?? false;
     const resolvedOnBack = sharedProps?.onBack;
     const resolvedIsPanelOpen = sharedProps?.isPanelOpen ?? false;
     const onPlayerPanelGuideHotspotChange = sharedProps?.onPlayerPanelGuideHotspotChange;
@@ -196,6 +198,7 @@ const VisualizerShell = forwardRef<HTMLDivElement, VisualizerShellProps>(({
                     seed={sharedProps?.seed}
                     staticMode={resolvedStaticMode || resolvedBackgroundStaticMode}
                     paused={resolvedPaused}
+                    windowHidden={resolvedWindowHidden}
                 />
             )}
 

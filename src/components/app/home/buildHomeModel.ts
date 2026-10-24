@@ -60,6 +60,8 @@ export type HomeModelDeps = {
     openStagePlayer: () => Promise<void>;
     theme: HomeSurfaceProps['theme'];
     playAll: (songs: SongResult[]) => void;
+    /** 播放整张歌单但不切视图；资料库层用来播放后显式进入 Lattice。 */
+    playAllSilent?: (songs: SongResult[]) => void;
     /** 合并播放；宿主没提供时沿用 playAll（替换语义）。 */
     playAllMerged?: (songs: SongResult[]) => void;
     playTrackMerged?: (track: SongResult, queue: SongResult[]) => void;
@@ -108,6 +110,7 @@ export const buildHomeModel = ({
     theme,
     navidromeEnabled,
     playAll,
+    playAllSilent,
     playAllMerged,
     playTrackMerged,
     addAllToQueue,
@@ -138,6 +141,7 @@ export const buildHomeModel = ({
             cloudPlaylist: activeProvider?.collections.find(collection => collection.type === 'cloud') ?? cloudPlaylist,
             currentTrack: currentSong,
             onPlayAll: playAll,
+            onPlayAllSilent: playAllSilent ?? playAll,
             onPlayAllMerged: playAllMerged ?? playAll,
             onPlayTrackMerged: playTrackMerged ?? ((track, queue) => playSong(track, queue)),
             onAddAllToQueue: addAllToQueue,

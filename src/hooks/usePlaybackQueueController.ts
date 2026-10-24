@@ -939,6 +939,22 @@ export function usePlaybackQueueController({
         void playSong(firstPlayableSong, retainedSongs, false);
     }, [getPlayableOnlineQueue, isQueueSongPlayable, playSong, setStatusMsg, t]);
 
+    // 歌单打开后的专用入口：先装载队列并起播，但不按「播放后进入的视图」跳页。
+    // 资料库层会在退掉歌单层后显式进入 Lattice，避免玩家设置把目标覆盖成播放页。
+    const playOnlineQueueFromStartSilent = useCallback((songs: SongResult[]) => {
+        const retainedSongs = getPlayableOnlineQueue(songs);
+        const firstPlayableSong = retainedSongs.find(isQueueSongPlayable);
+        if (!firstPlayableSong) {
+            setStatusMsg({ type: 'error', text: t('status.noPlayableSongs') });
+            return;
+        }
+
+        // Lattice 会立即挂载并读取队列；playSong 的队列提交在异步取流之后，
+        // 这里先同步落队列，避免进场动画里是一面空墙。
+        setPlayQueue(retainedSongs);
+        void playSong(firstPlayableSong, retainedSongs, false, { shouldNavigateToPlayer: false });
+    }, [getPlayableOnlineQueue, isQueueSongPlayable, playSong, setPlayQueue, setStatusMsg, t]);
+
     // 合并歌单墙打开在线歌单时的播放语义：把歌单曲目接到现有队列尾部，而不是替换。
     // 队列条目各自带 sourceRef，所以合并后的 Lattice 拼贴可以同时混排网易云、酷狗、QQ、汽水与波点。
     const buildMergedQueue = useCallback((songs: SongResult[]) => {
@@ -1646,6 +1662,7 @@ export function usePlaybackQueueController({
         addOnlineSongsToQueue,
         playSong,
         playOnlineQueueFromStart,
+        playOnlineQueueFromStartSilent,
         playMergedQueueFromStart,
         playMergedQueueTrack,
         handleQueueAddAndPlay,

@@ -35,6 +35,7 @@ export const useBravaisSeam = ({
     reducedTransitions,
     tweenCamera,
     checkCull,
+    suppressSeamTab = false,
 }: {
     frameRef: MutableRefObject<BravaisFrameState>;
     renderFrame: () => void;
@@ -50,6 +51,8 @@ export const useBravaisSeam = ({
     tweenCamera: (center: WallViewCenter) => void;
     /** 开口变了（可见的世界范围随之变了）：让相机检查要不要重新裁剪；force = 开口落定，按含开口的范围裁剪一次。 */
     checkCull: (force?: boolean) => void;
+    /** 歌单固定全屏墙面：不显示可恢复信息缝的边缘标签。 */
+    suppressSeamTab?: boolean;
 }) => {
     const level = useBravaisSeamStore(state => state.level);
     const [anchorX, setAnchorState] = useState<number | null>(null);
@@ -119,9 +122,10 @@ export const useBravaisSeam = ({
     // 「折叠」看的是生效的内容（过滤框、面板、表单开着时折叠等级暂不生效）。
     const isFolded = hasLayer && targetVariant === 'none';
     useEffect(() => {
-        frameRef.current.hidden = isFolded;
+        frameRef.current.hidden = isFolded && !suppressSeamTab;
+        frameRef.current.tabEnabled = !suppressSeamTab;
         tweenWidth(targetWidth);
-    }, [frameRef, isFolded, targetWidth, tweenWidth]);
+    }, [frameRef, isFolded, suppressSeamTab, targetWidth, tweenWidth]);
 
     // 同一层换了开口（换等级、开合列表面板、表单态、过滤框的临时展开）且要张开：锚点在屏内就沿用、相机最小让位；
     // 不在屏内就另取一条块边界。换层时的开口由换层编排（useBravaisDisplay）一起算，这里不重复让位。

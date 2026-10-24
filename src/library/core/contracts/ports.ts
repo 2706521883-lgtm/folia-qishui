@@ -10,6 +10,11 @@ export interface LibraryPlaybackPort {
     playTrack(track: SongResult, queue: SongResult[]): void;
     playAll(tracks: SongResult[]): void;
     /**
+     * 播放整张歌单但不切视图：歌单打开后由调用方显式进入队列拼贴（Lattice）。
+     * 宿主没提供时回退到 playAll。
+     */
+    playAllSilent?(tracks: SongResult[]): void;
+    /**
      * 合并播放整张歌单：把曲目接到当前队列尾部（跨平台去重）后，从新加入的第一首开始播。
      * 合并歌单墙打开在线歌单时用它；宿主没提供时回退到 playAll。
      */

@@ -161,6 +161,9 @@ export const useVisualizerRendererModel = ({
         // Pause Pixi/Canvas/WebGL work while the window is minimized or on another desktop. Wallpaper
         // mode keeps rendering: the wallpaper is expected to stay alive when the app is not focused.
         paused: displayPlayerState !== PlayerState.PLAYING || (documentHidden && !wallpaperMode),
+        // A paused track still leaves the window (and its wallpaper) on screen. Wallpaper Engine
+        // capture uses this signal to stop only when nobody can see it.
+        windowHidden: documentHidden && !wallpaperMode,
         visualizerOpacity,
         background,
         ...typography,

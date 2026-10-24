@@ -14,13 +14,14 @@ export default defineVisualizerBackground({
     order: 60,
     labelKey: 'options.visualizerBackgroundModeWe',
     labelFallback: 'Wallpaper Engine',
-    render: ({ config, staticMode, paused }) => (
+    render: ({ config, staticMode, windowHidden }) => (
         <WeBackground
             tuning={config?.we?.tuning ?? DEFAULT_WE_BACKGROUND_TUNING}
             // Static mode is the OBS/export path: a captured window there would be a second live
             // surface fighting the exported frame, so the layer stays off.
             enabled={!staticMode}
-            paused={paused}
+            // Pausing the track must not freeze the wallpaper: only a hidden window suspends it.
+            suspended={windowHidden}
         />
     ),
     renderSettingsPanel: props => (
