@@ -46,13 +46,13 @@ const lyricLines: Line[] = [
 
 // Covers are off and the queue is 12 by default, so the gesture cases keep their fixture and run
 // without a single image request.
-function LatticeProbe({ covers = 'off', queueLength = 12, withLyrics = false }:
-    { covers?: CoverMode; queueLength?: number; withLyrics?: boolean }) {
+function LatticeProbe({ covers = 'off', queueLength = 12, withLyrics = false, lyricTime = 42 }:
+    { covers?: CoverMode; queueLength?: number; withLyrics?: boolean; lyricTime?: number }) {
     const source = useMemo(
         () => (covers === 'off' && queueLength === 12 ? queue : buildQueue(queueLength, covers)),
         [covers, queueLength],
     );
-    const time = useMotionValue(42);
+    const time = useMotionValue(lyricTime);
     const [songs, setSongs] = useState(source);
     const [currentSong, setCurrentSong] = useState<SongResult | null>(source[0]);
     const [loopMode, setLoopMode] = useState<'off' | 'all' | 'one'>('all');

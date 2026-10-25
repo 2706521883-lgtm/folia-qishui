@@ -121,6 +121,7 @@ import { usePlaybackVisualizerBridge } from './hooks/usePlaybackVisualizerBridge
 import { useRandomVisualizerMode } from './hooks/useRandomVisualizerMode';
 import { useObsBrowserSourcePublisher } from './hooks/useObsBrowserSourcePublisher';
 import { useLyricApiPublisher } from './hooks/useLyricApiPublisher';
+import { useLyricApiPlaybackPublisher } from './hooks/useLyricApiPlaybackPublisher';
 import { useSessionRestoreController } from './hooks/useSessionRestoreController';
 import { useStagePlaybackController } from './hooks/useStagePlaybackController';
 import { useSongThemeAutoGeneration } from './hooks/useSongThemeAutoGeneration';
@@ -1812,6 +1813,15 @@ export default function App() {
         isElectronWindow,
         lyrics,
         offset: effectiveLyricTimelineOffsetMs,
+    });
+    useLyricApiPlaybackPublisher({
+        isElectronWindow,
+        enabled: lyricApiStatus.enabled && lyricApiStatus.running,
+        currentTime,
+        lyricCurrentTime,
+        duration,
+        playerState,
+        song: displaySong ?? currentSong,
     });
     const canGenerateAITheme = Boolean((lyrics?.lines.length ?? 0) > 0 || currentSong?.isPureMusic);
     const generateCurrentSongTheme = useCallback(() => {

@@ -50,6 +50,7 @@ export const visualizerCommands: CommandPaletteCommand[] = [
     createVisualizerCommand('cappella', 'Visualizer: Cappella', 'Switch to cappella visualizer', ['cappella', '群唱']),
     createVisualizerCommand('diorama', 'Visualizer: Diorama', 'Switch to Diorama visualizer', ['diorama', '镜台', '切换到可视化：镜台', '切换到可视化镜台']),
     createVisualizerCommand('still', 'Visualizer: Still', 'Switch to the static low-resource visualizer', ['still', 'static', 'low resource', '静止', '静态', '低占用']),
+    createVisualizerCommand('livingwood', 'Visualizer: Living Wood', 'Switch to the Living Wood material lyric preset', ['livingwood', 'living wood', '枯木生花', '材质歌词', '树干歌词', '木生花']),
     createToggleCommand('video-layer-toggle', 'visualizer', 'Video layer behind lyrics', 'Show or hide the muted video layer behind the lyrics', ['video layer', 'background video', 'video behind lyrics', '视频层', '背景视频', '歌词后方视频'], context => context.visualizer.toggleVideoLayer()),
     defineCommand({
         id: 'video-layer-pick',

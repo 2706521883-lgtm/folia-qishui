@@ -10,6 +10,7 @@ const emptyStatus = (): LyricApiStatus => ({
     running: false,
     port: 32109,
     url: null,
+    playbackUrl: null,
     error: null,
 });
 

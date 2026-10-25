@@ -6,5 +6,15 @@ export interface LyricApiStatus {
     running: boolean;
     port: number;
     url: string | null;
+    playbackUrl: string | null;
     error: string | null;
+}
+
+export interface LyricPlaybackSnapshot {
+    currentTime: number;
+    lyricTime: number;
+    duration: number;
+    playerState: string;
+    title: string | null;
+    artist: string | null;
 }

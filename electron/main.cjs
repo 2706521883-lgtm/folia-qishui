@@ -6549,6 +6549,13 @@ ipcMain.handle('lyric-api-publish', (event, lyrics, offset) => {
   return lyricApi.publishLyricData(lyrics, offset);
 });
 
+ipcMain.handle('lyric-api-publish-playback', (event, snapshot) => {
+  if (!isTrustedMainWindowContents(event.sender)) {
+    return false;
+  }
+  return lyricApi.publishPlayback(snapshot);
+});
+
 ipcMain.handle('discord-presence-get-status', (event) => {
   if (!isTrustedMainWindowContents(event.sender)) {
     throw new Error('Untrusted renderer attempted to read Discord presence status.');

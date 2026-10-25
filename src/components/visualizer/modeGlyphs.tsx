@@ -31,6 +31,15 @@ const VISUALIZER_MODE_GLYPHS: Record<string, React.ReactNode> = {
             <path d="M6 16.5h12" opacity="0.35" />
         </>
     ),
+    // 枯木生花：树干字形，花草从左往右长出来
+    livingwood: (
+        <>
+            <path d="M3 16.5h18" opacity="0.35" />
+            <path d="M5 9.5h8" />
+            <path d="M7 9.5c0-2 1.6-3 3-2.2M12 9.5c0-1.4 1.2-2.4 2.6-1.8" opacity="0.65" />
+            <path d="M13.5 16.5h6" opacity="0.55" />
+        </>
+    ),
     // 流光：单行居中歌词，逐字点亮
     classic: (
         <>

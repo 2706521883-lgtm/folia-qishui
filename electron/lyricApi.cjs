@@ -80,6 +80,21 @@ function sanitizeLyricData(lyrics, offset = 0) {
   return result;
 }
 
+function sanitizePlaybackSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return null;
+  }
+  return {
+    currentTime: copyTime(snapshot.currentTime),
+    lyricTime: copyTime(snapshot.lyricTime),
+    duration: copyTime(snapshot.duration),
+    playerState: copyText(snapshot.playerState) ?? 'IDLE',
+    title: copyText(snapshot.title) ?? null,
+    artist: copyText(snapshot.artist) ?? null,
+    updatedAt: Date.now(),
+  };
+}
+
 function createLyricApi({
   store,
   getMainWindow,
@@ -88,6 +103,7 @@ function createLyricApi({
 }) {
   let server = null;
   let currentLyrics = null;
+  let currentPlayback = null;
   let lastError = null;
 
   const isEnabled = () => readStoredBoolean(store, enabledSettingKey);
@@ -96,6 +112,7 @@ function createLyricApi({
     running: Boolean(server?.listening),
     port,
     url: isEnabled() ? `http://127.0.0.1:${port}/v1/lyric` : null,
+    playbackUrl: isEnabled() ? `http://127.0.0.1:${port}/v1/playback` : null,
     error: lastError,
   });
   const broadcastStatus = () => {
@@ -126,7 +143,7 @@ function createLyricApi({
       res.end();
       return;
     }
-    if (requestUrl.pathname !== '/v1/lyric') {
+    if (requestUrl.pathname !== '/v1/lyric' && requestUrl.pathname !== '/v1/playback') {
       sendJson(res, 404, { error: 'Not found.' });
       return;
     }
@@ -135,7 +152,7 @@ function createLyricApi({
       sendJson(res, 405, { error: 'Method not allowed.' });
       return;
     }
-    sendJson(res, 200, currentLyrics);
+    sendJson(res, 200, requestUrl.pathname === '/v1/playback' ? currentPlayback : currentLyrics);
   };
 
   const start = async () => {
@@ -185,9 +202,15 @@ function createLyricApi({
     return true;
   };
 
+  const publishPlayback = (snapshot) => {
+    currentPlayback = sanitizePlaybackSnapshot(snapshot);
+    return true;
+  };
+
   return {
     buildStatus,
     publishLyricData,
+    publishPlayback,
     sanitizeLyricData,
     setEnabled,
     start,
@@ -198,4 +221,5 @@ function createLyricApi({
 module.exports = {
   createLyricApi,
   sanitizeLyricData,
+  sanitizePlaybackSnapshot,
 };

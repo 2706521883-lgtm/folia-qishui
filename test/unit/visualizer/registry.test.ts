@@ -26,6 +26,7 @@ describe('visualizer registry', () => {
             'cappella',
             'diorama',
             'still',
+            'livingwood',
         ]);
     });
 
